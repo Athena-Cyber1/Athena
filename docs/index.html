@@ -1,294 +1,199 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="description" content="Athéna — assistant conversationnel." />
-<title>Athéna</title>
-<style>
-  :root {
-    --paper:#f6f7f8; --ink:#202124; --muted:#767b82; --accent:#3b82f6; --line:#e2e5e9; --surface:#fff; --sb:248px;
-    --primaire:#111111; --primaire-doux:#f1f1f1; --sur-primaire:#ffffff;
-    --fond:#ffffff; --carte:#ffffff; --carte-doux:#f5f5f5;
-    --texte:#0b0b0b; --texte-doux:#606060;
-    --bord:#e6e6e6; --bord-fort:#d2d2d2;
-    --ok:#111111; --gris-bord:#dcdcdc;
-    --ombre:0 1px 3px rgba(0,0,0,.08), 0 6px 18px rgba(0,0,0,.07);
-    --rayon:12px;
-    --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
-    --lien:#d81e05;
-  }
-  @media (prefers-color-scheme: dark) {
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Athéna v10.9.4 · design noir &amp; blanc · HUD sélecteur de modèle (cloud + local, cascade sans secret)</title>
+  <meta name="description" content="Athéna — agent à boucle planifier → agir → observer → vérifier → sous-agent. Mono-modèle (aucun juge 0.5B), design monochrome (blanc &amp; noir / noir &amp; blanc, liens rouges, symboles sans émoji, sans pied de page), thèmes importables, réponses vérifiées par outils d'autorité, échecs honnêtes." />
+  <meta name="keywords" content="Athéna, agent, IA, vérification, sous-agent, traçabilité" />
+  <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+  <link rel="stylesheet" href="./athena-demo.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
+  <style>
     :root {
-      --paper:#0a0a0a; --ink:#f2f2f2; --muted:#a0a0a0; --line:#2b2b2b; --surface:#161616;
-      --primaire:#f5f5f5; --primaire-doux:#202020; --sur-primaire:#0a0a0a;
-      --fond:#0a0a0a; --carte:#161616; --carte-doux:#1e1e1e;
-      --texte:#f2f2f2; --texte-doux:#a0a0a0;
-      --bord:#2b2b2b; --bord-fort:#404040;
-      --ok:#f2f2f2; --gris-bord:#303030;
-      --ombre:0 2px 6px rgba(0,0,0,.5), 0 12px 30px rgba(0,0,0,.4);
-      --lien:#ff5f4a;
+      --font-geist-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --font-geist-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  html,body,#root { width:100%; min-height:100%; }
-  body { background:var(--paper); color:var(--ink); font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; overflow:hidden; }
-  button,input { font:inherit; }
-  a { color: var(--lien); }
-  #bg { display:none; }
-  #app { display:flex; height:100vh; height:100dvh; position:relative; isolation:isolate; }
-  .sidebar { width:var(--sb); flex:0 0 var(--sb); display:flex; flex-direction:column; padding:16px 10px 13px; border-right:1px solid #e1e4e7; background:var(--paper); color:#4b525a; transition:margin-left .22s ease, opacity .16s ease, visibility 0s linear 0s; }
-  #app.sidebar-fermee .sidebar { margin-left:calc(var(--sb) * -1); opacity:0; visibility:hidden; transition:margin-left .22s ease, opacity .16s ease, visibility 0s linear .22s; }
-  .bascule-sidebar { position:absolute; top:8px; left:10px; z-index:20; display:flex; align-items:center; justify-content:center; gap:7px; min-width:30px; height:30px; padding:0 8px; border:1px solid #e1e4e7; border-radius:9px; color:#5b636c; background:rgba(255,255,255,.94); font-size:.78rem; font-weight:550; line-height:1; cursor:pointer; box-shadow:0 1px 2px rgba(32,33,36,.05); }
-  .bascule-sidebar:hover { background:#f0f2f4; color:#29313a; }
-  .copier { flex:0 0 auto; align-self:flex-start; width:26px; height:26px; margin-top:3px; border:1px solid transparent; border-radius:7px; color:#9aa1a9; background:transparent; font-size:.85rem; line-height:1; cursor:pointer; opacity:0; transition:opacity .15s; }
-  .row:hover .copier, .copier:focus-visible { opacity:1; }
-  .copier:hover { background:#eceef0; color:#30373f; }
-  .copier.copie-ok { color:#2e7d32; }
-  .row.user .copier { order:-1; margin-right:2px; }
-  .convo-ligne { position:relative; display:flex; align-items:center; margin:2px 0; }
-  .convo-ligne .side-item { flex:1; min-width:0; margin:0; padding-right:24px; }
-  .convo-suppr { position:absolute; right:4px; top:50%; transform:translateY(-50%); width:20px; height:20px; border:0; border-radius:6px; color:#9aa1a9; background:transparent; font-size:.95rem; line-height:1; cursor:pointer; opacity:0; transition:opacity .15s; }
-  .convo-ligne:hover .convo-suppr, .convo-suppr:focus-visible { opacity:1; }
-  .convo-suppr:hover { background:#e6e9ec; color:#b3261e; }
-  button.send.en-cours { color:#b3261e; background:#fdeeec; }
-  .ico-ferme, .bascule-label { display:none; }
-  #app.sidebar-fermee .bascule-sidebar { width:150px; justify-content:flex-start; padding:0 13px 0 10px; color:#333b43; box-shadow:0 3px 10px rgba(32,33,36,.12); }
-  #app.sidebar-fermee .ico-ouvert { display:none; }
-  #app.sidebar-fermee .ico-ferme { display:block; }
-  #app.sidebar-fermee .bascule-label { max-width:104px; opacity:1; }
-  .sidebar-top { display:grid; gap:2px; }
-  .new-chat,.side-nav { display:flex; align-items:center; gap:11px; width:100%; padding:9px 8px; border:0; border-radius:8px; color:#4e5660; background:transparent; font-size:.82rem; font-weight:500; text-align:left; cursor:pointer; transition:background .15s, color .15s; }
-  .new-chat { border:1px solid #e0e4e8; background:#fff; box-shadow:0 1px 2px rgba(32,33,36,.03); }
-  .new-chat:hover { background:#fafbfc; color:#29313a; }
-  .side-nav:hover { background:#eceef0; color:#29313a; }
-  .side-nav-symbol { display:grid; place-items:center; width:22px; height:22px; flex:0 0 22px; border-radius:50%; color:#5870aa; background:#e7edff; font-size:1.15rem; line-height:1; }
-  .side-nav-symbol.plain { border-radius:6px; color:#6d7781; background:#eceef0; font-size:1.05rem; }
-  .side-section { margin-top:20px; }
-  .side-section-title { display:flex; align-items:center; justify-content:space-between; padding:0 7px; margin-bottom:6px; color:#8b929a; font-size:.7rem; font-weight:550; letter-spacing:.01em; }
-  .side-section-title button { border:0; color:#7e8790; background:transparent; font-size:1.05rem; line-height:1; cursor:pointer; }
-  .side-recherche { padding:0 6px 6px; }
-  .recherche { width:100%; padding:7px 9px; border:1px solid #e0e4e8; border-radius:8px; background:#fff; font-size:.78rem; color:var(--ink); outline:none; }
-  .recherche:focus { border-color:#aeb8c4; }
-  .project-empty { display:flex; gap:9px; padding:3px 8px; color:#858d95; font-size:.77rem; line-height:1.4; }
-  .project-empty span { color:#8499c9; font-size:1rem; }
-  .side-item { display:flex; align-items:center; gap:10px; width:100%; min-width:0; margin:2px 0; padding:9px 8px; border:0; border-radius:8px; color:#5b636c; background:transparent; text-align:left; font-size:.79rem; cursor:pointer; transition:background .15s, color .15s; }
-  .side-item:hover { background:#eceef0; color:#30373f; }
-  .side-item.active { color:#30373f; background:#e5e7ea; }
-  .conversation-icon { width:7px; height:7px; flex:0 0 7px; border:1px solid #aab0b6; border-radius:50%; }
-  .side-item.active .conversation-icon { border-color:#707780; background:#707780; }
-  .side-item-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .account-area { margin-top:auto; padding-top:10px; border-top:1px solid #e1e4e7; }
-  .account-menu { display:grid; gap:2px; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid #e8eaed; }
-  .account-menu[hidden] { display:none; }
-  .account-menu button { width:100%; padding:8px; border:0; border-radius:7px; color:#64707b; background:transparent; text-align:left; font-size:.75rem; cursor:pointer; }
-  .account-menu button:hover { color:#333b43; background:#eceef0; }
-  .account-button { display:flex; align-items:center; gap:9px; width:100%; padding:7px 8px; border:0; border-radius:8px; color:#4d5761; background:transparent; text-align:left; cursor:pointer; }
-  .account-button:hover { background:#eceef0; }
-  .account-avatar { display:grid; place-items:center; width:26px; height:26px; flex:0 0 26px; border-radius:50%; color:#4d5a73; background:#e1e7f6; font-size:.7rem; font-weight:700; }
-  .account-copy { min-width:0; flex:1; }
-  .account-copy strong,.account-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .account-copy strong { color:#4d5660; font-size:.74rem; font-weight:600; }
-  .account-copy small { margin-top:1px; color:#9299a1; font-size:.66rem; }
-  .account-chevron { color:#89919a; font-size:.9rem; }
-  .chat-shell { min-width:0; min-height:0; flex:1; display:flex; flex-direction:column; position:relative; }
-  .chat-tete { display:flex; align-items:center; gap:10px; min-height:48px; padding:8px 14px 8px 48px; border-bottom:1px solid var(--line); background:var(--surface); position:relative; z-index:15; flex-wrap:wrap; }
-  .chat-marque h1 { font-size:.95rem; font-weight:650; letter-spacing:.01em; color:var(--ink); }
-  .etat-moteur { display:flex; align-items:center; gap:7px; margin-left:auto; font-size:.72rem; color:var(--muted); font-family:var(--mono); }
-  .dot { width:7px; height:7px; border-radius:50%; background:#c4c9cf; box-shadow:0 0 0 3px rgba(0,0,0,.04); }
-  .dot.pret { background:#1a7f37; box-shadow:0 0 0 3px rgba(26,127,55,.15); }
-  .dot.indispo { background:#b3261e; box-shadow:0 0 0 3px rgba(179,38,30,.12); }
-  .dot.occupe { background:#b58105; box-shadow:0 0 0 3px rgba(181,129,5,.15); animation:pulse 1.2s ease-in-out infinite; }
-  #compteur-saisie { display:none; font-size:.65rem; color:var(--muted); font-family:var(--mono); }
-  #compteur-saisie.visible { display:inline; }
-  #compteur-saisie.limite { color:#b3261e; font-weight:700; }
-  main, #msgs { width:min(100%, 820px); margin:0 auto; min-height:0; flex:1; overflow-y:auto; overscroll-behavior:contain; padding:34px 24px; scrollbar-width:thin; }
-  .workspace-view { max-width:580px; margin:50px auto; padding:24px; border:1px solid var(--line); border-radius:14px; background:rgba(255,255,255,.7); }
-  .workspace-view h2 { margin-bottom:7px; font-size:1.05rem; font-weight:620; color:#343a41; }
-  .workspace-view p { color:#747c85; font-size:.84rem; line-height:1.55; }
-  .setting-row { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:18px; padding-top:15px; border-top:1px solid #e9ebed; color:#4e565f; font-size:.83rem; }
-  .settings-view { max-width:720px; padding:0; overflow:hidden; }
-  .settings-head { padding:23px 24px 17px; border-bottom:1px solid #e8eaed; }
-  .settings-head h2 { margin:0 0 5px; font-size:1.05rem; }
-  .settings-layout { display:grid; grid-template-columns:156px minmax(0,1fr); min-height:320px; }
-  .settings-tabs { padding:12px 9px; border-right:1px solid #e8eaed; background:#fafbfc; }
-  .settings-tab { display:block; width:100%; margin:2px 0; padding:8px 9px; border:0; border-radius:7px; color:#707881; background:transparent; text-align:left; font-size:.78rem; cursor:pointer; }
-  .settings-tab:hover { background:#eef0f3; color:#3d454e; }
-  .settings-tab.active { color:#353c45; background:#e7e9ed; font-weight:550; }
-  .settings-content { padding:7px 23px 20px; }
-  .settings-content h3 { margin:16px 0 2px; color:#38414a; font-size:.92rem; font-weight:600; }
-  .settings-content > p { margin:0 0 3px; color:#818892; font-size:.77rem; }
-  .row { display:flex; margin-top:18px; animation:arrive .32s cubic-bezier(.2,.75,.25,1) both; }
-  .row.user { justify-content:flex-end; }
-  .row.bot { justify-content:flex-start; }
-  .bubble { max-width:min(88%, 680px); white-space:pre-wrap; padding:2px 0; font-size:.96rem; line-height:1.7; color:var(--ink); }
-  .row.user .bubble { padding:10px 13px; text-align:left; border:1px solid #dde1e6; border-radius:13px 13px 4px 13px; background:#fff; box-shadow:0 1px 2px rgba(32,33,36,.04); }
-  @media (prefers-color-scheme: dark) {
-    .row.user .bubble { background:#1e1e1e; border-color:#333; }
-    .new-chat { background:#1a1a1a; border-color:#333; }
-    .recherche { background:#111; border-color:#333; color:var(--ink); }
-    .bascule-sidebar { background:rgba(20,20,20,.94); border-color:#333; color:#aaa; }
-    .sidebar { border-right-color:#2b2b2b; }
-    .account-area { border-top-color:#2b2b2b; }
-  }
-  .row.bot .bubble { text-align:left; }
-  .examples { display:none; }
-  footer { position:sticky; bottom:0; z-index:10; padding:16px 24px 14px; background:linear-gradient(transparent, rgba(246,247,248,.96) 32%); }
-  @media (prefers-color-scheme: dark) { footer { background:linear-gradient(transparent, rgba(10,10,10,.96) 32%); } }
-  form { max-width:820px; margin:0 auto; display:flex; align-items:center; gap:7px; min-height:46px; padding:5px 6px 5px 9px; border:1px solid #d8dde3; border-radius:14px; background:white; box-shadow:0 5px 18px rgba(32,33,36,.08), 0 1px 2px rgba(32,33,36,.05); transition:border-color .18s, box-shadow .18s; }
-  @media (prefers-color-scheme: dark) { form { background:#161616; border-color:#333; } }
-  form:focus-within { border-color:#aeb8c4; box-shadow:0 10px 30px rgba(32,33,36,.12), 0 0 0 3px rgba(59,130,246,.08); }
-  input#saisie { min-width:0; flex:1; border:0; border-radius:8px; background:transparent; padding:7px 1px; font-size:.9rem; outline:none; color:var(--ink); }
-  input::placeholder { color:#8b8789; }
-  button.attach { display:grid; place-items:center; width:29px; height:29px; flex:0 0 auto; border:0; color:#68707a; background:transparent; border-radius:8px; padding:0; font-size:1.18rem; line-height:1; cursor:pointer; }
-  button.attach:hover { color:var(--ink); background:#f0f2f4; }
-  button.send { display:grid; place-items:center; width:29px; height:29px; flex:0 0 auto; border:0; color:#68707a; background:transparent; border-radius:8px; padding:0; font-size:1.2rem; font-weight:500; cursor:pointer; }
-  button.send:hover:not(:disabled) { color:var(--ink); background:#f0f2f4; }
-  button.send:disabled { color:#b8bdc4; cursor:default; }
-  .file-preview { max-width:820px; margin:0 auto 7px; display:flex; flex-wrap:wrap; gap:6px; }
-  .file-preview:empty { display:none; }
-  .file-chip { display:inline-flex; align-items:center; gap:6px; max-width:100%; padding:5px 7px 5px 9px; border:1px solid #dde1e6; border-radius:8px; background:#fff; color:#4a5058; font-size:.72rem; }
-  .file-chip-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:220px; }
-  .file-chip-remove { width:16px; height:16px; border:0; border-radius:50%; background:#eef0f2; color:#69707a; cursor:pointer; line-height:1; }
-  .note { display:none; }
-  .think { animation:pulse 1.4s ease-in-out infinite; font-weight:750; color:var(--accent); }
-  @keyframes pulse { 50% { opacity:.35; } }
-  @keyframes arrive { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
-  .outil-badge { margin-top:6px; padding:3px 9px; display:inline-block; border:1px solid #dde1e6; border-radius:999px; color:#5b636c; background:#eef1f5; font-size:.7rem; white-space:normal; }
-  .raisonnement { margin:0 0 8px; max-width:100%; border:1px solid #e2e5e9; border-radius:10px; background:#fbfcfd; font-size:.76rem; color:#5a626b; }
-  .raisonnement.vivant { border-color:#bcd0f7; box-shadow:0 0 0 3px rgba(59,130,246,.07); }
-  .raisonnement summary { display:flex; align-items:center; gap:8px; padding:7px 11px; cursor:pointer; font-weight:600; color:#4a525b; list-style:none; user-select:none; }
-  .raisonnement summary::-webkit-details-marker { display:none; }
-  .raisonnement summary .raisonnement-dernier { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:400; color:#8a929b; }
-  .raisonnement summary .chev { margin-left:auto; flex:0 0 auto; color:#8a929b; transition:transform .15s; }
-  .raisonnement[open] summary .chev { transform:rotate(90deg); }
-  .raisonnement ol { list-style:none; margin:0; padding:5px 11px 9px; display:grid; gap:4px; border-top:1px solid #eceef1; max-height:260px; overflow-y:auto; }
-  .raisonnement li { display:flex; gap:8px; line-height:1.5; align-items:baseline; }
-  .raisonnement li .etape-ico { flex:0 0 auto; }
-  .raisonnement li .etape-t { flex:0 0 auto; color:#9aa1a9; font-variant-numeric:tabular-nums; font-size:.68rem; }
-  .raisonnement li.doute { color:#a2530a; }
-  .ex-carte { margin-top:10px; padding:9px 10px; border:1px solid #e2e5e9; border-radius:9px; background:#fff; }
-  .ex-actions button { padding:5px 10px; border:1px solid #dfe3e7; border-radius:7px; color:#4c545d; background:#fff; font-size:.72rem; cursor:pointer; }
-  #entrainement-exemples { margin-top:4px; }
-  #entrainement-sujets { width:100%; max-width:420px; margin-top:10px; padding:7px 9px; border:1px solid #dfe3e7; border-radius:8px; font-size:.78rem; color:var(--ink); background:#fff; }
-  .modale { position:fixed; inset:0; z-index:80; display:grid; place-items:center; background:rgba(0,0,0,.4); padding:20px; }
-  .modale[hidden] { display:none; }
-  .modale-message { background:var(--surface); border-radius:14px; padding:20px 22px; max-width:420px; width:100%; box-shadow:var(--ombre); }
-  .modale-champ { width:100%; margin-top:12px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:.9rem; }
-  .modale-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
-  .modale-actions button { padding:7px 14px; border:1px solid var(--line); border-radius:8px; background:var(--surface); cursor:pointer; font-size:.82rem; }
-  .modale-actions button.primaire { background:var(--primaire); color:var(--sur-primaire); border-color:var(--primaire); }
-
-  /* ----- HUD modèle (v10.9.4) ----- */
-  .hud-modele-wrap { position:relative; flex:0 0 auto; margin-left:8px; }
-  .btn-modele { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 10px; border-radius:8px; border:1px solid var(--bord); background:var(--carte); color:var(--texte); font:inherit; font-size:.78rem; line-height:1; cursor:pointer; max-width:180px; transition:border-color .15s ease, background .15s ease; }
-  .btn-modele:hover, .btn-modele[aria-expanded="true"] { border-color:var(--bord-fort); background:var(--carte-doux); }
-  .modele-actif-nom { font-family:var(--mono); font-size:.72rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .modele-ico { font-size:.62rem; color:var(--texte-doux); transition:transform .15s ease; }
-  .btn-modele[aria-expanded="true"] .modele-ico { transform:rotate(180deg); }
-  .hud-modeles { position:absolute; top:calc(100% + 8px); right:0; width:300px; max-width:calc(100vw - 32px); max-height:min(420px, calc(100vh - 140px)); overflow-y:auto; background:var(--carte); border:1px solid var(--bord-fort); border-radius:var(--rayon); box-shadow:var(--ombre); padding:6px; z-index:60; }
-  .hud-modeles[hidden] { display:none; }
-  .hud-section-titre { font-size:.66rem; letter-spacing:.09em; text-transform:uppercase; color:var(--texte-doux); padding:8px 10px 4px; }
-  .hud-item { display:flex; align-items:center; gap:8px; width:100%; padding:8px 10px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--texte); font:inherit; font-size:.8rem; text-align:left; cursor:pointer; }
-  .hud-item:hover:not(.down):not(.actif) { background:var(--carte-doux); border-color:var(--bord); }
-  .hud-item.actif { background:var(--primaire-doux); border-color:var(--bord-fort); }
-  .hud-item.down { cursor:not-allowed; opacity:.45; }
-  .hud-point { flex:0 0 auto; width:8px; height:8px; border-radius:50%; background:var(--ok); }
-  .hud-item.down .hud-point { background:var(--gris-bord); }
-  .hud-item-infos { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; }
-  .hud-item-nom { font-family:var(--mono); font-size:.74rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .hud-item-provider { font-size:.66rem; color:var(--texte-doux); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .hud-badge { flex:0 0 auto; font-size:.6rem; letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border-radius:999px; border:1px solid var(--bord); color:var(--texte-doux); }
-  .hud-badge.actif { background:var(--primaire); border-color:var(--primaire); color:var(--sur-primaire); }
-  .hud-vide { padding:8px 10px; font-size:.74rem; color:var(--texte-doux); }
-  .hud-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border-top:1px solid var(--bord); margin-top:4px; }
-  .hud-note { font-size:.64rem; color:var(--texte-doux); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .hud-rafraichir { flex:0 0 auto; height:26px; padding:0 10px; border:1px solid var(--bord); border-radius:999px; background:var(--carte); color:var(--texte-doux); font:inherit; font-size:.68rem; cursor:pointer; }
-  .hud-rafraichir:hover { border-color:var(--bord-fort); color:var(--texte); }
-  .hud-rafraichir[disabled] { opacity:.5; cursor:wait; }
-
-  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:90; padding:10px 16px; border-radius:10px; background:#1c1a1a; color:#fff; font-size:.82rem; box-shadow:0 8px 24px rgba(0,0,0,.25); opacity:0; pointer-events:none; transition:opacity .2s; max-width:min(90vw, 420px); text-align:center; }
-  .toast.visible { opacity:1; }
-  .reduce-animation *, .reduce-animation *::before, .reduce-animation *::after { transition:none!important; animation:none!important; }
-  .compact-density main, .compact-density #msgs { padding-top:20px; padding-bottom:20px; }
-
-  @media (max-width:520px) { :root { --sb:178px; } .sidebar { width:var(--sb); flex-basis:var(--sb); padding:14px 8px; } .side-section { margin-top:21px; } .side-item { padding:8px; } .settings-layout { grid-template-columns:1fr; } .settings-tabs { display:flex; gap:3px; overflow-x:auto; padding:8px; border-right:0; border-bottom:1px solid #e8eaed; } .settings-tab { width:auto; white-space:nowrap; } footer { padding:16px 12px 12px; } main, #msgs { padding:28px 14px; } .bubble { max-width:92%; } #app.sidebar-fermee .bascule-sidebar { width:136px; } .chat-tete { padding-left:44px; } }
-  @media (max-width:380px) { :root { --sb:58px; } .sidebar { width:var(--sb); flex-basis:var(--sb); padding:12px 7px; } .new-chat,.side-nav { justify-content:center; padding:8px; } .new-chat span:last-child, .side-nav span:last-child, .side-section-title, .side-item-label, .account-area, .side-recherche { display:none; } .side-section { margin-top:18px; } .side-item { justify-content:center; padding:8px; } #app.sidebar-fermee .bascule-sidebar { width:34px; padding:0; justify-content:center; } #app.sidebar-fermee .bascule-label { max-width:0; opacity:0; } .etat-moteur #statut { display:none; } }
-  @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; scroll-behavior:auto!important; } }
-</style>
+  </style>
 </head>
 <body>
-<div id="bg"></div>
-<div id="app">
-  <aside class="sidebar" id="sidebar" aria-label="Navigation">
-    <div class="sidebar-top">
-      <button class="new-chat" id="nouvelle-discussion" type="button"><span class="side-nav-symbol">+</span><span>Nouveau</span></button>
-      <button class="side-nav" id="ouvrir-projets" type="button"><span class="side-nav-symbol plain">▣</span><span>Projets</span></button>
-      <button class="side-nav" id="ouvrir-parametres" type="button"><span class="side-nav-symbol plain">⚙</span><span>Paramètres</span></button>
+  <div class="page-demo">
+    <div id="app">
+      <!-- ————— Barre latérale ————— -->
+      <aside id="sidebar" class="sidebar" aria-label="Barre latérale">
+        <div class="side-head">
+          <div class="marque">
+            <span class="marque-icone" aria-hidden="true">◆</span>
+            <span class="marque-nom">Athéna</span>
+            <span class="marque-version">v10.9.4</span>
+          </div>
+        </div>
+
+        <div class="side-corps">
+          <button id="nouvelle-discussion" type="button" class="btn-nouvelle">
+            <span aria-hidden="true">＋</span> Nouvelle discussion
+          </button>
+
+          <div class="side-bloc">
+            <div class="side-bloc-titre">
+              <span>Conversations</span>
+            </div>
+            <div class="side-recherche">
+              <input
+                id="recherche-conversations"
+                type="search"
+                class="recherche"
+                placeholder="Rechercher…"
+                aria-label="Rechercher une conversation"
+                autocomplete="off"
+              />
+              <button
+                id="plier-conversations"
+                type="button"
+                class="plier"
+                title="Plier / déplier la liste"
+                aria-label="Plier la liste des conversations"
+                aria-expanded="true"
+                aria-controls="liste-conversations"
+              >▾</button>
+            </div>
+            <nav id="liste-conversations" class="liste-conversations" aria-label="Conversations"></nav>
+            <p id="aucun-resultat" class="aucun-resultat" hidden>Aucun résultat pour cette recherche.</p>
+          </div>
+
+          <div class="side-section">
+            <div class="side-section-titre">
+              <span>Projets</span>
+              <button
+                id="ajouter-projet"
+                type="button"
+                class="btn-plus"
+                title="Nouveau projet (conversation épinglée)"
+                aria-label="Nouveau projet"
+              >＋</button>
+            </div>
+            <div id="liste-projets"></div>
+            <p class="project-empty">Aucun projet épinglé.</p>
+          </div>
+        </div>
+
+        <div class="side-pied">
+          <div class="side-actions">
+            <button id="ouvrir-projets" type="button" class="side-onglet">
+              <span class="onglet-ico" aria-hidden="true">▣</span>
+              <span class="onglet-lib">Projets</span>
+            </button>
+            <button id="ouvrir-parametres" type="button" class="side-onglet">
+              <span class="onglet-ico" aria-hidden="true">⚙︎</span>
+              <span class="onglet-lib">Paramètres</span>
+            </button>
+            <button id="btn-theme" type="button" class="side-onglet">
+              <span class="onglet-ico" aria-hidden="true">◐</span>
+              <span class="onglet-lib">Thème…</span>
+            </button>
+          </div>
+
+          <div class="compte-wrap">
+            <button
+              id="ouvrir-compte"
+              type="button"
+              class="compte-bouton"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="menu-compte"
+            >
+              <span class="avatar" aria-hidden="true">N</span>
+              <span class="compte-infos">
+                <span class="compte-nom">Neyzoxx</span>
+                <small>Plan gratuit · local</small>
+              </span>
+            </button>
+            <div id="menu-compte" class="menu-compte" hidden role="menu" aria-label="Menu du compte">
+              <button id="gerer-compte" type="button" role="menuitem"><span aria-hidden="true">⊙</span> Gérer le compte</button>
+              <button id="preferences-compte" type="button" role="menuitem"><span aria-hidden="true">⚙︎</span> Préférences</button>
+              <button id="aide-compte" type="button" role="menuitem"><span aria-hidden="true">?</span> Aide et assistance</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ————— Zone de discussion ————— -->
+      <main class="chat-shell">
+        <header class="chat-tete">
+          <button
+            id="bascule-sidebar"
+            type="button"
+            class="bascule"
+            title="Réduire la barre latérale (Ctrl+B)"
+            aria-label="Réduire la barre latérale"
+            aria-expanded="true"
+            aria-controls="sidebar"
+          >
+            <span class="bascule-ico" aria-hidden="true">☰</span>
+          </button>
+          <div class="chat-marque">
+            <h1>Athéna</h1>
+          </div>
+          <div class="etat-moteur" role="status" aria-label="État du moteur">
+            <span id="dot" class="dot" aria-hidden="true"></span>
+            <span id="statut">vérification…</span>
+          </div>
+          <!-- v10.9.4 (HUD) — sélecteur de modèle de langue -->
+          <div class="hud-modele-wrap">
+            <button
+              id="btn-modele"
+              type="button"
+              class="btn-modele"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="hud-modeles"
+              title="Modèle de langue — auto = cascade (gratuit → zai)"
+            >
+              <span id="modele-actif-nom" class="modele-actif-nom">auto</span>
+              <span class="modele-ico" aria-hidden="true">▾</span>
+            </button>
+            <div id="hud-modeles" class="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
+          </div>
+        </header>
+
+        <div id="msgs" class="msgs" role="log" aria-live="polite" aria-label="Fil de discussion"></div>
+
+        <div id="file-preview" class="file-preview" aria-live="polite"></div>
+
+        <form id="form" class="composeur">
+          <div class="composeur-carte">
+            <button
+              id="attacher"
+              type="button"
+              class="btn-attacher"
+              title="Joindre un fichier (Alt+A)"
+              aria-label="Joindre un fichier"
+            >＋</button>
+            <input
+              id="saisie"
+              name="saisie"
+              type="text"
+              class="saisie"
+              autocomplete="off"
+              placeholder="Écrivez à Athéna — je planifie, j'agis, je vérifie…"
+              aria-label="Votre message"
+            />
+            <span id="compteur-saisie" class="compteur-saisie" aria-live="off">0 / 4000</span>
+            <button id="btn" type="submit" class="btn-envoyer" title="Envoyer" aria-label="Envoyer">↵</button>
+          </div>
+          <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabindex="-1" />
+        </form>
+      </main>
     </div>
-    <section class="side-section" aria-labelledby="projets-title">
-      <h2 class="side-section-title" id="projets-title">Projets <button id="ajouter-projet" type="button" aria-label="Ajouter un projet">+</button></h2>
-      <div id="liste-projets"></div>
-      <p class="project-empty"><span>✧</span>Épinglez ici vos projets favoris.</p>
-    </section>
-    <section class="side-section" aria-labelledby="conversations-title">
-      <h2 class="side-section-title" id="conversations-title">Conversations <button id="plier-conversations" type="button" aria-label="Afficher ou masquer les conversations" aria-expanded="true">⌘</button></h2>
-      <div class="side-recherche">
-        <input id="recherche-conversations" type="search" class="recherche" placeholder="Rechercher…" aria-label="Rechercher une conversation" autocomplete="off" />
-      </div>
-      <div id="liste-conversations" aria-live="polite"></div>
-      <div id="aucun-resultat" hidden style="padding:8px; font-size:.75rem; color:#8b929a;">Aucun résultat.</div>
-    </section>
-    <div class="account-area">
-      <div class="account-menu" id="menu-compte" hidden>
-        <button id="gerer-compte" type="button">Gérer le compte</button>
-        <button id="preferences-compte" type="button">Préférences</button>
-        <button id="aide-compte" type="button">Aide et assistance</button>
-      </div>
-      <button class="account-button" id="ouvrir-compte" type="button" aria-expanded="false">
-        <span class="account-avatar">N</span>
-        <span class="account-copy"><strong>Neyzoxx</strong><small>Plan gratuit</small></span>
-        <span class="account-chevron">⌄</span>
-      </button>
-    </div>
-  </aside>
-  <div class="chat-shell">
-    <header class="chat-tete">
-      <div class="chat-marque"><h1>Athéna</h1></div>
-      <div class="etat-moteur" role="status" aria-label="État du moteur">
-        <span id="dot" class="dot" aria-hidden="true"></span>
-        <span id="statut">vérification…</span>
-        <span id="compteur-saisie" aria-hidden="true"></span>
-      </div>
-      <div class="hud-modele-wrap">
-        <button id="btn-modele" type="button" class="btn-modele" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-modeles" title="Modèle de langue — auto = cascade (gratuit → zai)">
-          <span id="modele-actif-nom" class="modele-actif-nom">auto</span>
-          <span class="modele-ico" aria-hidden="true">▾</span>
-        </button>
-        <div id="hud-modeles" class="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
-      </div>
-      <button id="btn-theme" type="button" class="btn-modele" title="Importer un thème" hidden>Thème</button>
-    </header>
-    <button class="bascule-sidebar" id="bascule-sidebar" type="button" aria-label="Masquer la barre latérale" aria-expanded="true" aria-controls="sidebar" title="Masquer la barre latérale">
-      <svg class="ico-ouvert" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.2 5.4 8l4.6 4.8" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <svg class="ico-ferme" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3.4" y="4.4" width="2.6" height="7.2" rx="1" fill="currentColor" opacity=".55"/></svg>
-      <span class="bascule-label">Barre latérale</span>
-    </button>
-    <main id="msgs" role="log" aria-live="polite"></main>
-    <footer>
-      <div class="file-preview" id="file-preview" aria-live="polite"></div>
-      <form id="form">
-        <input id="fichiers" type="file" multiple hidden />
-        <button class="attach" id="attacher" type="button" aria-label="Joindre un fichier" title="Joindre un fichier (Alt+A)">+</button>
-        <input id="saisie" placeholder="Écrivez votre message…" aria-label="Message" autocomplete="off" />
-        <button class="send" id="btn" type="submit" aria-label="Envoyer" disabled>↵</button>
-      </form>
-      <div class="note">Athéna · pipeline déterministe</div>
-    </footer>
+
+    <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
+    <script src="./theme-loader.js"></script>
+    <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
+    <script src="./keys.js"></script>
+    <script src="./api-shim.js"></script>
+    <script src="./chat-demo.js"></script>
   </div>
-</div>
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
-<script src="./theme-loader.js"></script>
-<script src="./chat-demo.js"></script>
 </body>
 </html>
