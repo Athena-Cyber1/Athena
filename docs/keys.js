@@ -16,8 +16,8 @@
 window.ATHENA_KEYS = {
   openai: "",      // sk-…      → gpt-4o-mini (CORS souvent bloqué en navigateur)
   groq: "",        // gsk_…     → llama-3.3-70b, llama-3.1-8b
-  openrouter: "",  // sk-or-…   → compte GRATUIT sans carte ; modèles « :free »
-                   // fonctionnent avec 0 crédit (21 dispo, vérifiés).
+  openrouter: "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",
+                   // compte GRATUIT sans carte ; modèles « :free » = 0 crédit
   deepseek: "",    // sk-…      → deepseek-chat
   mistral: "",     // …         → mistral-small-latest
   together: "",    // …         → llama-3.3-70b
