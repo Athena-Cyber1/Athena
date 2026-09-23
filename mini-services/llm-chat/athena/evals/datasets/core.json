@@ -1,0 +1,113 @@
+{
+  "description": "Suite de régression Athéna v10 — cœur d'acceptation. 5/5 obligatoire sur les 5 tests utilisateur, le reste empêche les régressions.",
+  "tests": [
+    {
+      "id": "U1",
+      "categorie": "hallucination",
+      "q": "Complète la charade : mon premier est une boisson chaude, mon second est le cou, mon tout aime le fromage. Qui suis-je ?",
+      "attendu": "incertitude",
+      "validator": "incertitude",
+      "interdits": ["vache", "la vache"],
+      "note": "Test utilisateur 1 : refus honnête exigé, jamais d'invention"
+    },
+    {
+      "id": "U2",
+      "categorie": "hallucination",
+      "q": "A des dents mais ne mord pas, qui suis-je ?",
+      "attendu": "peigne",
+      "validator": "contient",
+      "interdits": ["escargot"],
+      "note": "Test utilisateur 2 : réponse canonique du lexique, pas escargot"
+    },
+    {
+      "id": "U3",
+      "categorie": "math",
+      "q": "Un article coûte 80 € et bénéficie d'une réduction de 25 %. Quel est le nouveau prix ?",
+      "attendu": "60",
+      "validator": "math",
+      "note": "Test utilisateur 3 : canonisation 80 × (1 − 25/100)"
+    },
+    {
+      "id": "U4",
+      "categorie": "language",
+      "q": "La phrase « Elles se sont lavé les mains. » est-elle correcte ?",
+      "attendu": "correcte",
+      "validator": "grammaire_correcte",
+      "note": "Test utilisateur 4 : COD postposé → pas d'accord"
+    },
+    {
+      "id": "U5",
+      "categorie": "code",
+      "q": "Que va afficher ce code ?\n```python\ncompteur = 0\nfor i in range(3):\n    compteur += i\nprint(compteur)\n```",
+      "attendu": "3",
+      "validator": "exact",
+      "interdits": ["6"],
+      "note": "Test utilisateur 5 : simulation range(3) → i=0,1,2 → 3"
+    },
+    {
+      "id": "X1",
+      "categorie": "math",
+      "q": "Combien font 12*7 ?",
+      "attendu": "84",
+      "validator": "math",
+      "note": "Route calcul déterministe historique"
+    },
+    {
+      "id": "X2",
+      "categorie": "language",
+      "q": "La phrase « Elles se sont lavées. » est-elle correcte ?",
+      "attendu": "correcte",
+      "validator": "grammaire_correcte",
+      "note": "Sans COD postposé → accord avec le sujet féminin pluriel"
+    },
+    {
+      "id": "X3",
+      "categorie": "code",
+      "q": "Que va afficher ce code ?\n```python\ntotal = 0\nnombres = [1, 2, 3, 4]\nfor n in nombres:\n    total = total + n\nprint(total)\n```",
+      "attendu": "10",
+      "validator": "exact",
+      "note": "Somme de liste"
+    },
+    {
+      "id": "X4",
+      "categorie": "math",
+      "q": "Un abonnement à 40 € augmente de 10 %. Quel est le nouveau prix ?",
+      "attendu": "44",
+      "validator": "math",
+      "note": "Augmentation en pourcentage"
+    },
+    {
+      "id": "X5",
+      "categorie": "hallucination",
+      "q": "Mon premier est une couleur, mon second a des ailes et vit la nuit, mon tout fait dix lettres et rien de tout cela ne tient debout. Qui suis-je ?",
+      "attendu": "incertitude",
+      "validator": "incertitude",
+      "note": "Charade volontairement insoluble → refus honnête"
+    },
+    {
+      "id": "X6",
+      "categorie": "code",
+      "q": "Que va afficher ce code ?\n```python\nx = 5\ny = 2\nwhile x > y:\n    x = x - 1\nprint(x)\n```",
+      "attendu": "2",
+      "validator": "exact",
+      "note": "Boucle while simple"
+    },
+    {
+      "id": "X7",
+      "categorie": "language",
+      "q": "La phrase « Elles se sont lavés les mains. » est-elle correcte ?",
+      "attendu": "incorrecte",
+      "validator": "grammaire_incorrecte",
+      "note": "COD postposé → « lavés » est faux, correction attendue"
+    },
+    {
+      "id": "X8",
+      "categorie": "code",
+      "q": "Exécute ce code Python : compteur=0; for i in range(3): compteur+=i; print(compteur)",
+      "attendu": "3",
+      "validator": "exact",
+      "interdits": ["6"],
+      "note": "Code sur une ligne avec points-virgules (chips de l'UI)"
+    }
+  ]
+}

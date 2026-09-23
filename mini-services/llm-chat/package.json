@@ -1,0 +1,9 @@
+{
+  "name": "llm-chat",
+  "private": true,
+  "version": "10.0.0",
+  "scripts": {
+    "dev": "python3 -m uvicorn serveur:app --host 127.0.0.1 --port 3010",
+    "evals": "python3 -m athena.evals.runner"
+  }
+}

@@ -1,0 +1,20 @@
+# Dépendances
+node_modules/
+__pycache__/
+*.pyc
+
+# Secrets / environnement — jamais committés
+.env
+.env.*
+*.pem
+*.key
+
+# Données locales (mémoire Athéna, bases, corpus)
+data/
+*.db
+*.db.bak*
+*.sqlite
+
+# Build / OS
+.next/
+.DS_Store

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Athéna — assistant conversationnel cyber à pipeline déterministe. Vitrine statique + démonstration du sélecteur de modèle.">
+<title>Athéna — vitrine du pipeline (v10.9.4)</title>
+<style>
+/* ===== Athéna vitrine — MONOCHROME (cohérent avec src/app/athena-demo.css)
+   clair = blanc & noir, sombre = noir & blanc. Rouge réservé aux liens.
+   Zéro émoji : symboles typographiques uniquement (◆ ▣ ⚙︎ ◐ ⊙ ↵ ↻ ▾). */
+:root{
+  --fond:#ffffff; --carte:#ffffff; --carte-doux:#f5f5f5;
+  --texte:#0b0b0b; --texte-doux:#606060;
+  --bord:#e6e6e6; --bord-fort:#d2d2d2;
+  --primaire:#111111; --sur-primaire:#ffffff;
+  --lien:#d81e05; --ok:#111111; --gris:#dcdcdc; --gris-texte:#606060;
+  --code-fond:#0d0d0d; --code-texte:#f2f2f2;
+  --rayon:12px; --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --fond:#0a0a0a; --carte:#161616; --carte-doux:#1e1e1e;
+    --texte:#f2f2f2; --texte-doux:#a0a0a0;
+    --bord:#2b2b2b; --bord-fort:#3f3f3f;
+    --primaire:#f5f5f5; --sur-primaire:#0a0a0a;
+    --lien:#ff5f4a; --ok:#f2f2f2; --gris:#333333; --gris-texte:#8a8a8a;
+    --code-fond:#f1f1f1; --code-texte:#0b0b0b;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--fond); color:var(--texte); line-height:1.6;
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  min-height:100vh; min-height:100dvh; display:flex; flex-direction:column;
+}
+a{color:var(--lien)}
+a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{
+  outline:2px solid var(--primaire); outline-offset:2px; border-radius:4px;
+}
+.conteneur{width:100%; max-width:980px; margin:0 auto; padding:0 20px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ----- entête ----- */
+header{border-bottom:1px solid var(--bord); background:var(--carte); position:sticky; top:0; z-index:40}
+.barre{display:flex; align-items:center; gap:12px; min-height:60px; padding-top:8px; padding-bottom:8px; flex-wrap:wrap}
+.marque{font-weight:700; font-size:1.15rem; letter-spacing:.02em; display:flex; align-items:center; gap:10px}
+.marque .symbole{font-family:var(--mono); border:2px solid var(--primaire); border-radius:8px; width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center}
+.badge-version{font-family:var(--mono); font-size:.72rem; border:1px solid var(--bord-fort); border-radius:999px; padding:2px 10px; color:var(--texte-doux)}
+.barre nav{margin-left:auto; display:flex; gap:6px; flex-wrap:wrap}
+.barre nav a{color:var(--texte); text-decoration:none; font-size:.88rem; padding:8px 10px; border-radius:8px}
+.barre nav a:hover{background:var(--carte-doux)}
+
+/* ----- héros ----- */
+.heros{background:linear-gradient(135deg,var(--carte-doux) 0%,var(--fond) 60%); border-bottom:1px solid var(--bord); padding:56px 0 48px}
+.heros h1{font-size:clamp(1.7rem,4.5vw,2.6rem); line-height:1.15; letter-spacing:-.01em}
+.heros p.accroche{margin-top:14px; color:var(--texte-doux); max-width:56ch; font-size:1.02rem}
+.puces{margin-top:22px; display:flex; flex-wrap:wrap; gap:8px}
+.puce{font-family:var(--mono); font-size:.75rem; border:1px solid var(--bord-fort); border-radius:999px; padding:4px 12px; background:var(--carte)}
+
+/* ----- sections ----- */
+main{flex:1}
+section{padding:44px 0; border-bottom:1px solid var(--bord)}
+section:last-of-type{border-bottom:none}
+h2{font-size:1.35rem; letter-spacing:-.01em; display:flex; align-items:center; gap:10px}
+h2 .symbole{font-family:var(--mono); font-size:.9rem; color:var(--texte-doux)}
+.chapeau{margin-top:10px; color:var(--texte-doux); max-width:62ch}
+
+/* ----- carte démo ----- */
+.carte-demo{margin-top:24px; border:1px solid var(--bord); border-radius:var(--rayon); background:var(--carte); box-shadow:0 1px 3px rgba(0,0,0,.08),0 6px 18px rgba(0,0,0,.07); overflow:hidden}
+.tete-demo{display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--bord); background:var(--carte-doux); flex-wrap:wrap}
+.tete-demo .titre{font-weight:600; font-size:.95rem}
+.badge-modele-actif{margin-left:auto; font-family:var(--mono); font-size:.75rem; border:1px solid var(--bord-fort); border-radius:999px; padding:4px 12px; display:inline-flex; align-items:center; gap:8px; background:var(--carte); max-width:60vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.corps-demo{padding:18px}
+
+/* HUD modèles */
+.hud-modeles{border:1px solid var(--bord); border-radius:10px; background:var(--carte-doux)}
+.hud-section{padding:10px 12px; border-bottom:1px solid var(--bord)}
+.hud-section:last-child{border-bottom:none}
+.hud-titre-section{font-family:var(--mono); font-size:.68rem; letter-spacing:.12em; text-transform:uppercase; color:var(--texte-doux); margin-bottom:6px; display:flex; align-items:center; gap:8px}
+.btn-rafraichir{margin-left:auto; border:1px solid var(--bord-fort); background:var(--carte); border-radius:8px; min-width:32px; min-height:32px; cursor:pointer; font-family:var(--mono); color:var(--texte)}
+.btn-rafraichir:hover{border-color:var(--primaire)}
+.hud-item{display:flex; align-items:center; gap:10px; width:100%; text-align:left; background:var(--carte); border:1px solid var(--bord); border-radius:8px; padding:9px 12px; margin:5px 0; cursor:pointer; min-height:44px; color:var(--texte); font-size:.9rem}
+.hud-item:hover{border-color:var(--bord-fort)}
+.hud-item[aria-pressed="true"]{border-color:var(--primaire); box-shadow:0 0 0 1px var(--primaire)}
+.hud-item.down{opacity:.45; cursor:not-allowed}
+.hud-nom{font-family:var(--mono); font-size:.85rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.hud-item .meta{display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0}
+.hud-badge{font-family:var(--mono); font-size:.66rem; border:1px solid var(--bord-fort); border-radius:999px; padding:2px 8px; color:var(--texte-doux)}
+.hud-badge.actif{border-color:var(--primaire); color:var(--texte); font-weight:600}
+.hud-point{width:8px; height:8px; border-radius:999px; background:var(--ok); flex-shrink:0}
+.hud-point.inconnu{background:var(--gris)}
+.hud-vide{font-size:.85rem; color:var(--texte-doux); padding:8px 2px}
+
+/* formulaire */
+.zone-question{margin-top:16px}
+label.piste{font-size:.85rem; color:var(--texte-doux); display:block; margin-bottom:6px}
+textarea#question{width:100%; min-height:88px; resize:vertical; border:1px solid var(--bord-fort); border-radius:10px; background:var(--carte); color:var(--texte); padding:12px 14px; font:inherit}
+.rangée-envoi{display:flex; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap}
+.btn-envoyer{display:inline-flex; align-items:center; gap:10px; background:var(--primaire); color:var(--sur-primaire); border:1px solid var(--primaire); border-radius:10px; padding:11px 20px; font-weight:600; cursor:pointer; min-height:44px}
+.btn-envoyer:hover{opacity:.88}
+.btn-envoyer[disabled]{opacity:.5; cursor:progress}
+.hint{font-size:.78rem; color:var(--texte-doux); font-family:var(--mono)}
+
+/* réponse */
+.zone-reponse{margin-top:16px}
+.reponse{border:1px solid var(--bord); border-radius:10px; background:var(--carte-doux); padding:14px 16px; min-height:56px; white-space:pre-wrap; word-break:break-word; font-size:.95rem}
+.reponse.erreur{color:var(--texte-doux)}
+.statusline{margin-top:8px; font-family:var(--mono); font-size:.72rem; color:var(--texte-doux); display:flex; align-items:center; gap:8px}
+.spin{display:inline-block; animation:tourne 1s linear infinite}
+@keyframes tourne{to{transform:rotate(360deg)}}
+
+/* ----- architecture + code ----- */
+.grille-archi{margin-top:22px; display:grid; grid-template-columns:1fr; gap:12px}
+@media (min-width:760px){ .grille-archi{grid-template-columns:1fr 1fr 1fr} }
+.bloc-archi{border:1px solid var(--bord); border-radius:var(--rayon); background:var(--carte); padding:16px 18px}
+.bloc-archi h3{font-size:.95rem; margin-bottom:6px}
+.bloc-archi p{font-size:.85rem; color:var(--texte-doux)}
+.bloc-archi .chemin{font-family:var(--mono); font-size:.72rem; color:var(--texte); margin-top:8px; display:block}
+pre{background:var(--code-fond); color:var(--code-texte); border-radius:10px; padding:16px 18px; overflow-x:auto; font-family:var(--mono); font-size:.8rem; line-height:1.7; margin-top:16px}
+pre .c{opacity:.55}
+.note{margin-top:14px; font-size:.85rem; color:var(--texte-doux); border-left:3px solid var(--bord-fort); padding:6px 0 6px 14px}
+
+/* ----- pied de page (collé en bas) ----- */
+footer{margin-top:auto; border-top:1px solid var(--bord); background:var(--carte); padding:22px 0; padding-bottom:calc(22px + env(safe-area-inset-bottom))}
+footer .conteneur{display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:.82rem; color:var(--texte-doux)}
+footer .symbole{font-family:var(--mono)}
+footer a{color:var(--texte)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="conteneur barre">
+    <span class="marque"><span class="symbole" aria-hidden="true">◉</span> Athéna</span>
+    <span class="badge-version">v10.9.4 · vitrine statique</span>
+    <nav aria-label="Navigation principale">
+      <a href="#demo">Démonstration</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#local">Stack local</a>
+      <a href="https://github.com/Athena-Cyber1/Athena" rel="noopener">Dépôt</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="heros">
+    <div class="conteneur">
+      <h1>Assistant conversationnel cyber,<br>pipeline déterministe de bout en bout.</h1>
+      <p class="accroche">Athéna combine un pipeline à crans déterministes (solveur vérifié,
+      faits canoniques, réponse honnête) et un pont de modèles de langue résilient :
+      cascade de fournisseurs, circuit-breaker, cache et repli silencieux. Cette page
+      est une <strong>vitrine statique</strong> hébergée sur GitHub Pages.</p>
+      <div class="puces" aria-label="Caractéristiques">
+        <span class="puce">◆ pipeline à crans</span>
+        <span class="puce">◆ cascade LLM + circuit-breaker</span>
+        <span class="puce">◆ HUD cloud / local</span>
+        <span class="puce">◆ canari anti-injection</span>
+        <span class="puce">◆ 118 tests golden</span>
+      </div>
+    </div>
+  </div>
+
+  <section id="demo" aria-labelledby="titre-demo">
+    <div class="conteneur">
+      <h2 id="titre-demo"><span class="symbole" aria-hidden="true">▣</span> Démonstration — sélecteur de modèle</h2>
+      <p class="chapeau">Mini-démonstration <strong>réelle et sans backend</strong> : le HUD liste les
+      modèles cloud disponibles via un endpoint public gratuit (aucune clé), puis fait répondre
+      le modèle sélectionné directement depuis votre navigateur. En cas d'indisponibilité,
+      un message neutre s'affiche — jamais d'erreur technique.</p>
+
+      <div class="carte-demo">
+        <div class="tete-demo">
+          <span class="titre">HUD modèles</span>
+          <span id="badge-actif" class="badge-modele-actif" title="Modèle actuellement sélectionné">
+            <span class="hud-point inconnu" aria-hidden="true"></span><span id="badge-actif-nom">auto</span>
+          </span>
+        </div>
+        <div class="corps-demo">
+          <div id="hud-modeles" class="hud-modeles" aria-label="Liste des modèles disponibles">
+            <div class="hud-section">
+              <p class="hud-titre-section">Cloud
+                <button id="btn-rafraichir" class="btn-rafraichir" type="button" aria-label="Rafraîchir la liste des modèles" title="Rafraîchir">↻</button>
+              </p>
+              <div id="liste-cloud"><p class="hud-vide">Chargement de la liste…</p></div>
+            </div>
+          </div>
+
+          <div class="zone-question">
+            <label class="piste" for="question">Votre question (ex. « Quelle est la capitale de l'Australie ? »)</label>
+            <textarea id="question" rows="3" placeholder="Écrivez votre question ici…"></textarea>
+            <div class="rangée-envoi">
+              <button id="btn-envoyer" class="btn-envoyer" type="button">Envoyer <span aria-hidden="true">↵</span></button>
+              <span class="hint" id="hint-envoi">réponse directe du modèle sélectionné · sans clé · sans serveur</span>
+            </div>
+          </div>
+
+          <div class="zone-reponse" id="zone-reponse" hidden>
+            <p class="piste" id="titre-reponse">Réponse</p>
+            <div id="reponse" class="reponse" role="status" aria-live="polite"></div>
+            <p class="statusline" id="statusline"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture" aria-labelledby="titre-archi">
+    <div class="conteneur">
+      <h2 id="titre-archi"><span class="symbole" aria-hidden="true">⚙︎</span> Architecture</h2>
+      <p class="chapeau">Trois services découplés : l'interface ne voit jamais l'infrastructure
+      (aucun code d'erreur HTTP, aucun nom de fournisseur ne traverse la passerelle —
+      sanitization défensive en sortie).</p>
+      <div class="grille-archi">
+        <div class="bloc-archi">
+          <h3>UI + passerelle</h3>
+          <p>Next.js 16 (App Router). Chat en flux, HUD de modèles (Actif / Cloud / Local),
+          sanitization des sorties, persistance du modèle choisi.</p>
+          <code class="chemin">src/ · public/</code>
+        </div>
+        <div class="bloc-archi">
+          <h3>Moteur Athéna</h3>
+          <p>Pipeline à crans déterministes : outillé vérifié, faits canoniques, micro-social,
+          réponse honnête en dernier recours. Canari anti-injection, évals intégrées.</p>
+          <code class="chemin">mini-services/llm-chat/ (FastAPI :3010)</code>
+        </div>
+        <div class="bloc-archi">
+          <h3>Pont LLM</h3>
+          <p>Cascade de fournisseurs (gratuit sans clé en primaire, secours SDK, serveurs
+          locaux), circuit-breaker par fournisseur, limiteur de concurrence, cache LRU.</p>
+          <code class="chemin">mini-services/llm-bridge/ (Bun :3015)</code>
+        </div>
+      </div>
+      <div class="note">Le flux complet <em>UI → moteur → pont → fournisseurs</em> ne peut pas
+      tourner sur un hébergement purement statique : la démonstration ci-dessus appelle
+      l'endpoint public directement depuis le navigateur, ce qui suffit à montrer le HUD et
+      la réponse du modèle, mais pas le pipeline complet. Pour celui-ci, suivre la rubrique
+      « Stack local ».</div>
+    </div>
+  </section>
+
+  <section id="local" aria-labelledby="titre-local">
+    <div class="conteneur">
+      <h2 id="titre-local"><span class="symbole" aria-hidden="true">◐</span> Lancer le stack en local</h2>
+      <p class="chapeau">Prérequis : <strong>Bun</strong> ≥ 1.1 et <strong>Python</strong> ≥ 3.12.</p>
+<pre><code><span class="c"># 1. Application Next.js (racine du dépôt)</span>
+bun install &amp;&amp; bun run dev          <span class="c">→ http://localhost:3000</span>
+
+<span class="c"># 2. Pont LLM (terminal séparé)</span>
+cd mini-services/llm-bridge &amp;&amp; bun install &amp;&amp; bun --hot index.ts
+
+<span class="c"># 3. Moteur Athéna (terminal séparé)</span>
+cd mini-services/llm-chat &amp;&amp; pip install fastapi uvicorn &amp;&amp; bash daemon.sh</code></pre>
+      <div class="note">Le HUD détecte automatiquement les serveurs locaux (Ollama :11434,
+      LM Studio :1234, llama.cpp :8080). Un modèle local sélectionné est appelé en
+      OpenAI-compatible ; en cas d'échec, repli silencieux sur la cascade avec un toast
+      discret « repli sur modèle auto ».</div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="conteneur">
+    <span><span class="symbole" aria-hidden="true">◉</span> Athéna — pipeline v10.9.4</span>
+    <span>·</span>
+    <a href="https://github.com/Athena-Cyber1/Athena" rel="noopener">Dépôt GitHub</a>
+    <span>·</span>
+    <span>Vitrine statique GitHub Pages — sans backend, sans clé</span>
+  </div>
+</footer>
+
+<script>
+/* ===== Démonstration statique — appel direct de l'endpoint public gratuit.
+   Aucune clé, aucun secret. Échecs toujours NEUTRES (jamais de code HTTP). */
+(function(){
+  'use strict';
+  var BASE = 'https://text.pollinations.ai/openai';
+  var CLE_STOCKAGE = 'athena_selected_model';
+  var TIMEOUT_MS = 40000;
+  var GARANTIS = ['openai-fast'];
+
+  var elListeCloud = document.getElementById('liste-cloud');
+  var elBadgeNom = document.getElementById('badge-actif-nom');
+  var elBadgePoint = document.querySelector('#badge-actif .hud-point');
+  var elQuestion = document.getElementById('question');
+  var btnEnvoyer = document.getElementById('btn-envoyer');
+  var btnRafraichir = document.getElementById('btn-rafraichir');
+  var zoneReponse = document.getElementById('zone-reponse');
+  var elReponse = document.getElementById('reponse');
+  var elStatus = document.getElementById('statusline');
+
+  var modeles = [];          // [{id, name, up}]
+  var selection = null;      // id du modèle choisi ('' = auto)
+
+  function litStockage(){
+    try{
+      var brut = localStorage.getItem(CLE_STOCKAGE);
+      if(!brut) return null;
+      var d = JSON.parse(brut);
+      return (d &amp;&amp; typeof d.id === 'string') ? d.id : null;
+    }catch(e){ return null; }
+  }
+  function ecritStockage(id, nom){
+    try{
+      if(id) localStorage.setItem(CLE_STOCKAGE, JSON.stringify({id:id, name:nom||id}));
+      else localStorage.removeItem(CLE_STOCKAGE);
+    }catch(e){ /* stockage indisponible : sans conséquence */ }
+  }
+
+  function majBadge(){
+    var m = modeles.filter(function(x){ return x.id === selection; })[0];
+    elBadgeNom.textContent = m ? m.name : 'auto';
+    elBadgePoint.className = m ? 'hud-point' : 'hud-point inconnu';
+    document.getElementById('badge-actif').title = m
+      ? 'Modèle sélectionné : ' + m.name
+      : 'Sélection automatique (cascade par défaut)';
+  }
+
+  function itemModele(m){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'hud-item';
+    b.setAttribute('aria-pressed', selection === m.id ? 'true' : 'false');
+    if(!m.up) b.classList.add('down');
+    var nom = document.createElement('span');
+    nom.className = 'hud-nom'; nom.textContent = m.name;
+    var meta = document.createElement('span'); meta.className = 'meta';
+    var badge = document.createElement('span');
+    badge.className = 'hud-badge' + (selection === m.id ? ' actif' : '');
+    badge.textContent = selection === m.id ? 'actif' : 'free';
+    var point = document.createElement('span');
+    point.className = 'hud-point' + (m.up ? '' : ' inconnu');
+    point.setAttribute('aria-hidden','true');
+    if(!m.up){
+      b.title = 'Modèle momentanément injoignable — essayez plus tard';
+      b.disabled = true;
+    } else {
+      b.title = 'Sélectionner ' + m.name;
+      b.addEventListener('click', function(){
+        selection = m.id;
+        ecritStockage(m.id, m.name);
+        rafraichitBadges();
+        elQuestion.focus();
+      });
+    }
+    meta.appendChild(badge); meta.appendChild(point);
+    b.appendChild(nom); b.appendChild(meta);
+    return b;
+  }
+
+  function rafraichitBadges(){
+    var boutons = elListeCloud.querySelectorAll('.hud-item');
+    Array.prototype.forEach.call(boutons, function(b){
+      var id = b.getAttribute('data-id');
+      var presse = (id === selection);
+      b.setAttribute('aria-pressed', presse ? 'true' : 'false');
+      var badge = b.querySelector('.hud-badge');
+      if(badge){ badge.textContent = presse ? 'actif' : 'free'; badge.className = 'hud-badge' + (presse ? ' actif' : ''); }
+    });
+    majBadge();
+  }
+
+  function rendListe(){
+    elListeCloud.innerHTML = '';
+    if(modeles.length === 0){
+      var p = document.createElement('p');
+      p.className = 'hud-vide';
+      p.textContent = 'Liste momentanément indisponible — le modèle garanti reste sélectionnable ci-dessous.';
+      elListeCloud.appendChild(p);
+      modeles = GARANTIS.map(function(id){ return {id:id, name:id, up:true}; });
+    }
+    modeles.forEach(function(m){
+      var b = itemModele(m);
+      b.setAttribute('data-id', m.id);
+      elListeCloud.appendChild(b);
+    });
+    rafraichitBadges();
+  }
+
+  function chargeModeles(){
+    elListeCloud.innerHTML = '<p class="hud-vide">Chargement de la liste…</p>';
+    var ctl = new AbortController();
+    var minuteur = setTimeout(function(){ ctl.abort(); }, 6000);
+    fetch(BASE + '/models', {signal: ctl.signal})
+      .then(function(r){ if(!r.ok) throw new Error('indisponible'); return r.json(); })
+      .then(function(d){
+        clearTimeout(minuteur);
+        var ids = ((d &amp;&amp; d.data) || [])
+          .map(function(x){ return x &amp;&amp; typeof x.id === 'string' ? x.id : null; })
+          .filter(Boolean);
+        GARANTIS.forEach(function(g){ if(ids.indexOf(g) === -1) ids.unshift(g); });
+        modeles = ids.slice(0, 8).map(function(id){ return {id:id, name:id, up:true}; });
+        rendListe();
+      })
+      .catch(function(){
+        clearTimeout(minuteur);
+        modeles = [];
+        rendListe();
+      });
+  }
+
+  function poseStatus(texte, occupe){
+    elStatus.innerHTML = '';
+    if(occupe){
+      var s = document.createElement('span'); s.className = 'spin'; s.setAttribute('aria-hidden','true'); s.textContent = '◐';
+      elStatus.appendChild(s);
+    }
+    elStatus.appendChild(document.createTextNode(texte));
+  }
+
+  function envoie(){
+    var q = elQuestion.value.trim();
+    if(!q){ elQuestion.focus(); return; }
+    var modele = selection || 'openai-fast';
+    btnEnvoyer.disabled = true;
+    zoneReponse.hidden = false;
+    elReponse.className = 'reponse';
+    elReponse.textContent = 'Réflexion en cours…';
+    poseStatus('modèle ' + modele + ' interrogré — jusqu\u2019à 40 s', true);
+
+    var ctl = new AbortController();
+    var minuteur = setTimeout(function(){ ctl.abort(); }, TIMEOUT_MS);
+    fetch(BASE, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      signal: ctl.signal,
+      body: JSON.stringify({
+        model: modele,
+        messages: [
+          {role:'system', content:'Tu es Athéna, assistant francophone concis et rigoureux. Réponds en français, en 1 à 4 phrases.'},
+          {role:'user', content:q}
+        ],
+        temperature: 0.4
+      })
+    }).then(function(r){
+      if(!r.ok) throw new Error('indisponible');
+      return r.json();
+    }).then(function(d){
+      clearTimeout(minuteur);
+      var texte = d &amp;&amp; d.choices &amp;&amp; d.choices[0] &amp;&amp; d.choices[0].message
+        ? (d.choices[0].message.content || '').trim() : '';
+      if(!texte) throw new Error('vide');
+      elReponse.textContent = texte;
+      poseStatus('réponse du modèle ' + modele, false);
+      btnEnvoyer.disabled = false;
+    }).catch(function(){
+      clearTimeout(minuteur);
+      elReponse.className = 'reponse erreur';
+      elReponse.textContent = 'Le modèle est momentanément indisponible — réessayez dans quelques instants, ou repassez en sélection « auto ».';
+      poseStatus('échec neutre — aucune erreur technique exposée', false);
+      btnEnvoyer.disabled = false;
+    });
+  }
+
+  btnEnvoyer.addEventListener('click', envoie);
+  btnRafraichir.addEventListener('click', chargeModeles);
+  elQuestion.addEventListener('keydown', function(e){
+    if((e.ctrlKey || e.metaKey) &amp;&amp; e.key === 'Enter') envoie();
+  });
+
+  selection = litStockage() || '';
+  chargeModeles();
+})();
+</script>
+</body>
+</html>
