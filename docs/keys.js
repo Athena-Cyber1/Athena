@@ -25,4 +25,13 @@ window.ATHENA_KEYS = {
   cerebras: "",    // …         → llama-3.3-70b
   nebius: "",      // …         → llama-3.3-70b
   xai: "",         // …         → grok-3-mini
+  tokenrouter: "sk-0D7XguItXT6h9KawDNTX9cK7xd3rveysAmdwZfDqSNzSwJsR",
+                   // jeton Token Router (api.tokenrouter.com) — UTILISÉ VIA
+                   // le proxy Worker ci-dessous (l'amont 403 les navigateurs).
+                   // ⚠ quota actuellement épuisé (RemainQuota=0) : recharger
+                   // sur le dashboard tokenrouter.com avant usage.
+  tokenrouter_proxy: "",
+                   // URL du Worker déployé + /v1, ex. :
+                   // "https://athena-tokenrouter.moncompte.workers.dev/v1"
+                   // (vide = modèles tokenrouter grisés "proxy non déployé")
 };

@@ -2684,7 +2684,7 @@ let hudCharge = false;
 try {
   const brut = JSON.parse(localStorage.getItem(CLE_MODELE) || 'null');
   if (brut && typeof brut.id === 'string' && brut.id !== 'auto'
-      && /^[A-Za-z0-9._:\-]+$/.test(brut.id) && brut.id.length <= 120
+      && /^[A-Za-z0-9._:/\-]+$/.test(brut.id) && brut.id.length <= 120
       && typeof brut.name === 'string') {
     modeleChoisi = { id: brut.id, name: brut.name.slice(0, 80) };
   }

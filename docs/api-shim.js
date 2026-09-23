@@ -29,8 +29,11 @@
     gemini:       { base: 'https://generativelanguage.googleapis.com/v1beta/openai', label: 'gemini · clé API' },
     zai:          { base: 'https://open.bigmodel.cn/api/paas/v4', label: 'zhipu zai · clé API' },
     cerebras:     { base: 'https://api.cerebras.ai/v1', label: 'cerebras · clé API' },
-    nebius:       { base: 'https://api.studio.nebius.ai/v1', label: 'nebius · clé API' },
+    nebius:      { base: 'https://api.studio.nebius.ai/v1', label: 'nebius · clé API' },
     xai:          { base: 'https://api.x.ai/v1', label: 'xai · clé API' },
+    /* tokenrouter : amont 403 sur Origin navigateur → base = URL du
+       proxy Cloudflare Worker (stockée dans keys.js: tokenrouter_proxy). */
+    tokenrouter:  { baseKey: 'tokenrouter_proxy', label: 'tokenrouter · proxy CF' },
   };
 
   var MODELS = [
@@ -56,6 +59,13 @@
     try { store = JSON.parse(localStorage.getItem('athena_api_keys') || '{}') || {}; } catch (e) { store = {}; }
     var k = (window.ATHENA_KEYS && window.ATHENA_KEYS[provider]) || store[provider] || '';
     return typeof k === 'string' ? k.trim() : '';
+  }
+
+  /* Base URL d'un provider : fixe (base) ou dynamique via baseKey
+     (proxy Worker pour tokenrouter — URL remplie dans keys.js). */
+  function baseFor(p) {
+    if (p && p.base) return p.base;
+    return p && p.baseKey ? keyFor(p.baseKey) : '';
   }
 
   function json(obj, status) {
@@ -116,14 +126,72 @@
     });
   }
 
+  /* ---- Modèles tokenrouter : liste dynamique via GET /models -----
+     Le catalogue amont est inconnu à l'avance (300+ modèles) : on le
+     lit depuis le proxy (cache 5 min). Quota épuisé / proxy absent →
+     la liste reste vide et le HUD affiche l'erreur honnête. */
+  var DYN = { ts: 0, models: [], err: '' };
+
+  async function refreshDyn() {
+    var p = PROVIDERS.tokenrouter;
+    var base = baseFor(p);
+    var key = keyFor('tokenrouter');
+    if (!base || !key) { DYN = { ts: 0, models: [], err: '' }; return; }
+    if (Date.now() - DYN.ts < 300000 && (DYN.models.length || DYN.err)) return;
+    try {
+      var r = await appelBorne(realFetch(base + '/models', {
+        method: 'GET',
+        headers: { Authorization: 'Bearer ' + key },
+      }), 8000);
+      var t = await r.text();
+      var d = null;
+      try { d = JSON.parse(t); } catch (e) { d = null; }
+      if (!r.ok) {
+        var m = (d && d.error && d.error.message) || t.slice(0, 80) || ('HTTP ' + r.status);
+        DYN = { ts: Date.now(), models: [], err: r.status + ' ' + m };
+        return;
+      }
+      var ids = (d && Array.isArray(d.data) ? d.data : [])
+        .map(function (x) { return x && (x.id || x.name); })
+        .filter(function (s) { return typeof s === 'string' && s; })
+        .slice(0, 40);
+      DYN = {
+        ts: Date.now(),
+        err: ids.length ? '' : 'liste vide',
+        models: ids.map(function (id) {
+          return { provider: 'tokenrouter', model: id, name: id + ' · tokenrouter' };
+        }),
+      };
+    } catch (e) {
+      DYN = { ts: Date.now(), models: [], err: String((e && e.message) || e).slice(0, 80) };
+    }
+  }
+
   function catalogue() {
-    return MODELS.map(function (m) {
+    var liste = MODELS.concat(DYN.models);
+    var cat = liste.map(function (m) {
       var p = PROVIDERS[m.provider];
-      var up = !!(p && (p.free || keyFor(m.provider)));
+      var aCle = !!(p && keyFor(m.provider));
+      var aBase = !!(p && baseFor(p));
+      var up = !!(p && (p.free || (aCle && aBase)));
       var label = p ? p.label : m.provider;
-      if (!up && p && !p.free) label = m.provider + ' · clé manquante';
+      if (!up && p && !p.free) {
+        label = m.provider + ' · ' + (!aCle ? 'clé manquante' : 'proxy non déployé');
+      }
       return { id: m.provider + ':' + m.model, name: m.name, provider: label, active: false, local: false, up: up };
     });
+    if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
+      var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
+      cat.push({
+        id: 'tokenrouter:__err__',
+        name: 'tokenrouter (liste indisponible)',
+        provider: 'tokenrouter · ' + st,
+        active: false,
+        local: false,
+        up: false,
+      });
+    }
+    return cat;
   }
 
   function callModel(entry, messages, signal) {
@@ -131,13 +199,15 @@
     if (!p) return Promise.reject(new Error('provider inconnu : ' + entry.provider));
     var key = keyFor(entry.provider);
     if (!p.free && !key) return Promise.reject(new Error(entry.provider + ' : clé API manquante'));
+    var base = baseFor(p);
+    if (!base) return Promise.reject(new Error(entry.provider + ' : proxy non déployé (keys.js: tokenrouter_proxy)'));
     var headers = { 'Content-Type': 'application/json' };
     if (key) headers['Authorization'] = 'Bearer ' + key;
     if (p.extra) {
       var x = p.extra();
       Object.keys(x).forEach(function (k) { headers[k] = x[k]; });
     }
-    return realFetch(p.base + '/chat/completions', {
+    return realFetch(base + '/chat/completions', {
       method: 'POST',
       headers: headers,
       signal: signal || undefined,
@@ -202,6 +272,7 @@
       };
     }
 
+    await refreshDyn();
     var plan = construireChaine(typeof body.model_id === 'string' ? body.model_id : '');
     if (!plan.chaine.length) {
       var e2 = 'Aucun modèle disponible (clé API manquante pour tous les providers non gratuits).';
@@ -261,6 +332,7 @@
       return json({ erreur: 'méthode' }, 405);
     }
     if (path === '/api/modeles') {
+      await refreshDyn();
       return json({ dispo: true, modeles: catalogue() });
     }
     if (path === '/api/files') {
