@@ -78,6 +78,44 @@
     return msg;
   }
 
+  /* Texte exposé à l'UI : humaniserErreur() n'affiche le détail QUE si la
+     chaîne est "lisible" (≤300 car., sans HTML/JSON/traceback) ET si le
+     status est <500. On sanitisée donc et on renvoie 400 (pas 502) pour
+     que l'utilisateur voie la VRAIE raison (429, timeout, CORS, quota…). */
+  function detailAffichable(msg) {
+    var t = String(msg || 'erreur inconnue')
+      .replace(/[\{\}<>]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (t.length > 280) t = t.slice(0, 280) + '…';
+    return 'Échec des modèles : ' + t;
+  }
+
+  /* Garde-fou par tentative : une souche qui bloque (saturée, Turnstile,
+     sans réponse) ne fait plus échouer la chaîne entière — on enchaîne sur
+     le modèle suivant après 60 s. */
+  function appelBorne(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var fini = false;
+      var t = setTimeout(function () {
+        if (fini) return;
+        fini = true;
+        reject(new Error('timeout ' + ms + ' ms'));
+      }, ms);
+      promise.then(function (v) {
+        if (fini) return;
+        fini = true;
+        clearTimeout(t);
+        resolve(v);
+      }, function (e) {
+        if (fini) return;
+        fini = true;
+        clearTimeout(t);
+        reject(e);
+      });
+    });
+  }
+
   function catalogue() {
     return MODELS.map(function (m) {
       var p = PROVIDERS[m.provider];
@@ -174,7 +212,7 @@
     for (var i = 0; i < plan.chaine.length; i++) {
       var entry = plan.chaine[i];
       try {
-        var texte = await callModel(entry, messages, signal);
+        var texte = await appelBorne(callModel(entry, messages, signal), 60000);
         var repli = typeof body.model_id === 'string' && body.model_id && entry.id !== body.model_id;
         var payload = {
           reponse: texte,
@@ -200,8 +238,8 @@
         dernierErr = err;
       }
     }
-    var msg = 'Tous les modèles ont échoué : ' + ((dernierErr && dernierErr.message) || 'erreur inconnue');
-    return wantStream ? ndjson([{ type: 'erreur', erreur: msg }], 502) : json({ erreur: msg }, 502);
+    var msg = detailAffichable((dernierErr && dernierErr.message) || 'erreur inconnue');
+    return wantStream ? ndjson([{ type: 'erreur', erreur: msg }], 400) : json({ erreur: msg }, 400);
   }
 
   async function handleApi(url, input, init) {
