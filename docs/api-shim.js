@@ -41,8 +41,13 @@
     { provider: 'pollinations', model: 'openai', name: 'openai (gratuit)' },
     { provider: 'groq', model: 'llama-3.3-70b-versatile', name: 'llama-3.3-70b · groq' },
     { provider: 'groq', model: 'llama-3.1-8b-instant', name: 'llama-3.1-8b · groq' },
-    { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free', name: 'llama-3.3-70b free · openrouter' },
-    { provider: 'openrouter', model: 'openai/gpt-4o-mini', name: 'gpt-4o-mini · openrouter' },
+    /* openrouter : les ids « :free » fonctionnent avec 0 crédit sur un
+       compte gratuit (sans carte) — catalogue vérifié via /models public. */
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'nemotron-3-ultra 550b free · openrouter' },
+    { provider: 'openrouter', model: 'z-ai/glm-5.2:free', name: 'glm-5.2 free · openrouter' },
+    { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter' },
+    { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter' },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
