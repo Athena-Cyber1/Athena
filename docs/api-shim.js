@@ -183,7 +183,7 @@
       if (!up && p && !p.free) {
         label = m.provider + ' · ' + (!aCle ? 'clé manquante' : 'proxy non déployé');
       }
-      return { id: m.provider + ':' + m.model, name: m.name, provider: label, active: false, local: false, up: up };
+      return { id: m.provider + ':' + m.model, name: m.name, provider: label, providerKey: m.provider, active: false, local: false, up: up };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
@@ -200,12 +200,15 @@
   }
 
   function callModel(entry, messages, signal) {
-    var p = PROVIDERS[entry.provider];
-    if (!p) return Promise.reject(new Error('provider inconnu : ' + entry.provider));
-    var key = keyFor(entry.provider);
-    if (!p.free && !key) return Promise.reject(new Error(entry.provider + ' : clé API manquante'));
+    /* entry.provider = label d'affichage (« tokenrouter · proxy CF ») ;
+       la clé PROVIDERS est dans entry.providerKey ( ajouté au catalogue ). */
+    var pk = entry.providerKey || entry.provider;
+    var p = PROVIDERS[pk];
+    if (!p) return Promise.reject(new Error('provider inconnu : ' + pk));
+    var key = keyFor(pk);
+    if (!p.free && !key && !p.viaProxy) return Promise.reject(new Error(pk + ' : clé API manquante'));
     var base = baseFor(p);
-    if (!base) return Promise.reject(new Error(entry.provider + ' : proxy non déployé (keys.js: tokenrouter_proxy)'));
+    if (!base) return Promise.reject(new Error(pk + ' : proxy non déployé (keys.js: tokenrouter_proxy)'));
     var headers = { 'Content-Type': 'application/json' };
     if (key) headers['Authorization'] = 'Bearer ' + key;
     if (p.extra) {
