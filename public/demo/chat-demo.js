@@ -68,6 +68,31 @@ const ouvrirCompteEl = $('ouvrir-compte'), menuCompteEl = $('menu-compte');
 const basculeSidebarEl = $('bascule-sidebar');
 const gererCompteEl = $('gerer-compte'), preferencesCompteEl = $('preferences-compte'), aideCompteEl = $('aide-compte');
 
+/* ————— Jeu d'icônes SVG inline (traits, courants hérités) —————
+   Remplace les glyphes Unicode (✎ ⤓ × ↑ ↓ ⧉ ✓ ■ ↵ › …) par un jeu
+   d'icônes homogène : stroke=currentColor, 1.7, extrémités arrondies. */
+const SVG_ICOS = {
+  pencil: '<path d="M4.5 19.5h4L19.8 8.2a2.1 2.1 0 0 0-3-3L5.5 16.5v3z"/><path d="m14.5 6.5 3 3"/>',
+  download: '<path d="M12 4.5v10m0 0 3.5-3.5M12 14.5 8.5 11"/><path d="M5 19.5h14"/>',
+  x: '<path d="m7.5 7.5 9 9m0-9-9 9"/>',
+  pin: '<path d="M12 20.5v-6.5"/><path d="M8.8 4.5h6.4l-1 6 2.3 2.3H7.5l2.3-2.3z"/>',
+  pinOff: '<path d="M12 20.5v-6.5"/><path d="M8.8 4.5h6.4l-1 6 2.3 2.3H7.5l2.3-2.3z"/><path d="m4.5 4.5 15 15"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
+  check: '<path d="m5.5 12.5 4 4 9-9"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  stop: '<rect x="7.5" y="7.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none"/>',
+  send: '<path d="M12 19V5.5M6 11l6-5.5L18 11"/>',
+  alert: '<path d="M12 4.5 3 19.5h18z"/><path d="M12 10v3.5M12 16.5h.01"/>',
+};
+function icoSvg(nom) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'ico');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = SVG_ICOS[nom] || SVG_ICOS.x;
+  return svg;
+}
+
 let messages = [];   // référence vers les messages de la conversation OUVERTE
 let occupe = false;
 let fichiersJoints = [];
@@ -202,7 +227,7 @@ function afficherFichiers() {
     const etat = fichier.status === 'indexed'
       ? '✓ indexé · ' + (fichier.chunks || 0) + ' seg.'
       : fichier.status === 'failed'
-      ? '⚠ ' + (fichier.erreur || 'échec extraction')
+      ? 'échec : ' + (fichier.erreur || 'extraction impossible')
       : '… ' + (fichier.status === 'uploading' ? 'envoi' : 'indexation');
     nom.textContent = fichier.name + ' · ' + tailleFichier(fichier.size || 0) + ' · ' + etat;
     if (fichier.status === 'indexed') {
@@ -214,7 +239,7 @@ function afficherFichiers() {
     retirer.type = 'button';
     retirer.className = 'file-chip-remove';
     retirer.setAttribute('aria-label', 'Retirer ' + fichier.name);
-    retirer.textContent = '×';
+    retirer.appendChild(icoSvg('x'));
     retirer.addEventListener('click', () => {
       /* v20260922j (bug 11) : retrait pendant l'upload — file_id encore
          inconnu, aucun DELETE possible immédiatement. La puce est marquée
@@ -370,6 +395,16 @@ function titreDepuis(texte) {
   if (!premiereLigne) return 'Nouvelle discussion';
   return premiereLigne.length > 30 ? premiereLigne.slice(0, 30) + '…' : premiereLigne;
 }
+/* Aperçu sobre sous le titre (2e ligne de la conversation) + heure. */
+function apercuConversation(c) {
+  const dernier = [...(c.messages || [])].reverse().find((m) => m && m.content && String(m.content).trim());
+  if (!dernier) return 'Conversation vide';
+  const t = String(dernier.content).replace(/\s+/g, ' ').trim();
+  return (dernier.role === 'user' ? 'Vous : ' : '') + (t.length > 72 ? t.slice(0, 72) + '…' : t);
+}
+function heureCourt(ts) {
+  try { return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+}
 /* Ordre d'affichage des conversations : épinglées d'abord (tête de liste),
    activité récente au sein de chaque groupe. Source unique partagée par le
    rendu de la liste, le renommage (correspondance index DOM) et la sauvegarde. */
@@ -388,39 +423,48 @@ function rendreConversations() {
     bouton.type = 'button';
     bouton.className = 'side-item conversation-item' + (c.id === idConversation ? ' active' : '');
     bouton.title = c.titre;
-    const puce = document.createElement('span');
-    puce.className = 'conversation-icon';
+    const l1 = document.createElement('span');
+    l1.className = 'side-item-l1';
+    if (c.epingle) l1.appendChild(icoSvg('pin'));
     const libelle = document.createElement('span');
     libelle.className = 'side-item-label';
     libelle.textContent = c.titre;
+    l1.appendChild(libelle);
+    const l2 = document.createElement('span');
+    l2.className = 'side-item-l2';
     const extrait = document.createElement('span');
     extrait.className = 'convo-extrait';
-    bouton.append(puce, libelle, extrait);
+    extrait.textContent = apercuConversation(c);
+    const horloge = document.createElement('span');
+    horloge.className = 'convo-h';
+    horloge.textContent = heureCourt(c.maj);
+    l2.append(extrait, horloge);
+    bouton.append(l1, l2);
     bouton.addEventListener('click', () => ouvrirConversation(c.id));
     const renommer = document.createElement('button');
     renommer.type = 'button';
     renommer.className = 'convo-renommer';
-    renommer.textContent = '✎';
+    renommer.appendChild(icoSvg('pencil'));
     renommer.title = 'Renommer';
     renommer.setAttribute('aria-label', 'Renommer « ' + c.titre + ' »');
     const exportBtn = document.createElement('button');
     exportBtn.type = 'button';
     exportBtn.className = 'convo-export';
-    exportBtn.textContent = '⤓';
+    exportBtn.appendChild(icoSvg('download'));
     exportBtn.title = 'Exporter en Markdown';
     exportBtn.setAttribute('aria-label', 'Exporter « ' + c.titre + ' » en Markdown');
     exportBtn.addEventListener('click', (e) => { e.stopPropagation(); exporterConversation(c.id); });
     const suppr = document.createElement('button');
     suppr.type = 'button';
     suppr.className = 'convo-suppr';
-    suppr.textContent = '×';
+    suppr.appendChild(icoSvg('x'));
     suppr.setAttribute('aria-label', 'Supprimer « ' + c.titre + ' »');
     suppr.title = 'Supprimer';
     suppr.addEventListener('click', (e) => { e.stopPropagation(); supprimerConversation(c.id); });
     const epingle = document.createElement('button');
     epingle.type = 'button';
     epingle.className = 'convo-epingle';
-    epingle.textContent = c.epingle ? '↓' : '↑';
+    epingle.appendChild(icoSvg(c.epingle ? 'pinOff' : 'pin'));
     epingle.title = c.epingle ? 'Désépingler' : 'Épingler en haut';
     epingle.setAttribute('aria-label', (c.epingle ? 'Désépingler « ' : 'Épingler « ') + c.titre + ' »');
     epingle.addEventListener('click', (e) => { e.stopPropagation(); basculerEpingle(c.id); });
@@ -484,9 +528,14 @@ function filtrerConversations() {
     ligne.hidden = q !== '' && !corresTitre && !extrait;
     if (!ligne.hidden) visibles++;
     const el = ligne.querySelector('.convo-extrait');
+    const horloge = ligne.querySelector('.convo-h');
     if (el) {
-      if (extrait) { el.textContent = extrait; el.hidden = false; }
-      else el.hidden = true;
+      if (extrait) { el.textContent = extrait; el.hidden = false; if (horloge) horloge.hidden = true; }
+      else {
+        el.textContent = c ? apercuConversation(c) : '';
+        el.hidden = false;
+        if (horloge) { horloge.hidden = q !== ''; }
+      }
     }
   });
   const aucun = document.getElementById('aucun-resultat');
@@ -593,9 +642,9 @@ function copierTexteRepli(texte, fini) {
 }
 function copierTexte(texte, bouton) {
   const fini = () => {
-    bouton.textContent = '✓';
+    bouton.replaceChildren(icoSvg('check'));
     bouton.classList.add('copie-ok');
-    setTimeout(() => { bouton.textContent = '⧉'; bouton.classList.remove('copie-ok'); }, 1200);
+    setTimeout(() => { bouton.replaceChildren(icoSvg('copy')); bouton.classList.remove('copie-ok'); }, 1200);
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(texte).then(fini).catch(() => copierTexteRepli(texte, fini));
@@ -1027,17 +1076,19 @@ function rendreProjets() {
     bouton.type = 'button';
     bouton.className = 'side-item projet-item' + (c.id === idConversation ? ' active' : '');
     bouton.title = c.titre;
-    const puce = document.createElement('span');
-    puce.className = 'conversation-icon';
+    const l1 = document.createElement('span');
+    l1.className = 'side-item-l1';
+    l1.appendChild(icoSvg('pin'));
     const libelle = document.createElement('span');
     libelle.className = 'side-item-label';
     libelle.textContent = c.titre;
-    bouton.append(puce, libelle);
+    l1.appendChild(libelle);
+    bouton.appendChild(l1);
     bouton.addEventListener('click', () => ouvrirConversation(c.id));
     const desepingle = document.createElement('button');
     desepingle.type = 'button';
     desepingle.className = 'projet-desepingle';
-    desepingle.textContent = '↓';
+    desepingle.appendChild(icoSvg('pinOff'));
     desepingle.title = 'Désépingler';
     desepingle.setAttribute('aria-label', 'Désépingler « ' + c.titre + ' »');
     desepingle.addEventListener('click', (e) => { e.stopPropagation(); basculerEpingle(c.id); });
@@ -1357,7 +1408,8 @@ async function ajouterProjet() {
 }
 appliquerPreferences();
 /* v7.2.2 (BUG CRITIQUE — « L'UI bug ») : ouvrirConversation() était exécuté
-   ICI, 178 lignes AVANT la déclaration de ICONES_ETAPES (const, ligne 591).
+   ICI, 178 lignes AVANT la déclaration d'une const du module (à l'époque :
+   ICONES_ETAPES).
    Dès qu'une conversation contenait des étapes de raisonnement (v7.1+ —
    c'est le cas de TOUTES les conversations récentes), le rejeu au
    CHARGEMENT lisait cette const en Temporal Dead Zone -> ReferenceError ->
@@ -1466,15 +1518,15 @@ function rendreExemples(exemples) {
         reponse: ta.value,
         question: q.value.trim() !== ex.question ? q.value.trim() : undefined,
       })
-        .then(() => { enregistrer.textContent = '✓ Enregistré'; rafraichirEntrainement(); })
+        .then(() => { enregistrer.textContent = 'Enregistré'; rafraichirEntrainement(); })
         .catch((e) => {
           /* v20260922j (bug 9) : échec visible — plus de « ✓ Enregistré »
              mensonger ; le bouton redevient actif avec la raison. */
           enregistrer.disabled = false;
-          enregistrer.textContent = '⚠ Réessayer';
+          enregistrer.textContent = 'Réessayer';
           enregistrer.title = (e && e.message) || 'Échec — cliquez pour réessayer';
           setTimeout(() => {
-            enregistrer.textContent = ex.a_valider ? 'Valider ✓' : 'Enregistrer';
+            enregistrer.textContent = ex.a_valider ? 'Valider' : 'Enregistrer';
             enregistrer.removeAttribute('title');
           }, 3000);
         });
@@ -1488,7 +1540,7 @@ function rendreExemples(exemples) {
         .then(() => rafraichirEntrainement())
         .catch(() => {
           suppr.disabled = false;
-          suppr.textContent = '⚠';
+          suppr.textContent = 'Échec';
           suppr.title = 'Échec de la suppression';
           setTimeout(() => { suppr.textContent = 'Supprimer'; suppr.removeAttribute('title'); }, 3000);
         });
@@ -1629,7 +1681,7 @@ function creerBlocCode(langage, code) {
   copier.className = 'code-copier';
   copier.title = 'Copier le code';
   copier.setAttribute('aria-label', 'Copier le code');
-  copier.textContent = '⧉';
+  copier.appendChild(icoSvg('copy'));
   copier.addEventListener('click', () => copierTexte(code, copier));
   pre.append(etiquette, codeEl, copier);
   return pre;
@@ -1739,38 +1791,44 @@ function formater(texte) {
   return markdownVersFragment(sansEtiquette);
 }
 
-/* ---------- v7.1 : panneau « raisonnement en direct » (canal de progression) ---------- */
-const ICONES_ETAPES = {
-  routeur: '', calcul: '', memoire: '', outils: '', route_web: '',
-  outil: '', memoire_outil: '', contexte: '', generation: '',
-  verification: '', relance: '', decision: '', erreur: '',
-};
+/* ---------- v7.1 : panneau « raisonnement en direct » (canal de progression) ----------
+   Rendu type « interfaces d'IA classiques » : en direct le panneau est
+   déplié (spinner + dernière étape), puis il SE REPLIE à la réponse avec
+   « Raisonnement · N étapes · Xs » — un clic pour revoir le détail.
+   Les étapes sont une frise (point + trait) plutôt qu'une liste à puces. */
+function texteEtape(et) {
+  /* le pipeline préfixe parfois « ⚠ » : gardé pour la classe .doute,
+     retiré du texte affiché (marque visuelle gérée par le style). */
+  return String((et && et.message) || '').replace(/^\s*⚠\s*/, '');
+}
+function estEtapeDoute(et) {
+  return !!(et && (String(et.message || '').startsWith('⚠') || et.etape === 'erreur'));
+}
+function construireListeEtapes(etapes) {
+  const ol = document.createElement('ol');
+  for (const et of etapes) {
+    const li = document.createElement('li');
+    if (estEtapeDoute(et)) li.className = 'doute';
+    const m = document.createElement('span');
+    m.textContent = texteEtape(et);
+    li.appendChild(m);
+    ol.appendChild(li);
+  }
+  return ol;
+}
 function detailsRaisonnementDepuisEtapes(etapes) {
   const det = document.createElement('details');
   det.className = 'raisonnement';
   const sum = document.createElement('summary');
   const titre = document.createElement('span');
-  titre.textContent = 'Raisonnement — ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '');
+  titre.textContent = 'Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '');
   const chev = document.createElement('span');
   chev.className = 'chev';
-  chev.textContent = '›';
+  chev.appendChild(icoSvg('chevron'));
   sum.appendChild(titre);
   sum.appendChild(chev);
-  const ol = document.createElement('ol');
-  for (const et of etapes) {
-    const li = document.createElement('li');
-    if ((et.message || '').startsWith('⚠') || et.etape === 'erreur') li.className = 'doute';
-    const ico = document.createElement('span');
-    ico.className = 'etape-ico';
-    ico.textContent = ICONES_ETAPES[et.etape] || '•';
-    const m = document.createElement('span');
-    m.textContent = et.message;
-    li.appendChild(ico);
-    li.appendChild(m);
-    ol.appendChild(li);
-  }
   det.appendChild(sum);
-  det.appendChild(ol);
+  det.appendChild(construireListeEtapes(etapes));
   return det;
 }
 function creerPanneauRaisonnement(conteneur, gardeVue = null) {
@@ -1790,7 +1848,7 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
   dernier.textContent = 'Démarrage du pipeline…';
   const chev = document.createElement('span');
   chev.className = 'chev';
-  chev.textContent = '›';
+  chev.appendChild(icoSvg('chevron'));
   sum.appendChild(titre);
   sum.appendChild(spin);
   sum.appendChild(dernier);
@@ -1818,33 +1876,30 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
     etapes.push({ etape: ev.etape, message: ev.message });
     if (gardeVue && !gardeVue()) return;
     const li = document.createElement('li');
-    if ((ev.message || '').startsWith('⚠') || ev.etape === 'erreur') li.className = 'doute';
-    const ico = document.createElement('span');
-    ico.className = 'etape-ico';
-    ico.textContent = ICONES_ETAPES[ev.etape] || '•';
+    if (estEtapeDoute(ev)) li.className = 'doute';
     const t = document.createElement('span');
     t.className = 'etape-t';
     t.textContent = '+' + dt + ' s';
     const m = document.createElement('span');
-    m.textContent = ev.message;
-    li.appendChild(ico);
-    li.appendChild(t);
+    m.textContent = texteEtape(ev);
     li.appendChild(m);
+    li.appendChild(t);
     ol.appendChild(li);
     while (ol.children.length > 40) ol.removeChild(ol.firstChild);
-    dernier.textContent = ev.message.length > 72 ? ev.message.slice(0, 72) + '…' : ev.message;
+    dernier.textContent = texteEtape(ev).length > 72 ? texteEtape(ev).slice(0, 72) + '…' : texteEtape(ev);
     if (preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
   }
   function finaliser() {
     det.classList.remove('vivant');
-    /* v8.4.0 : le raisonnement reste DÉPLOYÉ après la réponse — visible
-       en direct, plus jamais replié automatiquement */
-    det.open = true;
+    /* Style classique : à la réponse, le panneau SE REPLIE et affiche le
+       bilan (N étapes · durée) — un clic pour rouvrir le détail. */
     clearInterval(minuteur);
+    const secondes = Math.max(1, Math.round((performance.now() - t0) / 1000));
+    det.open = false;
     spin.remove();
     dernier.remove();
-    let titre = sum.querySelector('span:first-child');
-    if (titre) titre.textContent = 'Raisonnement — ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '');
+    let titreAct = sum.querySelector('span:first-child');
+    if (titreAct) titreAct.textContent = 'Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '') + ' · ' + secondes + ' s';
   }
   return { el: det, ajouter, finaliser, etapes };
 }
@@ -2100,7 +2155,7 @@ setInterval(sonder, 25000);
 const pastilleReponseEl = document.createElement('button');
 pastilleReponseEl.type = 'button';
 pastilleReponseEl.className = 'pastille-reponse';
-pastilleReponseEl.innerHTML = '<span class="pastille-fleche">↓</span><span>Nouvelle réponse</span><span class="pastille-nouveau" hidden>0</span>';
+pastilleReponseEl.innerHTML = '<span class="pastille-fleche"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" transform="rotate(180 12 12)"/></svg></span><span>Nouvelle réponse</span><span class="pastille-nouveau" hidden>0</span>';
 pastilleReponseEl.setAttribute('aria-label', 'Aller à la nouvelle réponse');
 let nbHorsVue = 0;
 function presDuBas() {
@@ -2179,8 +2234,10 @@ function bulle(role, contenu, outil, meta) {
     if (v && v.statut && v.statut !== 'ok') {
       const vb = document.createElement('div');
       vb.className = 'outil-badge';
-      vb.textContent = v.statut === 'corrige' ? ('✓ ' + (v.detail || 'maths corrigée par recalcul'))
-                       : ('⚠ ' + (v.detail || 'doute sur la réponse'));
+      vb.appendChild(icoSvg(v.statut === 'corrige' ? 'check' : 'alert'));
+      vb.appendChild(document.createTextNode(v.statut === 'corrige'
+        ? (' ' + (v.detail || 'maths corrigée par recalcul'))
+        : (' ' + (v.detail || 'doute sur la réponse'))));
       b.appendChild(vb);
     }
     if (meta.rag && meta.rag.utilise) {
@@ -2200,7 +2257,7 @@ function bulle(role, contenu, outil, meta) {
   copier.className = 'copier';
   copier.title = 'Copier le message';
   copier.setAttribute('aria-label', 'Copier le message');
-  copier.textContent = '⧉';
+  copier.appendChild(icoSvg('copy'));
   copier.addEventListener('click', () => copierTexte(b.textContent, copier));
   row.appendChild(copier);
   msgsEl.appendChild(row);
@@ -2210,7 +2267,6 @@ function exemplesInitiaux() {
   const wrap = document.createElement('div');
   wrap.className = 'examples';
   const p = document.createElement('p');
-  p.style.opacity = '.7'; p.style.fontSize = '.875rem';
   p.textContent = 'Bonjour, comment puis-je vous aider ?';
   wrap.appendChild(p);
   for (const ex of ['Calcule 12 % de 250', "Qu'est-ce qu'un VPN ?", 'Écris une fonction Python est_pair(n)']) {
@@ -2237,12 +2293,12 @@ function sauverSaisies() {
 }
 function majBoutonArret() {
   if (occupe) {
-    btnEl.textContent = '■';
+    btnEl.replaceChildren(icoSvg('stop'));
     btnEl.title = 'Arrêter la génération';
     btnEl.setAttribute('aria-label', 'Arrêter la génération');
     btnEl.classList.add('en-cours');
   } else {
-    btnEl.textContent = '↵';
+    btnEl.replaceChildren(icoSvg('send'));
     btnEl.title = 'Envoyer';
     btnEl.setAttribute('aria-label', 'Envoyer');
     btnEl.classList.remove('en-cours');
@@ -2388,7 +2444,7 @@ async function genererReponse(convo) {
            détachée entre-temps (changement de vue/conversation). */
         const rangeePensee = think.closest ? think.closest('.row') : null;
         if (rangeePensee) rangeePensee.remove();
-        bulle('assistant', '⏹ Génération interrompue.');
+        bulle('assistant', 'Génération interrompue.');
       }
       controleurEnCours = null;
       occupe = false;
@@ -2445,7 +2501,7 @@ async function genererReponse(convo) {
       }
     } else {
       if (vueOuverte()) {
-        const bErr = bulle('assistant', '⚠ ' + (r ? r.erreur : 'Erreur inattendue.'));
+        const bErr = bulle('assistant', r ? r.erreur : 'Erreur inattendue.');
         /* v7.1 : même en échec, les étapes observées restent consultables
            (v7.1.1 : dans la bulle, pas en frère flexbox) */
         if (panneau && panneau.etapes.length) {
@@ -2850,7 +2906,7 @@ async function chargerModelesHud(rafraichir = false) {
 })();
 
 /* ---------- INITIALISATION — v7.2.2 : déplacée ICI (fin de module) ----------
-   Toutes les déclarations (ICONES_ETAPES ligne 591, saisies, contrôleur…)
+   Toutes les déclarations (consts du module, saisies, contrôleur…)
    sont évaluées avant le premier rendu : le rejeu d'une conversation avec
    étapes de raisonnement ne peut plus toucher une const en TDZ. */
 appliquerPreferences();

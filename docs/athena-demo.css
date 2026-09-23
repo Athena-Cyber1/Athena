@@ -1,8 +1,8 @@
 /* ==========================================================================
-   Athéna v10.4 — design MONOCHROME (demande explicite de l'utilisateur) :
+   Athéna — design MONOCHROME (demande explicite de l'utilisateur) :
    mode clair = blanc & noir, mode sombre = noir & blanc.
-   Le ROUGE est réservé aux liens (--lien). Zéro émoji : uniquement des
-   symboles typographiques monochromes (◆ ▣ ⚙︎ ◐ ⊙ ＋ ▾ ☰ ↵ ?).
+   Le ROUGE est réservé aux liens (--lien). Zéro émoji : icônes SVG inline
+   (traits currentColor) + typographie sobre.
    Les variables ci-dessous sont les tokens consommés par l'importeur de
    design (/api/design + theme-loader.js) : un thème importé les redéfinit.
    ========================================================================== */
@@ -116,6 +116,20 @@ button {
   font-family: inherit;
 }
 
+/* Jeu d'icônes SVG inline (stroke hérite de currentColor). */
+.ico {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: inline-block;
+  vertical-align: -3px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 :focus-visible {
   outline: 2px solid var(--primaire);
   outline-offset: 2px;
@@ -166,39 +180,13 @@ a:hover {
 }
 
 /* ————— Barre latérale ————— */
-.side-head {
-  padding: 16px 16px 10px;
-}
-.marque {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-weight: 700;
-  font-size: 1.05rem;
-  letter-spacing: 0.01em;
-}
-.marque-icone {
-  color: var(--primaire);
-  font-size: 0.95rem;
-}
-.marque-version {
-  margin-left: auto;
-  font-size: 0.66rem;
-  font-weight: 600;
-  color: var(--texte-doux);
-  border: 1px solid var(--bord);
-  border-radius: 999px;
-  padding: 2px 9px;
-  letter-spacing: 0.05em;
-}
-
 .side-corps {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 2px 12px;
+  padding: 14px 12px 2px;
   overflow: hidden;
 }
 
@@ -241,6 +229,10 @@ a:hover {
 .btn-nouvelle:hover {
   background: var(--primaire-fort);
 }
+.btn-nouvelle .ico {
+  width: 15px;
+  height: 15px;
+}
 .btn-nouvelle:active {
   transform: scale(0.985);
 }
@@ -254,9 +246,12 @@ a:hover {
   flex: 1 1 auto;
   min-width: 0;
   border: 1px solid var(--bord);
-  background: var(--carte-doux);
+  background-color: var(--carte-doux);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 10px 50%;
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 6px 10px 6px 31px;
   font-size: 0.8rem;
   color: var(--texte);
   min-height: 32px;
@@ -277,7 +272,18 @@ a:hover {
   background: var(--carte);
   color: var(--texte-doux);
   cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
   transition: color 0.15s, border-color 0.15s;
+}
+.plier .ico {
+  width: 15px;
+  height: 15px;
+  transition: transform 0.18s ease;
+}
+.plier[aria-expanded="false"] .ico {
+  transform: rotate(-90deg);
 }
 .plier:hover {
   color: var(--primaire);
@@ -325,26 +331,23 @@ a:hover {
   gap: 2px;
   border-radius: 10px;
 }
-.convo-ligne.epinglee .side-item-label::after {
-  content: " ↑";
-  color: var(--primaire);
-  font-size: 0.75em;
-}
 .side-item {
   display: flex;
-  align-items: center;
-  gap: 9px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
   background: transparent;
   border: none;
   border-radius: 10px;
-  padding: 10px 10px;
+  padding: 8px 10px;
   cursor: pointer;
   color: var(--texte);
   font-size: 0.88rem;
-  min-height: 44px;
+  min-height: 48px;
   transition: background 0.13s ease;
 }
 .side-item:hover {
@@ -354,15 +357,24 @@ a:hover {
   background: var(--gris-fond);
   color: var(--texte);
   font-weight: 600;
-  box-shadow: inset 2px 0 0 var(--primaire);
 }
-.conversation-icon {
-  flex: 0 0 auto;
-  font-size: 0.85rem;
-  color: var(--texte-doux);
+.side-item-l1 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
 }
-.side-item.active .conversation-icon {
+.side-item-l1 .ico {
+  width: 13px;
+  height: 13px;
   color: var(--primaire);
+  opacity: 0.8;
+}
+.side-item-l2 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
 }
 .side-item-label {
   flex: 1 1 auto;
@@ -370,16 +382,28 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 0.875rem;
+}
+.side-item.active .side-item-label {
+  font-weight: 600;
 }
 .convo-extrait {
-  flex: 0 1 auto;
-  max-width: 46%;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--texte-doux);
   font-weight: 400;
+}
+.convo-h {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  color: var(--texte-doux);
+  opacity: 0.72;
+  font-variant-numeric: tabular-nums;
 }
 .convo-renommer,
 .convo-export,
@@ -387,8 +411,8 @@ a:hover {
 .convo-epingle,
 .projet-desepingle {
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 27px;
+  height: 27px;
   display: inline-grid;
   place-items: center;
   border: none;
@@ -396,9 +420,17 @@ a:hover {
   color: var(--texte-doux);
   cursor: pointer;
   border-radius: 7px;
-  font-size: 0.85rem;
+  padding: 0;
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.convo-renommer .ico,
+.convo-export .ico,
+.convo-suppr .ico,
+.convo-epingle .ico,
+.projet-desepingle .ico {
+  width: 15px;
+  height: 15px;
 }
 .convo-ligne:hover .convo-renommer,
 .convo-ligne:hover .convo-export,
@@ -463,9 +495,14 @@ a:hover {
   background: var(--carte);
   color: var(--texte-doux);
   cursor: pointer;
-  font-size: 0.8rem;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
   transition: color 0.15s, border-color 0.15s;
+}
+.btn-plus .ico {
+  width: 14px;
+  height: 14px;
 }
 .btn-plus:hover {
   color: var(--primaire);
@@ -492,7 +529,8 @@ a:hover {
   gap: 10px;
 }
 
-/* Tuiles d'action égales : Projets · Paramètres · Thème (réorg. v10.4). */
+/* Tuiles d'action égales : Projets · Paramètres · Thème — fond neutre,
+   sans cadre (allègement) : l'aperçu au survol porte l'affordance. */
 .side-actions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -506,25 +544,29 @@ a:hover {
   gap: 5px;
   width: 100%;
   text-align: center;
-  background: var(--carte-doux);
-  border: 1px solid var(--bord);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 10px;
   padding: 6px 3px;
   font-size: 0.7rem;
   color: var(--texte-doux);
   cursor: pointer;
   min-height: 42px;
-  transition: background 0.13s, color 0.13s, border-color 0.13s;
+  transition: background 0.13s, color 0.13s;
 }
 .side-onglet .onglet-ico {
-  font-size: 0.95rem;
+  display: grid;
+  place-items: center;
   line-height: 1;
   color: var(--texte);
+}
+.side-onglet .onglet-ico .ico {
+  width: 17px;
+  height: 17px;
 }
 .side-onglet:hover {
   background: var(--gris-fond);
   color: var(--texte);
-  border-color: var(--bord-fort);
 }
 .side-onglet:hover .onglet-ico {
   color: var(--primaire);
@@ -633,8 +675,14 @@ a:hover {
   background: var(--carte);
   color: var(--texte-doux);
   cursor: pointer;
-  font-size: 0.85rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
   transition: color 0.15s, border-color 0.15s;
+}
+.bascule .ico {
+  width: 17px;
+  height: 17px;
 }
 .bascule:hover {
   color: var(--primaire);
@@ -642,8 +690,9 @@ a:hover {
 }
 .chat-marque h1 {
   margin: 0;
-  font-size: 1.02rem;
-  letter-spacing: 0.01em;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .etat-moteur {
   margin-left: auto;
@@ -749,6 +798,10 @@ a:hover {
   opacity: 1;
   color: var(--ok);
   border-color: var(--ok);
+}
+.copier .ico {
+  width: 15px;
+  height: 15px;
 }
 
 .fichier-joint {
@@ -881,10 +934,15 @@ a:hover {
   color: #f2f2f2;
   border: none;
   border-radius: 7px;
-  padding: 3px 9px;
+  padding: 4px 7px;
   cursor: pointer;
-  font-size: 0.74rem;
+  display: inline-grid;
+  place-items: center;
   transition: background 0.15s;
+}
+.code-copier .ico {
+  width: 14px;
+  height: 14px;
 }
 .code-copier:hover {
   background: rgba(255, 255, 255, 0.24);
@@ -893,12 +951,14 @@ a:hover {
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* Panneau de raisonnement */
+/* ————— Panneau de raisonnement (type « réflexion » des IA classiques) ————
+   En direct : déplié, spinner + dernière étape, frise des étapes.
+   À la réponse : replié, « Raisonnement · N étapes · Xs » (clic = détail). */
 details.raisonnement {
   margin: 0 0 10px;
   background: var(--carte-doux);
   border: 1px solid var(--bord);
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 0.84rem;
   overflow: hidden;
 }
@@ -912,10 +972,11 @@ details.raisonnement summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 9px 12px;
   color: var(--texte-doux);
   user-select: none;
-  min-height: 36px;
+  min-height: 38px;
+  font-weight: 500;
 }
 details.raisonnement summary::-webkit-details-marker {
   display: none;
@@ -923,38 +984,81 @@ details.raisonnement summary::-webkit-details-marker {
 details.raisonnement summary:hover {
   color: var(--texte);
 }
+details.raisonnement summary > span:first-child {
+  color: var(--texte);
+  font-weight: 600;
+  font-size: 0.8rem;
+  flex: 0 0 auto;
+}
 .chev {
   margin-left: auto;
   transition: transform 0.18s ease;
   flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--texte-doux);
+}
+.chev .ico {
+  width: 14px;
+  height: 14px;
 }
 details[open] .chev {
   transform: rotate(90deg);
 }
 details.raisonnement ol {
   margin: 0;
-  padding: 2px 12px 10px;
+  padding: 4px 14px 12px 27px;
   list-style: none;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 280px;
+  gap: 0;
+  max-height: 300px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--bord-fort) transparent;
 }
+details.raisonnement ol::before {
+  content: "";
+  position: absolute;
+  left: 15.5px;
+  top: 6px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--bord-fort);
+}
 details.raisonnement li {
+  position: relative;
   display: flex;
-  gap: 8px;
+  gap: 12px;
   align-items: baseline;
   color: var(--texte-doux);
+  padding: 5px 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+details.raisonnement li::before {
+  content: "";
+  position: absolute;
+  left: -15.5px;
+  top: 11px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--bord-fort);
+  box-shadow: 0 0 0 2.5px var(--carte-doux);
+  box-sizing: border-box;
+}
+.row.user details.raisonnement li::before {
+  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--sur-primaire) 12%, transparent);
 }
 details.raisonnement li.doute {
   color: var(--ambre-texte);
+  font-weight: 500;
 }
-.etape-ico {
-  color: var(--primaire);
-  flex: 0 0 auto;
+details.raisonnement li.doute::before {
+  background: var(--texte-doux);
+  transform: scale(1.2);
 }
 .etape-t {
   font-size: 0.68rem;
@@ -980,13 +1084,16 @@ details.raisonnement.vivant .think::before {
   vertical-align: -1px;
 }
 .raisonnement-dernier {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   color: var(--texte-doux);
-  max-width: 320px;
+  max-width: 340px;
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 400;
+  opacity: 0.85;
 }
 span.think:not(details .think) {
   font-size: 0.8rem;
@@ -1454,6 +1561,10 @@ span.think:not(details .think) {
   color: var(--rouge-texte);
   background: var(--rouge-fond);
 }
+.file-chip-remove .ico {
+  width: 13px;
+  height: 13px;
+}
 
 /* ————— Composeur ————— */
 .composeur {
@@ -1512,6 +1623,10 @@ span.think:not(details .think) {
 .btn-attacher:active {
   transform: scale(0.94);
 }
+.btn-attacher .ico {
+  width: 16px;
+  height: 16px;
+}
 .compteur-saisie {
   position: absolute;
   top: -24px;
@@ -1558,6 +1673,10 @@ span.think:not(details .think) {
   opacity: 0.4;
   cursor: not-allowed;
 }
+.btn-envoyer .ico {
+  width: 17px;
+  height: 17px;
+}
 .btn-envoyer.en-cours {
   background: var(--texte);
   color: var(--fond);
@@ -1596,7 +1715,12 @@ span.think:not(details .think) {
   color: var(--sur-primaire);
 }
 .pastille-fleche {
-  font-size: 0.9rem;
+  display: inline-grid;
+  place-items: center;
+}
+.pastille-fleche .ico {
+  width: 14px;
+  height: 14px;
 }
 .pastille-nouveau {
   background: var(--primaire);
@@ -1911,9 +2035,14 @@ span.think:not(details .think) {
 }
 
 .modele-ico {
-  font-size: 0.62rem;
   color: var(--texte-doux);
+  display: grid;
+  place-items: center;
   transition: transform 0.15s ease;
+}
+.modele-ico .ico {
+  width: 13px;
+  height: 13px;
 }
 .btn-modele[aria-expanded="true"] .modele-ico {
   transform: rotate(180deg);

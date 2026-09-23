@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Athéna v10.9.4 · design noir &amp; blanc · HUD sélecteur de modèle (cloud + local, cascade sans secret)</title>
-  <meta name="description" content="Athéna — agent à boucle planifier → agir → observer → vérifier → sous-agent. Mono-modèle (aucun juge 0.5B), design monochrome (blanc &amp; noir / noir &amp; blanc, liens rouges, symboles sans émoji, sans pied de page), thèmes importables, réponses vérifiées par outils d'autorité, échecs honnêtes." />
+  <title>Athéna — assistant</title>
+  <meta name="description" content="Athéna — agent à boucle planifier → agir → observer → vérifier → sous-agent. Mono-modèle, design monochrome (blanc & noir / noir & blanc, liens rouges), thèmes importables, réponses vérifiées par outils d'autorité, échecs honnêtes." />
   <meta name="keywords" content="Athéna, agent, IA, vérification, sous-agent, traçabilité" />
   <link rel="icon" type="image/svg+xml" href="./logo.svg" />
   <link rel="stylesheet" href="./athena-demo.css" />
@@ -23,17 +23,10 @@
     <div id="app">
       <!-- ————— Barre latérale ————— -->
       <aside id="sidebar" class="sidebar" aria-label="Barre latérale">
-        <div class="side-head">
-          <div class="marque">
-            <span class="marque-icone" aria-hidden="true">◆</span>
-            <span class="marque-nom">Athéna</span>
-            <span class="marque-version">v10.9.4</span>
-          </div>
-        </div>
-
         <div class="side-corps">
           <button id="nouvelle-discussion" type="button" class="btn-nouvelle">
-            <span aria-hidden="true">＋</span> Nouvelle discussion
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            Nouvelle discussion
           </button>
 
           <div class="side-bloc">
@@ -57,7 +50,7 @@
                 aria-label="Plier la liste des conversations"
                 aria-expanded="true"
                 aria-controls="liste-conversations"
-              >▾</button>
+              ><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
             </div>
             <nav id="liste-conversations" class="liste-conversations" aria-label="Conversations"></nav>
             <p id="aucun-resultat" class="aucun-resultat" hidden>Aucun résultat pour cette recherche.</p>
@@ -72,7 +65,7 @@
                 class="btn-plus"
                 title="Nouveau projet (conversation épinglée)"
                 aria-label="Nouveau projet"
-              >＋</button>
+              ><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
             </div>
             <div id="liste-projets"></div>
             <p class="project-empty">Aucun projet épinglé.</p>
@@ -82,15 +75,15 @@
         <div class="side-pied">
           <div class="side-actions">
             <button id="ouvrir-projets" type="button" class="side-onglet">
-              <span class="onglet-ico" aria-hidden="true">▣</span>
+              <span class="onglet-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5H18A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z"/></svg></span>
               <span class="onglet-lib">Projets</span>
             </button>
             <button id="ouvrir-parametres" type="button" class="side-onglet">
-              <span class="onglet-ico" aria-hidden="true">⚙︎</span>
+              <span class="onglet-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M4 7.5h8M17.5 7.5H20M4 16.5h3.5M13 16.5H20"/><circle cx="14.5" cy="7.5" r="2.2"/><circle cx="10" cy="16.5" r="2.2"/></svg></span>
               <span class="onglet-lib">Paramètres</span>
             </button>
             <button id="btn-theme" type="button" class="side-onglet">
-              <span class="onglet-ico" aria-hidden="true">◐</span>
+              <span class="onglet-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg></span>
               <span class="onglet-lib">Thème…</span>
             </button>
           </div>
@@ -111,9 +104,9 @@
               </span>
             </button>
             <div id="menu-compte" class="menu-compte" hidden role="menu" aria-label="Menu du compte">
-              <button id="gerer-compte" type="button" role="menuitem"><span aria-hidden="true">⊙</span> Gérer le compte</button>
-              <button id="preferences-compte" type="button" role="menuitem"><span aria-hidden="true">⚙︎</span> Préférences</button>
-              <button id="aide-compte" type="button" role="menuitem"><span aria-hidden="true">?</span> Aide et assistance</button>
+              <button id="gerer-compte" type="button" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 19.5c1.4-3 3.8-4.5 6.5-4.5s5.1 1.5 6.5 4.5"/></svg> Gérer le compte</button>
+              <button id="preferences-compte" type="button" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h8M17.5 7.5H20M4 16.5h3.5M13 16.5H20"/><circle cx="14.5" cy="7.5" r="2.2"/><circle cx="10" cy="16.5" r="2.2"/></svg> Préférences</button>
+              <button id="aide-compte" type="button" role="menuitem"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M9.7 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .9-1 1.6v.3"/><path d="M12 16.8h.01"/></svg> Aide et assistance</button>
             </div>
           </div>
         </div>
@@ -131,7 +124,7 @@
             aria-expanded="true"
             aria-controls="sidebar"
           >
-            <span class="bascule-ico" aria-hidden="true">☰</span>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/></svg>
           </button>
           <div class="chat-marque">
             <h1>Athéna</h1>
@@ -140,7 +133,6 @@
             <span id="dot" class="dot" aria-hidden="true"></span>
             <span id="statut">vérification…</span>
           </div>
-          <!-- v10.9.4 (HUD) — sélecteur de modèle de langue -->
           <div class="hud-modele-wrap">
             <button
               id="btn-modele"
@@ -152,7 +144,7 @@
               title="Modèle de langue — auto = cascade (gratuit → zai)"
             >
               <span id="modele-actif-nom" class="modele-actif-nom">auto</span>
-              <span class="modele-ico" aria-hidden="true">▾</span>
+              <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
             </button>
             <div id="hud-modeles" class="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
           </div>
@@ -170,18 +162,20 @@
               class="btn-attacher"
               title="Joindre un fichier (Alt+A)"
               aria-label="Joindre un fichier"
-            >＋</button>
+            ><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 9.5 10 17a3.5 3.5 0 0 1-5-5l8-8a5 5 0 0 1 7 7l-8.5 8.5a6.5 6.5 0 0 1-9-9L11 3.5"/></svg></button>
             <input
               id="saisie"
               name="saisie"
               type="text"
               class="saisie"
               autocomplete="off"
-              placeholder="Écrivez à Athéna — je planifie, j'agis, je vérifie…"
+              placeholder="Écrivez votre message…"
               aria-label="Votre message"
             />
             <span id="compteur-saisie" class="compteur-saisie" aria-live="off">0 / 4000</span>
-            <button id="btn" type="submit" class="btn-envoyer" title="Envoyer" aria-label="Envoyer">↵</button>
+            <button id="btn" type="submit" class="btn-envoyer" title="Envoyer" aria-label="Envoyer">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5.5M6 11l6-5.5L18 11"/></svg>
+            </button>
           </div>
           <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabindex="-1" />
         </form>
@@ -191,9 +185,9 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260923a"></script>
-    <script src="./api-shim.js?v=20260923a"></script>
-    <script src="./chat-demo.js?v=20260923a"></script>
+    <script src="./keys.js?v=20260923b"></script>
+    <script src="./api-shim.js?v=20260923b"></script>
+    <script src="./chat-demo.js?v=20260923b"></script>
   </div>
 </body>
 </html>
