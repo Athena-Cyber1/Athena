@@ -30,8 +30,8 @@ window.ATHENA_KEYS = {
                    // le proxy Worker ci-dessous (l'amont 403 les navigateurs).
                    // ⚠ quota actuellement épuisé (RemainQuota=0) : recharger
                    // sur le dashboard tokenrouter.com avant usage.
-  tokenrouter_proxy: "",
-                   // URL du Worker déployé + /v1, ex. :
-                   // "https://athena-tokenrouter.moncompte.workers.dev/v1"
-                   // (vide = modèles tokenrouter grisés "proxy non déployé")
+  tokenrouter_proxy: "https://athena.amineelbekkai8.workers.dev/v1",
+                   // proxy Cloudflare Worker (déployé) — contourne le 403
+                   // navigateur de api.tokenrouter.com. Vide = modèles
+                   // tokenrouter grisés "proxy non déployé".
 };
