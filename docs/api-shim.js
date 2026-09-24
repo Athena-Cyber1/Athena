@@ -217,12 +217,13 @@
 
   function orModelsBody(entryModel) {
     if (OR_FREE.indexOf(entryModel) < 0) return null;
+    /* OpenRouter : models[] = 3 items max (400 au-delà). */
     if (OR_TRIO.indexOf(entryModel) >= 0) {
       var autresTrio = OR_TRIO.filter(function (m) { return m !== entryModel; });
-      return [entryModel].concat(autresTrio, OR_EXTRA);
+      return [entryModel].concat(autresTrio); /* 3 = trio complet */
     }
     var autresExtra = OR_EXTRA.filter(function (m) { return m !== entryModel; });
-    return [entryModel].concat(autresExtra, OR_TRIO);
+    return [entryModel].concat(autresExtra, OR_TRIO.slice(0, 1)); /* 3 : extra + 1er free */
   }
 
   function callModel(entry, messages, signal) {
