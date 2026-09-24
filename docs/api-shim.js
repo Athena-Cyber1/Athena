@@ -242,26 +242,27 @@
       var x = p.extra();
       Object.keys(x).forEach(function (k) { headers[k] = x[k]; });
     }
-    var corps = {
-      messages: messages,
-      temperature: 0.6,
-      max_tokens: 1200,
-      stream: false,
-    };
     var orList = pk === 'openrouter' ? orModelsBody(entry.model) : null;
-    if (orList) {
-      /* fallback inter-modèles : OpenRouter réessaie la liste sur 429/5xx */
-      corps.models = orList;
-    } else {
-      corps.model = entry.model;
+    var orBase = orList ? orList.slice() : null;
+
+    function corpsPour(liste) {
+      var c = {
+        messages: messages,
+        temperature: 0.6,
+        max_tokens: 1200,
+        stream: false,
+      };
+      if (liste) c.models = liste;
+      else c.model = entry.model;
+      return JSON.stringify(c);
     }
 
-    function uneTentative() {
+    function uneTentative(liste) {
       return realFetch(base + '/chat/completions', {
         method: 'POST',
         headers: headers,
         signal: signal || undefined,
-        body: JSON.stringify(corps),
+        body: corpsPour(liste),
       }).then(function (r) {
         return r.text().then(function (t) {
           var d = null;
@@ -270,6 +271,11 @@
             var m = (d && d.error && d.error.message) || t.slice(0, 180) || ('HTTP ' + r.status);
             var err = new Error(entry.provider + ' ' + r.status + ' : ' + m);
             err.status = r.status;
+            if (d && d.error && d.error.metadata) {
+              err.retryAfter = d.error.metadata.retry_after_seconds
+                || (d.error.metadata.headers && d.error.metadata.headers['Retry-After'])
+                || null;
+            }
             throw err;
           }
           var ch = d && d.choices && d.choices[0];
@@ -278,9 +284,13 @@
           if (Array.isArray(txt)) {
             txt = txt.map(function (x) { return (x && x.text) || ''; }).join('');
           }
+          /* reasoning-only (modèles free type GLM/gemma/qwen) : si content
+             vide, on retient le raisonnement plutôt que d'échouer. */
+          if ((!txt || !String(txt).trim()) && c && typeof c.reasoning === 'string' && c.reasoning.trim()) {
+            txt = c.reasoning;
+          }
           if (txt && typeof txt !== 'string') txt = JSON.stringify(txt);
           if (!txt || !String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
-          /* modèle réellement servi (si cascade models[] a basculé) */
           if (d && d.model) {
             try { entry._modeleReel = String(d.model); } catch (e) {}
           }
@@ -289,21 +299,32 @@
       });
     }
 
-    /* Retry court sur 429/502/503 (pool free partagé, « retry shortly ») */
-    var delaisRetry = [500, 1500];
-    function avecRetry(n) {
-      return uneTentative().catch(function (err) {
+    /* Retry sur 429/502/503 : backoff croissant + rotation du free
+       prioritaire (le 429 partagé frappe souvent le 1er de models[]). */
+    var delaisRetry = [600, 1600, 3200];
+    function avecRetry(n, liste) {
+      return uneTentative(liste).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
         var st = err && err.status;
         var retryable = st === 429 || st === 502 || st === 503;
         if (retryable && n < delaisRetry.length && !(signal && signal.aborted)) {
-          return new Promise(function (res) { setTimeout(res, delaisRetry[n]); })
-            .then(function () { return avecRetry(n + 1); });
+          var prochaine = liste;
+          if (liste && liste.length > 1) {
+            /* rotation : modèle rate-limité passe en fin de file */
+            prochaine = liste.slice(1).concat(liste.slice(0, 1));
+          }
+          var attente = delaisRetry[n];
+          if (err.retryAfter) {
+            var ra = parseInt(err.retryAfter, 10);
+            if (!isNaN(ra) && ra > 0 && ra < 8) attente = Math.min(ra * 1000, 5000);
+          }
+          return new Promise(function (res) { setTimeout(res, attente); })
+            .then(function () { return avecRetry(n + 1, prochaine); });
         }
         throw err;
       });
     }
-    return avecRetry(0);
+    return avecRetry(0, orBase);
   }
 
   function construireChaine(modelId) {
