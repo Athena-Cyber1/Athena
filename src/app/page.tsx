@@ -11,6 +11,10 @@ export default function Accueil() {
       <div id="app">
         <aside id="sidebar" className="sidebar" aria-label="Barre latérale">
           <div className="side-corps">
+            <div className="side-brand">
+              <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 2 1.65 6.35L20 10l-6.35 1.65L12 18l-1.65-6.35L4 10l6.35-1.65L12 2Z" /></svg></span>
+              <span>Athéna</span>
+            </div>
             <button id="nouvelle-discussion" type="button" className="btn-nouvelle">
               <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
               Nouvelle discussion
@@ -135,7 +139,7 @@ export default function Accueil() {
               <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M9.5 4v16" /></svg>
             </button>
             <div className="chat-marque">
-              <h1>Athéna</h1>
+              <h1 id="titre-conversation">Nouvelle discussion</h1>
             </div>
             <div className="etat-moteur" role="status" aria-label="État du moteur">
               <span id="dot" className="dot" aria-hidden="true"></span>
@@ -164,6 +168,10 @@ export default function Accueil() {
                 aria-label="Choisir le modèle de langue"
               ></div>
             </div>
+            <button id="partager" className="btn-partager" type="button" title="Copier la conversation">
+              <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4" /><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></svg>
+              <span>Partager</span>
+            </button>
           </header>
 
           <div
@@ -187,15 +195,16 @@ export default function Accueil() {
               >
                 <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 9.5 10 17a3.5 3.5 0 0 1-5-5l8-8a5 5 0 0 1 7 7l-8.5 8.5a6.5 6.5 0 0 1-9-9L11 3.5" /></svg>
               </button>
-              <input
+              <textarea
                 id="saisie"
                 name="saisie"
-                type="text"
                 className="saisie"
+                rows={1}
+                maxLength={4000}
                 autoComplete="off"
                 placeholder="Écrivez votre message…"
                 aria-label="Votre message"
-              />
+              ></textarea>
               <span id="compteur-saisie" className="compteur-saisie" aria-live="off">
                 0 / 4000
               </span>
@@ -215,8 +224,8 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260924n" strategy="beforeInteractive" />
-      <Script src="/demo/chat-demo.js?v=20260924n" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260924o" strategy="beforeInteractive" />
+      <Script src="/demo/chat-demo.js?v=20260924o" strategy="beforeInteractive" />
     </div>
   );
 }

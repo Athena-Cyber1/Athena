@@ -58,6 +58,7 @@ const $ = (id) => document.getElementById(id);
 const MODE_QA = new URLSearchParams(location.search).has('qa');
 function publierHooks(nom, obj) { if (MODE_QA) window[nom] = obj; }
 const msgsEl = $('msgs'), saisieEl = $('saisie'), btnEl = $('btn');
+const titreConversationEl = $('titre-conversation'), partagerEl = $('partager');
 const statutEl = $('statut'), dotEl = $('dot');
 const fichiersEl = $('fichiers'), attacherEl = $('attacher'), apercuFichiersEl = $('file-preview');
 const compteurSaisieEl = $('compteur-saisie');
@@ -452,7 +453,12 @@ function trierPourAffichage() {
   return [...conversations].sort((a, b) =>
     (Number(Boolean(b.epingle)) - Number(Boolean(a.epingle))) || (b.maj - a.maj));
 }
+function majTitreConversation() {
+  const c = conversationOuverte();
+  if (titreConversationEl && c) titreConversationEl.textContent = c.titre;
+}
 function rendreConversations() {
+  majTitreConversation();
   if (!listeConversationsEl) return;
   listeConversationsEl.replaceChildren();
   trierPourAffichage().forEach((c) => {
@@ -1828,6 +1834,38 @@ function creerBlocTraceCommande(donnees) {
    1) POST confirme:false → 428 = confirmation requise (ou 403 bloqué)
    2) modale utilisateur
    3) POST confirme:true → sortie/stderr affichées sous le bloc */
+function ajouterTraceActivite(codeEl, donnees) {
+  const pre = codeEl.closest('pre');
+  const parent = pre?.parentElement;
+  if (!pre || !parent) return;
+  let groupe = parent.querySelector('.activity-group');
+  if (!groupe) {
+    groupe = document.createElement('details');
+    groupe.className = 'activity-group';
+    groupe.open = true;
+    const sum = document.createElement('summary');
+    sum.appendChild(icoSvg('terminal'));
+    const label = document.createElement('span');
+    label.className = 'activity-label';
+    label.textContent = 'Exécuté';
+    const count = document.createElement('span');
+    count.className = 'activity-count';
+    count.textContent = '0 commande';
+    const chev = document.createElement('span');
+    chev.className = 'chev';
+    chev.appendChild(icoSvg('chevron'));
+    sum.append(label, count, chev);
+    const body = document.createElement('div');
+    body.className = 'activity-body';
+    groupe.append(sum, body);
+    parent.appendChild(groupe);
+  }
+  const body = groupe.querySelector('.activity-body');
+  body.appendChild(creerBlocTraceCommande({ ...donnees, ok: donnees.ok !== false }));
+  const n = body.querySelectorAll('.trace-cmd').length;
+  groupe.querySelector('.activity-count').textContent = n + ' commande' + (n > 1 ? 's' : '');
+}
+
 async function lancerCommandeLocale(commande, bouton, codeEl) {
   if (bouton.disabled) return;
   const brut = String(commande || '').trim();
@@ -1881,7 +1919,7 @@ async function lancerCommandeLocale(commande, bouton, codeEl) {
     // plutôt qu'un dump de texte brut — voir creerBlocTraceCommande.
     const ancienneZone = codeEl.closest('pre')?.querySelector('.exec-sortie');
     if (ancienneZone) ancienneZone.remove();
-    codeEl.closest('pre')?.insertAdjacentElement('afterend', creerBlocTraceCommande(d));
+    ajouterTraceActivite(codeEl, d);
   } catch (e) {
     const z = zone();
     z.textContent = String((e && e.message) || e).slice(0, 400);
@@ -2585,6 +2623,7 @@ async function envoyer(texte) {
   if (!occupe) verrouiller();
   const convo = conversationOuverte();
   saisieEl.value = '';
+  ajusterSaisie();
   fichiersJoints = [];
   fichiersEl.value = '';
   afficherFichiers();
@@ -2740,6 +2779,11 @@ async function genererReponse(convo) {
 /* v9.4 — limite de saisie (audit : aucune borne) : 4 000 caractères, côté
    client (la borne serveur est 8 000 par message avec pièces jointes). Le
    compteur n'apparaît qu'à l'approche de la limite — sobre par défaut. */
+function ajusterSaisie() {
+  saisieEl.style.height = 'auto';
+  saisieEl.style.height = Math.min(saisieEl.scrollHeight, 180) + 'px';
+  saisieEl.style.overflowY = saisieEl.scrollHeight > 180 ? 'auto' : 'hidden';
+}
 const MAX_SAISIE = 4000;
 saisieEl.maxLength = MAX_SAISIE;
 function majCompteurSaisie() {
@@ -2758,8 +2802,13 @@ $('form').addEventListener('submit', (e) => {
   }
   envoyer();
 });
-saisieEl.addEventListener('input', () => { majBouton(); majCompteurSaisie(); });
+saisieEl.addEventListener('input', () => { ajusterSaisie(); majBouton(); majCompteurSaisie(); });
 saisieEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    if (!occupe) envoyer();
+    return;
+  }
   if (e.key === 'ArrowUp') {
     if (saisies.length === 0) return;
     e.preventDefault();
@@ -2797,6 +2846,18 @@ ouvrirCompteEl.addEventListener('click', () => {
   menuCompteEl.hidden = estOuvert;
   ouvrirCompteEl.setAttribute('aria-expanded', String(!estOuvert));
 });
+if (partagerEl) {
+  partagerEl.addEventListener('click', async () => {
+    const texte = conversationVersMarkdown(conversationOuverte());
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard indisponible');
+      await navigator.clipboard.writeText(texte);
+      notifier('Conversation copiée dans le presse-papiers.');
+    } catch {
+      telechargerMarkdown('athena-' + slugFichier(conversationOuverte().titre) + '.md', texte);
+    }
+  });
+}
 gererCompteEl.addEventListener('click', () => {
   menuCompteEl.hidden = true;
   ouvrirCompteEl.setAttribute('aria-expanded', 'false');
@@ -3124,4 +3185,5 @@ async function chargerModelesHud(rafraichir = false) {
    sont évaluées avant le premier rendu : le rejeu d'une conversation avec
    étapes de raisonnement ne peut plus toucher une const en TDZ. */
 appliquerPreferences();
+ajusterSaisie();
 ouvrirConversation(idConversation);
