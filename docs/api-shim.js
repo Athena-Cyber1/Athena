@@ -183,7 +183,7 @@
       if (!up && p && !p.free) {
         label = m.provider + ' · ' + (!aCle ? 'clé manquante' : 'proxy non déployé');
       }
-      return { id: m.provider + ':' + m.model, name: m.name, provider: label, providerKey: m.provider, active: false, local: false, up: up };
+      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
