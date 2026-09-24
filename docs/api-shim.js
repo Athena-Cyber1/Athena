@@ -323,14 +323,22 @@
           }
           var attente = delaisRetry[n];
           /* quota OpenRouter free/min : Reset = timestamp ms (max 40 s) */
+          var peutAttendreReset = false;
           if (err.resetAt) {
             var reste = err.resetAt - Date.now();
-            if (reste > 0 && reste < 55000) attente = Math.min(reste + 250, 40000);
+            if (reste > 0 && reste < 55000) {
+              attente = Math.min(reste + 250, 40000);
+              peutAttendreReset = true;
+            } else if (reste >= 55000) {
+              /* fenêtre encore pleine (~1 min) : inutile d'attendre ici,
+                 on rend la main → pollinations répond vite, retry plus tard */
+              throw err;
+            }
           } else if (err.retryAfter) {
             var ra = parseInt(err.retryAfter, 10);
             if (!isNaN(ra) && ra > 0 && ra < 8) attente = Math.min(ra * 1000, 5000);
           }
-          /* free-models-per-min : 1 seul cycle d'attente puis on rend la main */
+          /* free-models-per-min sans reset exploitable : 1 cycle max */
           if (err.limitSource === 'openrouter_free_tier_per_minute' && n >= 1) {
             throw err;
           }
