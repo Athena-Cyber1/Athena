@@ -275,12 +275,23 @@
 
   async function agentLocalExec(payload, signal) {
     try {
-      var r = await appelBorne(realFetch(LOCAL_AGENT + '/exec', {
+      /* Chrome Local Network Access (2026) : une page HTTPS publique doit
+         déclarer targetAddressSpace:'loopback' pour toucher 127.0.0.1 —
+         sinon ERR_FAILED avant même le preflight CORS. Permission browser
+         (site info → Local Network → Allow) peut rester requise. */
+      var reqInit = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         signal: signal || undefined,
-      }), 25000);
+      };
+      try {
+        var reqObj = new Request(LOCAL_AGENT + '/exec', reqInit);
+        if ('targetAddressSpace' in reqObj) reqObj.targetAddressSpace = 'loopback';
+        var r = await appelBorne(realFetch(reqObj), 25000);
+      } catch (eReq) {
+        var r = await appelBorne(realFetch(LOCAL_AGENT + '/exec', reqInit), 25000);
+      }
       var t = await r.text();
       var d = null;
       try { d = JSON.parse(t); } catch (e) { d = null; }
@@ -288,7 +299,7 @@
       return json(d, r.status || 200);
     } catch (e) {
       return json({
-        erreur: 'Agent local injoignable — démarrez : node mini-services/local-agent/index.js',
+        erreur: 'Agent local injoignable ou Local Network bloqué — démarrez node mini-services/local-agent/index.js, puis autorisez le site (⋮ → Local Network → Allow).',
         detail: String((e && e.message) || e).slice(0, 160),
       }, 503);
     }
@@ -563,10 +574,18 @@
       if (method === 'POST') return gererExec(body, signal);
       if (method === 'GET') {
         try {
-          var hs = await appelBorne(realFetch(LOCAL_AGENT + '/sante'), 2000);
+          var hsReq = new Request(LOCAL_AGENT + '/sante');
+          if ('targetAddressSpace' in hsReq) hsReq.targetAddressSpace = 'loopback';
+          var hs;
+          try { hs = await appelBorne(realFetch(hsReq), 2000); }
+          catch (eH) { hs = await appelBorne(realFetch(LOCAL_AGENT + '/sante'), 2000); }
           return json(await hs.json(), hs.status);
         } catch (e) {
-          return json({ ok: false, erreur: 'agent local injoignable', port: 3020 }, 503);
+          return json({
+            ok: false,
+            erreur: 'agent local injoignable ou Local Network bloqué — autorisez le site (⋮ → Local Network → Allow)',
+            port: 3020,
+          }, 503);
         }
       }
       return json({ erreur: 'méthode' }, 405);

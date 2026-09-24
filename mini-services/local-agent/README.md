@@ -39,5 +39,10 @@ Sans `confirme: true` → HTTP **428** (l'UI demande d'abord à l'utilisateur).
 hostname
 ```
 
-et propose un bouton **Exécuter** qui appelle `POST /api/exec`
+et propose un bouton **Exécuter** qui appelle `POST /api/exec` → cet agent.
+
+**Chrome Local Network Access :** depuis une page HTTPS publique (GitHub Pages),
+Chrome exige l’autorisation du site : ⋮ → Local Network → **Allow**
+(sinon `LocalNetworkAccessPermissionDenied`). Le stack Next local
+(`localhost:3000`) proxy `/api/exec` côté serveur et n’est pas concerné.
 (intercepté par `api-shim.js` → `http://127.0.0.1:3020/exec`).

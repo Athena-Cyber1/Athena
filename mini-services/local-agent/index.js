@@ -67,10 +67,10 @@ const DENY = [
 
 const journal = [];
 
-function cors(origin) {
+function cors(origin, req) {
   const o = origin || '';
   const ok = ORIGINES_OK(o);
-  return {
+  const h = {
     'Access-Control-Allow-Origin': ok ? (o === 'null' ? 'null' : o) : '',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'content-type, x-athena-token',
@@ -78,6 +78,14 @@ function cors(origin) {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
   };
+  /* Chrome Private Network Access : une page HTTPS publique appelle
+     127.0.0.1 — le preflight exige cet en-tête sinon fetch échoue. */
+  if (req && req.headers && (req.headers['access-control-request-private-network'] || req.headers['access-control-request-private-network'] === 'true')) {
+    h['Access-Control-Allow-Private-Network'] = 'true';
+  } else {
+    h['Access-Control-Allow-Private-Network'] = 'true';
+  }
+  return h;
 }
 
 function ORIGINES_OK(origin) {
@@ -87,8 +95,8 @@ function ORIGINES_OK(origin) {
   return false;
 }
 
-function json(res, status, body, origin) {
-  const headers = cors(origin);
+function json(res, status, body, origin, req) {
+  const headers = cors(origin, req);
   for (const [k, v] of Object.entries(headers)) if (v) res.setHeader(k, v);
   res.writeHead(status);
   res.end(JSON.stringify(body));
@@ -183,7 +191,7 @@ const serveur = http.createServer(async (req, res) => {
   const chemin = url.pathname;
 
   if (req.method === 'OPTIONS') {
-    const h = cors(origin);
+    const h = cors(origin, req);
     for (const [k, v] of Object.entries(h)) if (v) res.setHeader(k, v);
     res.writeHead(204);
     res.end();
@@ -191,7 +199,7 @@ const serveur = http.createServer(async (req, res) => {
   }
 
   if (!ORIGINES_OK(origin)) {
-    json(res, 403, { erreur: 'origine non autorisée' }, origin);
+    json(res, 403, { erreur: 'origine non autorisée' }, origin, req);
     return;
   }
 
@@ -206,12 +214,12 @@ const serveur = http.createServer(async (req, res) => {
         platform: process.platform,
         user: os.userInfo().username,
         host: os.hostname(),
-      }, origin);
+      }, origin, req);
       return;
     }
 
     if (req.method === 'GET' && chemin === '/journal') {
-      json(res, 200, { entrees: journal.slice(-50) }, origin);
+      json(res, 200, { entrees: journal.slice(-50) }, origin, req);
       return;
     }
 
@@ -221,13 +229,13 @@ const serveur = http.createServer(async (req, res) => {
       try { corps = JSON.parse(brut || '{}'); } catch (_) {}
       const commande = String(corps.commande || corps.command || '').trim();
       if (!commande || commande.length > 2000) {
-        json(res, 400, { erreur: 'commande absente ou trop longue' }, origin);
+        json(res, 400, { erreur: 'commande absente ou trop longue' }, origin, req);
         return;
       }
       const confirme = corps.confirme === true || AUTO;
       const motif = refus(commande);
       if (motif) {
-        json(res, 403, { erreur: 'commande bloquée par la liste de refus', motif }, origin);
+        json(res, 403, { erreur: 'commande bloquée par la liste de refus', motif }, origin, req);
         return;
       }
       if (!confirme) {
@@ -236,12 +244,12 @@ const serveur = http.createServer(async (req, res) => {
           commande,
           pret: true,
           hint: 'Renvoyez avec confirme:true après validation utilisateur',
-        }, origin);
+        }, origin, req);
         return;
       }
       const cwd = typeof corps.cwd === 'string' && corps.cwd ? corps.cwd : process.cwd();
       if (!dansAllowDir(cwd)) {
-        json(res, 403, { erreur: 'répertoire hors zone autorisée (--allow)' }, origin);
+        json(res, 403, { erreur: 'répertoire hors zone autorisée (--allow)' }, origin, req);
         return;
       }
       const t = Math.min(Number(corps.timeout_ms) || TIMEOUT_MS, TIMEOUT_MS);
@@ -256,13 +264,13 @@ const serveur = http.createServer(async (req, res) => {
       journal.push(entree);
       if (journal.length > 200) journal.shift();
       console.log(`[local-agent] ${r.ok ? 'OK' : 'ERR'} code=${r.code} ${r.duree_ms}ms :: ${entree.commande}`);
-      json(res, 200, { ...r, commande }, origin);
+      json(res, 200, { ...r, commande }, origin, req);
       return;
     }
 
-    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, POST /exec)' }, origin);
+    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, POST /exec)' }, origin, req);
   } catch (e) {
-    json(res, 500, { erreur: String((e && e.message) || e).slice(0, 200) }, origin);
+    json(res, 500, { erreur: String((e && e.message) || e).slice(0, 200) }, origin, req);
   }
 });
 

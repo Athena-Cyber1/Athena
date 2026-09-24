@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260924j`
+> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260924k`
 
 ---
 
@@ -322,7 +322,21 @@ Erreur : `{"type":"erreur","erreur":"Échec des modèles : …"}`
 
 ### 5.2 `POST /api/exec` → local-agent
 
-Voir §3.3. Sur Pages sans agent local : `{"erreur":"agent local injoignable"}`.
+**Chemin Pages :** UI `lancerCommandeLocale` → shim `/api/exec` → `fetch http://127.0.0.1:3020/exec`
+(`targetAddressSpace: 'loopback'` — opt-in Chrome Local Network Access).
+
+**Chemin stack local :** même UI → route Next `src/app/api/exec/route.ts` (proxy serveur,
+pas de restriction navigateur / LNA).
+
+**Chrome Local Network Access (2026) :** une page **HTTPS publique** (Pages GitHub) qui
+appelle `127.0.0.1` est bloquée tant que l’utilisateur n’a **pas autorisé le site** :
+- ⋮ → Informations sur le site → **Local Network** → **Allow**, ou
+- `chrome://settings/content/localNetwork` → autoriser `athena-cyber1.github.io`.
+
+Sans permission : erreur **503** explicite (agent injoignable **ou** Local Network bloqué).
+Sur `localhost:3000` (stack Next), le proxy serveur contourne la restriction.
+
+Sans agent démarré : `{"erreur":"agent local injoignable…"}`.
 
 ### 5.3 Autres routes Pages shim
 
@@ -342,7 +356,7 @@ Voir §3.3. Sur Pages sans agent local : `{"erreur":"agent local injoignable"}`.
 | Clés API | dans `keys.js` **public** — uniquement plafonds limités/révocables ; priorité `localStorage.athena_api_keys` |
 | Pages shim | appels navigateur directs, pas de proxy serveur Athéna |
 | Next API | `garderOrigine()` CSRF + sanitization fuite infra (P0) |
-| local-agent | **127.0.0.1**, CORS liste blanche, déni motifs dangereux, confirmation, timeout, journal |
+| local-agent | **127.0.0.1**, CORS + `Access-Control-Allow-Private-Network`, déni motifs dangereux, confirmation, timeout, journal |
 | sidecar | canari anti-injection, FILE_DATA = non fiable, refus exécutables upload |
 | Worker | relaie Authorization sans Origin (contourne 403 tokenrouter) |
 

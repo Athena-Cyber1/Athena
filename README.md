@@ -56,13 +56,20 @@ OpenRouter `:free` (22+), Pollinations `openai-fast`, locaux Ollama / LM Studio 
 
 ## Commandes PC
 
-Les modèles peuvent proposer une commande ; l'UI affiche un bouton
-**Exécuter** → `POST /api/exec` → `local-agent` (`127.0.0.1:3020`)
-→ shell avec liste de refus + confirmation.
+Les modèles peuvent proposer une commande dans un bloc ` ```athena-exec ` ;
+l'UI affiche un bouton **Exécuter** → confirmation → `POST /api/exec`
+→ `local-agent` (`127.0.0.1:3020`).
 
 ```bash
 node mini-services/local-agent/index.js
+# ou sans confirmation (dev) :
+node mini-services/local-agent/index.js --auto
 ```
+
+**Chrome / Pages GitHub :** autoriser le site (⋮ → **Local Network** → Allow),
+sinon le navigateur bloque `127.0.0.1` depuis une page HTTPS publique.
+Sur le stack local (`localhost:3000`), le proxy Next `/api/exec` contourne
+cette restriction.
 
 ## Sécurité
 
