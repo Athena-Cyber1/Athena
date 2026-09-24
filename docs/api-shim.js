@@ -272,9 +272,15 @@
             var err = new Error(entry.provider + ' ' + r.status + ' : ' + m);
             err.status = r.status;
             if (d && d.error && d.error.metadata) {
-              err.retryAfter = d.error.metadata.retry_after_seconds
-                || (d.error.metadata.headers && d.error.metadata.headers['Retry-After'])
+              var md = d.error.metadata;
+              err.retryAfter = md.retry_after_seconds
+                || (md.headers && md.headers['Retry-After'])
                 || null;
+              err.limitSource = md.limit_source || null;
+              /* free-models-per-min : Reset = epoch ms de fin de fenêtre */
+              if (md.headers && md.headers['X-RateLimit-Reset']) {
+                err.resetAt = parseInt(md.headers['X-RateLimit-Reset'], 10) || null;
+              }
             }
             throw err;
           }
@@ -300,7 +306,8 @@
     }
 
     /* Retry sur 429/502/503 : backoff croissant + rotation du free
-       prioritaire (le 429 partagé frappe souvent le 1er de models[]). */
+       prioritaire (le 429 partagé frappe souvent le 1er de models[]).
+       Quota free-models-per-min (20/min) : on attend le vrai reset. */
     var delaisRetry = [600, 1600, 3200];
     function avecRetry(n, liste) {
       return uneTentative(liste).catch(function (err) {
@@ -314,9 +321,17 @@
             prochaine = liste.slice(1).concat(liste.slice(0, 1));
           }
           var attente = delaisRetry[n];
-          if (err.retryAfter) {
+          /* quota OpenRouter free/min : Reset = timestamp ms */
+          if (err.resetAt) {
+            var reste = err.resetAt - Date.now();
+            if (reste > 0 && reste < 70000) attente = reste + 250;
+          } else if (err.retryAfter) {
             var ra = parseInt(err.retryAfter, 10);
             if (!isNaN(ra) && ra > 0 && ra < 8) attente = Math.min(ra * 1000, 5000);
+          }
+          /* free-models-per-min : ne tourne pas en boucle sur la même fenêtre */
+          if (err.limitSource === 'openrouter_free_tier_per_minute' && n >= 1) {
+            throw err;
           }
           return new Promise(function (res) { setTimeout(res, attente); })
             .then(function () { return avecRetry(n + 1, prochaine); });
@@ -388,7 +403,9 @@
           : '';
         var repli = modeleDemande && modeleReel && modeleReel !== modeleDemande;
         var nomVoie = entry.name || entry.id;
-        if (modeleReel && entry.name && modeleReel !== entry.model) {
+        /* n'afficher « (openrouter free) » que si CET entry est openrouter
+           (Pollinations renvoie aussi un d.model exotique : gpt-oss-20b). */
+        if (entry.providerKey === 'openrouter' && modeleReel && modeleReel !== entry.model) {
           nomVoie = modeleReel + ' (openrouter free)';
         }
         var payload = {
