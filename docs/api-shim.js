@@ -323,12 +323,10 @@
           }
           var attente = delaisRetry[n];
           /* quota OpenRouter free/min : Reset = timestamp ms (max 40 s) */
-          var peutAttendreReset = false;
           if (err.resetAt) {
             var reste = err.resetAt - Date.now();
             if (reste > 0 && reste < 55000) {
               attente = Math.min(reste + 250, 40000);
-              peutAttendreReset = true;
             } else if (reste >= 55000) {
               /* fenêtre encore pleine (~1 min) : inutile d'attendre ici,
                  on rend la main → pollinations répond vite, retry plus tard */
