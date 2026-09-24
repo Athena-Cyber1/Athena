@@ -32,6 +32,7 @@ const TOKENS_AUTORISES = new Set([
   "sur-primaire", "lien",
   "violet", "violet-doux", "violet-texte",
   "ambre-fond", "ambre-bord", "ambre-texte",
+  "danger-fond", "danger-bord", "danger-texte",
   "rouge-fond", "rouge-bord", "rouge-texte",
   "gris-fond", "gris-bord", "gris-texte",
   "code-fond", "heros", "ombre",
@@ -47,7 +48,7 @@ const ALIAS_TOKENS: Record<string, string> = {
   "on-primary": "sur-primaire", "primary-contrast": "sur-primaire",
   link: "lien", anchor: "lien",
   secondary: "violet", purple: "violet", warning: "ambre-texte",
-  danger: "rouge-texte", error: "rouge-texte", success: "primaire-texte",
+  danger: "danger-texte", error: "danger-texte", success: "primaire-texte",
   code: "code-fond", shadow: "ombre",
 };
 

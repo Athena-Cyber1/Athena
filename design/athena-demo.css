@@ -27,9 +27,13 @@
   --ambre-fond: #f1f1f1;
   --ambre-bord: #d2d2d2;
   --ambre-texte: #3a3a3a;
-  --rouge-fond: #f0f0f0;     /* danger : monochrome fort (noir sur gris) */
-  --rouge-bord: #c9c9c9;
-  --rouge-texte: #141414;
+  --danger-fond: #f0f0f0;    /* danger : monochrome fort (noir sur gris) */
+  --danger-bord: #c9c9c9;
+  --danger-texte: #141414;
+  /* alias hérités (thèmes importés existants) */
+  --rouge-fond: var(--danger-fond);
+  --rouge-bord: var(--danger-bord);
+  --rouge-texte: var(--danger-texte);
   --gris-fond: #ededed;
   --gris-bord: #dcdcdc;
   --gris-texte: #606060;
@@ -62,9 +66,12 @@
     --ambre-fond: #202020;
     --ambre-bord: #404040;
     --ambre-texte: #cfcfcf;
-    --rouge-fond: #202020;
-    --rouge-bord: #464646;
-    --rouge-texte: #f2f2f2;
+    --danger-fond: #202020;
+    --danger-bord: #464646;
+    --danger-texte: #f2f2f2;
+    --rouge-fond: var(--danger-fond);
+    --rouge-bord: var(--danger-bord);
+    --rouge-texte: var(--danger-texte);
     --gris-fond: #1a1a1a;
     --gris-bord: #303030;
     --gris-texte: #a0a0a0;
@@ -452,8 +459,8 @@ a:hover {
   background: var(--primaire-doux);
 }
 .convo-suppr:hover {
-  color: var(--rouge-texte);
-  background: var(--rouge-fond);
+  color: var(--danger-texte);
+  background: var(--danger-fond);
 }
 .renommer-conversation {
   flex: 1 1 auto;
@@ -709,16 +716,33 @@ a:hover {
   border-radius: 50%;
   background: var(--gris-bord);
   box-shadow: none;
-  transition: background 0.25s ease;
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+  cursor: default;
+  border: 0 solid transparent;
 }
+/* Prêt : disque PLEIN — lisibles sans animation (reduce-motion compris). */
 .dot.pret {
   background: var(--ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
 }
+/* Indisponible : ANNEAU creux — forme distincte du disque plein,
+   donc distinguishable même sans pulse (reduce-animation). */
 .dot.indisponible {
-  background: var(--primaire);
+  background: transparent;
+  border: 2.5px solid var(--primaire);
   box-shadow: 0 0 0 3px var(--primaire-doux);
   animation: pulse 1.6s ease-in-out infinite;
+}
+/* Actionnable : clic = relance immédiate de la sonde. */
+button.dot,
+.dot[data-actionnable] {
+  cursor: pointer;
+  padding: 0;
+}
+button.dot:focus-visible,
+.dot[data-actionnable]:focus-visible {
+  outline: 2px solid var(--primaire);
+  outline-offset: 3px;
 }
 
 /* ————— Fil de discussion ————— */
@@ -1574,9 +1598,9 @@ span.think:not(details .think) {
   animation: apparait 0.16s ease;
 }
 .file-chip.echec {
-  background: var(--rouge-fond);
-  border-color: var(--rouge-bord);
-  color: var(--rouge-texte);
+  background: var(--danger-fond);
+  border-color: var(--danger-bord);
+  color: var(--danger-texte);
 }
 .file-chip-name {
   max-width: 260px;
@@ -1599,8 +1623,8 @@ span.think:not(details .think) {
   place-items: center;
 }
 .file-chip-remove:hover {
-  color: var(--rouge-texte);
-  background: var(--rouge-fond);
+  color: var(--danger-texte);
+  background: var(--danger-fond);
 }
 .file-chip-remove .ico {
   width: 13px;
@@ -1686,8 +1710,8 @@ span.think:not(details .think) {
   opacity: 1;
 }
 .compteur-saisie.limite {
-  color: var(--rouge-texte);
-  border-color: var(--rouge-bord);
+  color: var(--danger-texte);
+  border-color: var(--danger-bord);
   font-weight: 700;
 }
 .btn-envoyer {
@@ -1894,11 +1918,58 @@ span.think:not(details .think) {
 .modale-principal:hover {
   background: var(--primaire-fort) !important;
 }
+/* Danger : contour DOUBLE + fond contrasté — forme distincte du bouton
+   principal (le monochrome interdit de jouer sur la teinte rouge). */
 .modale-danger {
-  background: var(--texte) !important;
-  color: var(--fond) !important;
-  border-color: var(--texte) !important;
-  font-weight: 600;
+  background: var(--fond) !important;
+  color: var(--texte) !important;
+  border: 2px double var(--texte) !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.78rem;
+}
+.modale-danger:hover {
+  background: var(--danger-fond) !important;
+  border-color: var(--danger-texte) !important;
+  color: var(--danger-texte) !important;
+}
+/* Bandeau persistant (stockage saturé, etc.) — role=alert, pas un toast. */
+.bandeau-persistant {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--danger-fond);
+  color: var(--danger-texte);
+  border-bottom: 2px solid var(--danger-bord);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  z-index: 20;
+}
+.bandeau-persistant[hidden] {
+  display: none !important;
+}
+.bandeau-persistant .bandeau-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.bandeau-persistant button {
+  border: 1px solid var(--danger-bord);
+  background: var(--carte);
+  color: var(--danger-texte);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  min-height: 30px;
+}
+.bandeau-persistant button:hover {
+  border-color: var(--danger-texte);
 }
 
 /* ————— Animations ————— */

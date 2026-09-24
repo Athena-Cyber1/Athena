@@ -342,10 +342,42 @@ function sauverConversations() {
     if (!quotaAverti) {
       quotaAverti = true;
       try {
-        notifier('Stockage local saturé : les nouveaux messages ne seront plus sauvegardés. Exportez vos conversations (Alt + E).');
+        afficherBandeauStockage();
       } catch { /* toast pas encore prêt (sauvegarde très précoce) */ }
     }
   }
+}
+
+/* Bandeau PERSISTANT (role=alert) tant que le stockage reste saturé —
+   un toast 6 s était le seul avertissement et pouvait être manqué. */
+function afficherBandeauStockage() {
+  if (document.getElementById('bandeau-stockage')) return;
+  const shell = document.querySelector('.chat-shell');
+  if (!shell) return;
+  const b = document.createElement('div');
+  b.id = 'bandeau-stockage';
+  b.className = 'bandeau-persistant';
+  b.setAttribute('role', 'alert');
+  const msg = document.createElement('span');
+  msg.textContent = 'Stockage local saturé : les nouveaux messages ne seront plus sauvegardés. Exportez vos conversations.';
+  b.appendChild(msg);
+  const actions = document.createElement('span');
+  actions.className = 'bandeau-actions';
+  const btnExport = document.createElement('button');
+  btnExport.type = 'button';
+  btnExport.textContent = 'Exporter (Alt+E)';
+  btnExport.addEventListener('click', () => {
+    exporterToutesConversations();
+  });
+  actions.appendChild(btnExport);
+  const btnClose = document.createElement('button');
+  btnClose.type = 'button';
+  btnClose.textContent = 'Masquer';
+  btnClose.title = 'Masquer cet avertissement (réapparaîtra si le stockage reste plein)';
+  btnClose.addEventListener('click', () => { b.hidden = true; });
+  actions.appendChild(btnClose);
+  b.appendChild(actions);
+  shell.insertBefore(b, shell.firstChild);
 }
 
 /* v20260922l (19) : synchronisation inter-onglets — localStorage est PARTAGÉ
@@ -2224,6 +2256,15 @@ function majStatut(s) {
   dotEl.className = 'dot' + (s === 'pret' ? ' pret' : s === 'indisponible' ? ' indisponible' : '');
   dotEl.style.background = '';
   dotEl.style.boxShadow = '';
+  /* Actionnable : clic = relance immédiate de la sonde (porte de sortie
+     sur l'alerte pulsée, au lieu d'un signal sans action). */
+  dotEl.setAttribute('data-actionnable', '1');
+  dotEl.title = s === 'indisponible'
+    ? 'Moteur indisponible — cliquer pour relancer la vérification'
+    : 'État du moteur — cliquer pour revérifier';
+}
+if (dotEl) {
+  dotEl.addEventListener('click', () => { sonder(); });
 }
 sonder();
 setInterval(sonder, 25000);

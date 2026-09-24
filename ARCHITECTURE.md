@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260924l`
+> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260924m`
 
 ---
 
@@ -55,7 +55,6 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 │
 ├── design/                      ★ SOURCE DE TOUS LES FICHIERS DESIGN
 │   ├── athena-demo.css          design monochrome (tokens + composants)
-│   ├── globals.css              tokens Tailwind / shadcn
 │   ├── logo.svg                 favicon / marque
 │   ├── theme-loader.js          import de thème (/api/design)
 │   └── theme-importe.json       dernier thème importé
@@ -71,7 +70,7 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 ├── src/                         ★ APPLICATION NEXT.JS (dev local)
 │   ├── app/
 │   │   ├── page.tsx             coquille DOM (miroir docs/index.html)
-│   │   ├── layout.tsx           importe design/globals.css
+│   │   ├── layout.tsx           importe design/athena-demo.css
 │   │   ├── not-found.tsx
 │   │   └── api/
 │   │       ├── chat/route.ts    passerelle → sidecar :3010
@@ -80,9 +79,7 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 │   │       ├── entrainer/       entraînement
 │   │       ├── design/          thèmes (lit/écrit design/theme-importe.json)
 │   │       └── route.ts         racine API
-│   ├── components/ui/           composants shadcn (accordéon, dialog…)
-│   ├── hooks/                   use-mobile, use-toast
-│   ├── lib/                     db.ts, secu.ts (garde origine), utils.ts
+│   ├── lib/                     db.ts, secu.ts (garde origine)
 │   └── proxy.ts                 en-têtes sécurité (ex-middleware)
 │
 ├── public/                      assets Next (miroirs design/ + docs)

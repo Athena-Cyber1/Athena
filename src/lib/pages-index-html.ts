@@ -186,9 +186,9 @@ export const PAGES_INDEX_HTML = `<!doctype html>
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260924l"></script>
-    <script src="./api-shim.js?v=20260924l"></script>
-    <script src="./chat-demo.js?v=20260924l"></script>
+    <script src="./keys.js?v=20260924m"></script>
+    <script src="./api-shim.js?v=20260924m"></script>
+    <script src="./chat-demo.js?v=20260924m"></script>
   </div>
 </body>
 </html>

@@ -25,7 +25,7 @@ console.log('ids=' + ids.length + ' dups=' + JSON.stringify([...new Set(ids.filt
 const js = fs.readFileSync(path.join(dir, 'chat-demo.js'), 'utf8');
 const need = [...new Set([...js.matchAll(/getElementById\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map(x => x[1]))];
 // les entrainement-* sont créés dynamiquement par le JS (cf. page.tsx)
-const dyn = new Set(['entrainement-exemples','entrainement-progres','entrainement-sujets','entrainement-web','entrainement-info','entrainement-lancer','import-fichiers']);
+const dyn = new Set(['entrainement-exemples','entrainement-progres','entrainement-sujets','entrainement-web','entrainement-info','entrainement-lancer','import-fichiers','bandeau-stockage']);
 const missing = need.filter(i => !ids.includes(i) && !dyn.has(i));
 console.log('JS needs=' + need.length + ' MISSING=' + JSON.stringify(missing));
 

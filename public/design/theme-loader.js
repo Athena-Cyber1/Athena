@@ -19,6 +19,7 @@
     "sur-primaire", "lien",
     "violet", "violet-doux", "violet-texte",
     "ambre-fond", "ambre-bord", "ambre-texte",
+    "danger-fond", "danger-bord", "danger-texte",
     "rouge-fond", "rouge-bord", "rouge-texte",
     "gris-fond", "gris-bord", "gris-texte",
     "code-fond", "heros", "ombre",
@@ -39,18 +40,59 @@
     });
     var ancien = document.getElementById("ath-theme-importe");
     if (ancien) ancien.remove();
-    if (!declarations.length) return false;
+    if (!declarations.length) { majReset(false); return false; }
     var st = document.createElement("style");
     st.id = "ath-theme-importe";
     st.textContent = ":root{" + declarations.join(";") + "}";
     document.head.appendChild(st);
+    majReset(true);
     return true;
+  }
+
+  /* Affordance visible : bouton « Réinitialiser » à côté de #btn-theme
+     dès qu'un thème importé est actif (le clic droit restait invisible
+     et impossible au toucher). */
+  function majReset(actif) {
+    var bouton = document.getElementById("btn-theme");
+    if (!bouton) return;
+    var r = document.getElementById("btn-reset-theme");
+    if (!r) {
+      r = document.createElement("button");
+      r.id = "btn-reset-theme";
+      r.type = "button";
+      r.className = "side-onglet";
+      r.title = "Rétablir le thème par défaut (noir & blanc)";
+      r.textContent = "Réinitialiser le thème";
+      if (bouton.parentNode) bouton.parentNode.insertBefore(r, bouton.nextSibling);
+      r.addEventListener("click", function (e) {
+        e.stopPropagation();
+        reinitialiser();
+      });
+    }
+    r.hidden = !actif;
+  }
+
+  function reinitialiser() {
+    fetch("/api/design", { method: "DELETE" })
+      .then(function () {
+        var ancien = document.getElementById("ath-theme-importe");
+        if (ancien) ancien.remove();
+        majReset(false);
+        notifier("Thème réinitialisé (noir & blanc par défaut, liens rouges).");
+      })
+      .catch(function () { notifier("Réinitialisation du thème impossible."); });
   }
 
   function chargerAuDemarrage() {
     fetch("/api/design", { cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (t) { if (t && t.tokens) appliquerTokens(t.tokens); })
+      .then(function (t) {
+        if (t && t.tokens && Object.keys(t.tokens).length) {
+          appliquerTokens(t.tokens);
+        } else {
+          majReset(false);
+        }
+      })
       .catch(function () {});
   }
 
@@ -112,15 +154,11 @@
     bouton.addEventListener("click", function () {
       entree.click();
     });
+    /* Clic droit conservé comme raccourci power-user ; l'affordance
+       principale est le bouton #btn-reset-theme visible. */
     bouton.addEventListener("contextmenu", function (e) {
       e.preventDefault();
-      fetch("/api/design", { method: "DELETE" })
-        .then(function () {
-          var ancien = document.getElementById("ath-theme-importe");
-          if (ancien) ancien.remove();
-          notifier("Thème réinitialisé (noir & blanc par défaut, liens rouges). Clic droit pour réinitialiser.");
-        })
-        .catch(function () {});
+      reinitialiser();
     });
   }
 
