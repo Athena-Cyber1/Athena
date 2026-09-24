@@ -305,10 +305,11 @@
       });
     }
 
-    /* Retry sur 429/502/503 : backoff croissant + rotation du free
-       prioritaire (le 429 partagé frappe souvent le 1er de models[]).
-       Quota free-models-per-min (20/min) : on attend le vrai reset. */
-    var delaisRetry = [600, 1600, 3200];
+    /* Retry sur 429/502/503 : 2 retries max (quota free = 20 req/min,
+       chaque POST compte). Rotation du free prioritaire à chaque essai.
+       Quota free-models-per-min : on attend le vrai reset (borné pour
+       rester sous appelBorne). */
+    var delaisRetry = [700, 1800];
     function avecRetry(n, liste) {
       return uneTentative(liste).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
@@ -321,15 +322,15 @@
             prochaine = liste.slice(1).concat(liste.slice(0, 1));
           }
           var attente = delaisRetry[n];
-          /* quota OpenRouter free/min : Reset = timestamp ms */
+          /* quota OpenRouter free/min : Reset = timestamp ms (max 40 s) */
           if (err.resetAt) {
             var reste = err.resetAt - Date.now();
-            if (reste > 0 && reste < 70000) attente = reste + 250;
+            if (reste > 0 && reste < 55000) attente = Math.min(reste + 250, 40000);
           } else if (err.retryAfter) {
             var ra = parseInt(err.retryAfter, 10);
             if (!isNaN(ra) && ra > 0 && ra < 8) attente = Math.min(ra * 1000, 5000);
           }
-          /* free-models-per-min : ne tourne pas en boucle sur la même fenêtre */
+          /* free-models-per-min : 1 seul cycle d'attente puis on rend la main */
           if (err.limitSource === 'openrouter_free_tier_per_minute' && n >= 1) {
             throw err;
           }
@@ -396,7 +397,10 @@
     for (var i = 0; i < plan.chaine.length; i++) {
       var entry = plan.chaine[i];
       try {
-        var texte = await appelBorne(callModel(entry, messages, signal), 60000);
+        /* openrouter free : timeout plus large (attente reset quota ~40 s
+           + 1 requête) pour ne pas rendre la main à pollinations trop tôt. */
+        var borneMs = entry.providerKey === 'openrouter' ? 70000 : 60000;
+        var texte = await appelBorne(callModel(entry, messages, signal), borneMs);
         var modeleReel = entry._modeleReel || entry.model || '';
         var modeleDemande = typeof body.model_id === 'string' && body.model_id
           ? body.model_id.split(':').slice(1).join(':')
