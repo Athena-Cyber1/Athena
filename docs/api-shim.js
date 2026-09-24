@@ -42,12 +42,14 @@
     { provider: 'groq', model: 'llama-3.3-70b-versatile', name: 'llama-3.3-70b · groq' },
     { provider: 'groq', model: 'llama-3.1-8b-instant', name: 'llama-3.1-8b · groq' },
     /* openrouter : les ids « :free » fonctionnent avec 0 crédit sur un
-       compte gratuit (sans carte) — catalogue vérifié via /models public. */
-    { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter' },
-    { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'nemotron-3-ultra 550b free · openrouter' },
+       compte gratuit (sans carte) — catalogue vérifié via /models public.
+       Trio prioritare d'abord (un seul endpoint chacun → cascade models[]
+       côté OpenRouter si l'un est rate-limité). */
     { provider: 'openrouter', model: 'z-ai/glm-5.2:free', name: 'glm-5.2 free · openrouter' },
     { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter' },
     { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'nemotron-3-ultra 550b free · openrouter' },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -199,6 +201,30 @@
     return cat;
   }
 
+  /* Modèles openrouter « :free » du catalogue : envoyés en tableau models[]
+     OpenRouter cascade lui-même sur 429/5xx (rate-limit pool partagé amont
+     = une seule issue : un autre free du trio/extra). */
+  var OR_TRIO = [
+    'z-ai/glm-5.2:free',
+    'google/gemma-4-31b-it:free',
+    'qwen/qwen3.8-27b:free',
+  ];
+  var OR_EXTRA = [
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+  ];
+  var OR_FREE = OR_TRIO.concat(OR_EXTRA);
+
+  function orModelsBody(entryModel) {
+    if (OR_FREE.indexOf(entryModel) < 0) return null;
+    if (OR_TRIO.indexOf(entryModel) >= 0) {
+      var autresTrio = OR_TRIO.filter(function (m) { return m !== entryModel; });
+      return [entryModel].concat(autresTrio, OR_EXTRA);
+    }
+    var autresExtra = OR_EXTRA.filter(function (m) { return m !== entryModel; });
+    return [entryModel].concat(autresExtra, OR_TRIO);
+  }
+
   function callModel(entry, messages, signal) {
     /* entry.provider = label d'affichage (« tokenrouter · proxy CF ») ;
        la clé PROVIDERS est dans entry.providerKey ( ajouté au catalogue ). */
@@ -215,36 +241,68 @@
       var x = p.extra();
       Object.keys(x).forEach(function (k) { headers[k] = x[k]; });
     }
-    return realFetch(base + '/chat/completions', {
-      method: 'POST',
-      headers: headers,
-      signal: signal || undefined,
-      body: JSON.stringify({
-        model: entry.model,
-        messages: messages,
-        temperature: 0.6,
-        max_tokens: 1200,
-        stream: false,
-      }),
-    }).then(function (r) {
-      return r.text().then(function (t) {
-        var d = null;
-        try { d = JSON.parse(t); } catch (e) { d = null; }
-        if (!r.ok) {
-          var m = (d && d.error && d.error.message) || t.slice(0, 180) || ('HTTP ' + r.status);
-          throw new Error(entry.provider + ' ' + r.status + ' : ' + m);
-        }
-        var ch = d && d.choices && d.choices[0];
-        var c = ch && ch.message;
-        var txt = c && c.content;
-        if (Array.isArray(txt)) {
-          txt = txt.map(function (x) { return (x && x.text) || ''; }).join('');
-        }
-        if (txt && typeof txt !== 'string') txt = JSON.stringify(txt);
-        if (!txt || !String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
-        return String(txt);
+    var corps = {
+      messages: messages,
+      temperature: 0.6,
+      max_tokens: 1200,
+      stream: false,
+    };
+    var orList = pk === 'openrouter' ? orModelsBody(entry.model) : null;
+    if (orList) {
+      /* fallback inter-modèles : OpenRouter réessaie la liste sur 429/5xx */
+      corps.models = orList;
+    } else {
+      corps.model = entry.model;
+    }
+
+    function uneTentative() {
+      return realFetch(base + '/chat/completions', {
+        method: 'POST',
+        headers: headers,
+        signal: signal || undefined,
+        body: JSON.stringify(corps),
+      }).then(function (r) {
+        return r.text().then(function (t) {
+          var d = null;
+          try { d = JSON.parse(t); } catch (e) { d = null; }
+          if (!r.ok) {
+            var m = (d && d.error && d.error.message) || t.slice(0, 180) || ('HTTP ' + r.status);
+            var err = new Error(entry.provider + ' ' + r.status + ' : ' + m);
+            err.status = r.status;
+            throw err;
+          }
+          var ch = d && d.choices && d.choices[0];
+          var c = ch && ch.message;
+          var txt = c && c.content;
+          if (Array.isArray(txt)) {
+            txt = txt.map(function (x) { return (x && x.text) || ''; }).join('');
+          }
+          if (txt && typeof txt !== 'string') txt = JSON.stringify(txt);
+          if (!txt || !String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
+          /* modèle réellement servi (si cascade models[] a basculé) */
+          if (d && d.model) {
+            try { entry._modeleReel = String(d.model); } catch (e) {}
+          }
+          return String(txt);
+        });
       });
-    });
+    }
+
+    /* Retry court sur 429/502/503 (pool free partagé, « retry shortly ») */
+    var delaisRetry = [500, 1500];
+    function avecRetry(n) {
+      return uneTentative().catch(function (err) {
+        if (err && err.name === 'AbortError') throw err;
+        var st = err && err.status;
+        var retryable = st === 429 || st === 502 || st === 503;
+        if (retryable && n < delaisRetry.length && !(signal && signal.aborted)) {
+          return new Promise(function (res) { setTimeout(res, delaisRetry[n]); })
+            .then(function () { return avecRetry(n + 1); });
+        }
+        throw err;
+      });
+    }
+    return avecRetry(0);
   }
 
   function construireChaine(modelId) {
@@ -253,8 +311,18 @@
     cat.forEach(function (e) { parId[e.id] = e; });
     var chaine = [];
     if (modelId && parId[modelId] && parId[modelId].up) chaine.push(parId[modelId]);
+    /* Un seul entry openrouter free : models[] couvre déjà les autres free
+       en cascade interne → on ne les empile pas (évite 5× la même requête). */
+    var orCouvert = chaine.some(function (e) {
+      return e.providerKey === 'openrouter' && OR_FREE.indexOf(e.model) >= 0;
+    });
     cat.forEach(function (e) {
-      if (e.up && chaine.indexOf(e) < 0) chaine.push(e);
+      if (!e.up || chaine.indexOf(e) >= 0) return;
+      if (e.providerKey === 'openrouter' && OR_FREE.indexOf(e.model) >= 0) {
+        if (orCouvert) return;
+        orCouvert = true;
+      }
+      chaine.push(e);
     });
     return { chaine: chaine, choisiOk: !modelId || (parId[modelId] && parId[modelId].up) };
   }
@@ -292,7 +360,15 @@
       var entry = plan.chaine[i];
       try {
         var texte = await appelBorne(callModel(entry, messages, signal), 60000);
-        var repli = typeof body.model_id === 'string' && body.model_id && entry.id !== body.model_id;
+        var modeleReel = entry._modeleReel || entry.model || '';
+        var modeleDemande = typeof body.model_id === 'string' && body.model_id
+          ? body.model_id.split(':').slice(1).join(':')
+          : '';
+        var repli = modeleDemande && modeleReel && modeleReel !== modeleDemande;
+        var nomVoie = entry.name || entry.id;
+        if (modeleReel && entry.name && modeleReel !== entry.model) {
+          nomVoie = modeleReel + ' (openrouter free)';
+        }
         var payload = {
           reponse: texte,
           outil: null,
@@ -306,7 +382,7 @@
         if (repli) payload.modele_repli = true;
         if (wantStream) {
           return ndjson([
-            { type: 'progress', etape: 'generation', message: 'Réponse générée via ' + (entry.name || entry.id) },
+            { type: 'progress', etape: 'generation', message: 'Réponse générée via ' + nomVoie },
             { type: 'final', reponse: payload.reponse, outil: null, correction: false, verification: null, rag: null, tache: null, conversation_id: payload.conversation_id, raisonnement: null, modele_repli: repli || undefined },
           ]);
         }
