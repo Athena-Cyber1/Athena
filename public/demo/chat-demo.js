@@ -83,7 +83,15 @@ const SVG_ICOS = {
   stop: '<rect x="7.5" y="7.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none"/>',
   send: '<path d="M12 19V5.5M6 11l6-5.5L18 11"/>',
   alert: '<path d="M12 4.5 3 19.5h18z"/><path d="M12 10v3.5M12 16.5h.01"/>',
+  terminal: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 9.5 10.2 12 7 14.5"/><path d="M12 14.5h5"/>',
 };
+
+/* Version chaîne (pas un nœud DOM) — pour injecter une icône dans du HTML
+   construit par concaténation/innerHTML (ex. markdownInline). icoSvg()
+   reste la version DOM pour la construction programmatique habituelle. */
+function icoSvgTexte(nom) {
+  return '<svg viewBox="0 0 24 24" class="ico" aria-hidden="true">' + (SVG_ICOS[nom] || SVG_ICOS.x) + '</svg>';
+}
 function icoSvg(nom) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -1680,6 +1688,28 @@ function echapperHtml(s) {
 }
 
 /* Inline : échappe puis applique code/gras/italique/liens/URLs nues. */
+/* La contrainte « zéro émoji » (voir en-tête de ce fichier) porte sur le
+   design — mais le texte vient du modèle, qui produit parfois ✅/⚠️ malgré
+   la consigne système. On substitue les deux glyphes les plus fréquents
+   par l'icône SVG du système plutôt que d'interdire au modèle un
+   vocabulaire qu'il utilise pour structurer une réponse (listes de
+   vérification, avertissements). Étendre STATUT_EMOJIS si d'autres
+   glyphes reviennent souvent (❌, 🔴…). */
+const STATUT_EMOJIS = {
+  '\u2705': { icone: 'check', classe: 'ok' },       // ✅
+  '\u26A0\uFE0F': { icone: 'alert', classe: 'doute' }, // ⚠️
+  '\u26A0': { icone: 'alert', classe: 'doute' },       // ⚠ (sans variation selector)
+};
+function substituerEmojisStatut(s) {
+  let t = s;
+  for (const [glyphe, cfg] of Object.entries(STATUT_EMOJIS)) {
+    // le glyphe est en tête de ligne ou de paragraphe, suivi d'un espace
+    t = t.split(glyphe + ' ').join(
+      '<span class="statut-ligne ' + cfg.classe + '">' + icoSvgTexte(cfg.icone) + '</span> '
+    );
+  }
+  return t;
+}
 function markdownInline(texte) {
   const s = echapperHtml(texte);
   const morceaux = s.split(/(`+[^`]+`+)/g); // préserve les segments `code`
@@ -1687,7 +1717,7 @@ function markdownInline(texte) {
     if (/^`+[^`]+`+$/.test(morceau)) {
       return '<code>' + morceau.replace(/^`+/, '').replace(/`+$/, '') + '</code>';
     }
-    let t = morceau;
+    let t = substituerEmojisStatut(morceau);
     // liens [texte](https://…) — http(s) uniquement, jamais de javascript:
     t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, texte2, url) =>
       '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + texte2 + '</a>');
@@ -1730,6 +1760,68 @@ function creerBlocCode(langage, code) {
     pre.appendChild(executer);
   }
   return pre;
+}
+
+/* Compte-rendu repliable d'une commande exécutée. `donnees` reprend le
+   format exact renvoyé par local-agent POST /exec :
+   { commande, ok, code, stdout, stderr, duree_ms }.
+   Replié par défaut (cohérent avec details.raisonnement) ; l'échec se
+   distingue par la FORME (icône alerte + fond de sortie marqué), jamais
+   par une teinte rouge seule — le design reste monochrome. */
+function creerBlocTraceCommande(donnees) {
+  const d = donnees || {};
+  const det = document.createElement('details');
+  det.className = 'trace-cmd' + (d.ok === false ? ' echec' : '');
+
+  const sum = document.createElement('summary');
+  sum.appendChild(icoSvg(d.ok === false ? 'alert' : 'terminal'));
+  const label = document.createElement('span');
+  label.className = 'trace-cmd-label';
+  label.textContent = String(d.commande || '').trim() || '(commande)';
+  const meta = document.createElement('span');
+  meta.className = 'trace-cmd-meta';
+  const bits = [];
+  if (typeof d.code === 'number') bits.push('code=' + d.code);
+  if (typeof d.duree_ms === 'number') bits.push(Math.round(d.duree_ms) + ' ms');
+  meta.textContent = bits.join(' · ');
+  const chev = document.createElement('span');
+  chev.className = 'chev';
+  chev.appendChild(icoSvg('chevron'));
+  sum.append(label, meta, chev);
+  det.appendChild(sum);
+
+  const corps = document.createElement('div');
+  corps.className = 'trace-cmd-corps';
+  const preCmd = document.createElement('pre');
+  const codeCmd = document.createElement('code');
+  codeCmd.textContent = '$ ' + String(d.commande || '');
+  preCmd.appendChild(codeCmd);
+  corps.appendChild(preCmd);
+  if (d.stdout) {
+    const l = document.createElement('div');
+    l.className = 'trace-cmd-sortie-label';
+    l.textContent = 'Sortie';
+    corps.appendChild(l);
+    const pre = document.createElement('pre');
+    const c = document.createElement('code');
+    c.textContent = String(d.stdout).slice(0, 8000);
+    pre.appendChild(c);
+    corps.appendChild(pre);
+  }
+  if (d.stderr) {
+    const l = document.createElement('div');
+    l.className = 'trace-cmd-sortie-label';
+    l.textContent = 'Erreur';
+    corps.appendChild(l);
+    const pre = document.createElement('pre');
+    pre.className = 'trace-cmd-err';
+    const c = document.createElement('code');
+    c.textContent = String(d.stderr).slice(0, 8000);
+    pre.appendChild(c);
+    corps.appendChild(pre);
+  }
+  det.appendChild(corps);
+  return det;
 }
 
 /* Envoie la commande à /api/exec (shim → local-agent). Flux :
@@ -1785,12 +1877,11 @@ async function lancerCommandeLocale(commande, bouton, codeEl) {
       zone().className = 'exec-sortie err';
       return;
     }
-    const parts = [];
-    if (d.stdout) parts.push(d.stdout);
-    if (d.stderr) parts.push('[stderr]\n' + d.stderr);
-    parts.push('— code=' + d.code + ' · ' + d.duree_ms + ' ms');
-    zone().textContent = parts.join('\n').slice(0, 8000);
-    zone().className = 'exec-sortie' + (d.ok ? '' : ' err');
+    // v-next : compte-rendu repliable (commande + code + durée + sortie)
+    // plutôt qu'un dump de texte brut — voir creerBlocTraceCommande.
+    const ancienneZone = codeEl.closest('pre')?.querySelector('.exec-sortie');
+    if (ancienneZone) ancienneZone.remove();
+    codeEl.closest('pre')?.insertAdjacentElement('afterend', creerBlocTraceCommande(d));
   } catch (e) {
     const z = zone();
     z.textContent = String((e && e.message) || e).slice(0, 400);
