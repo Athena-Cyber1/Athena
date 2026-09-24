@@ -8,7 +8,7 @@ export const PAGES_INDEX_HTML = `<!doctype html>
   <meta name="description" content="Athéna — agent à boucle planifier → agir → observer → vérifier → sous-agent. Mono-modèle, design monochrome (blanc & noir / noir & blanc, liens rouges), thèmes importables, réponses vérifiées par outils d'autorité, échecs honnêtes." />
   <meta name="keywords" content="Athéna, agent, IA, vérification, sous-agent, traçabilité" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20260924n" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -186,9 +186,9 @@ export const PAGES_INDEX_HTML = `<!doctype html>
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260924m"></script>
-    <script src="./api-shim.js?v=20260924m"></script>
-    <script src="./chat-demo.js?v=20260924m"></script>
+    <script src="./keys.js?v=20260924n"></script>
+    <script src="./api-shim.js?v=20260924n"></script>
+    <script src="./chat-demo.js?v=20260924n"></script>
   </div>
 </body>
 </html>
