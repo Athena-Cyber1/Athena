@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260924k`
+> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260924l`
 
 ---
 
@@ -53,38 +53,42 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 ├── README.md                    ← lancement rapide du stack
 ├── .gitignore                   ← secrets / data / build exclus
 │
+├── design/                      ★ SOURCE DE TOUS LES FICHIERS DESIGN
+│   ├── athena-demo.css          design monochrome (tokens + composants)
+│   ├── globals.css              tokens Tailwind / shadcn
+│   ├── logo.svg                 favicon / marque
+│   ├── theme-loader.js          import de thème (/api/design)
+│   └── theme-importe.json       dernier thème importé
+│
 ├── docs/                        ★ SOURCE DE LA GITHUB PAGES
 │   ├── index.html               coquille DOM (sidebar + chat)
 │   ├── api-shim.js              intercepteur fetch → providers réels
 │   ├── chat-demo.js             logique chat (stream, HUD, markdown)
-│   ├── athena-demo.css          design monochrome
 │   ├── keys.js                  clés API (PUBLIC — plafond limité)
 │   ├── .nojekyll                désactive Jekyll Pages
-│   └── assets/
-│       ├── logo.svg
-│       ├── theme-loader.js      import de thème (/api/design)
-│       └── theme-importe.json
+│   └── design/                  miroir de design/ (servi par Pages)
 │
 ├── src/                         ★ APPLICATION NEXT.JS (dev local)
 │   ├── app/
 │   │   ├── page.tsx             coquille DOM (miroir docs/index.html)
-│   │   ├── layout.tsx / globals.css / athena-demo.css
+│   │   ├── layout.tsx           importe design/globals.css
 │   │   ├── not-found.tsx
 │   │   └── api/
 │   │       ├── chat/route.ts    passerelle → sidecar :3010
 │   │       ├── modeles/         catalogue modèles
 │   │       ├── files/           upload / fichiers
 │   │       ├── entrainer/       entraînement
-│   │       ├── design/          thèmes
+│   │       ├── design/          thèmes (lit/écrit design/theme-importe.json)
 │   │       └── route.ts         racine API
 │   ├── components/ui/           composants shadcn (accordéon, dialog…)
 │   ├── hooks/                   use-mobile, use-toast
 │   ├── lib/                     db.ts, secu.ts (garde origine), utils.ts
 │   └── proxy.ts                 en-têtes sécurité (ex-middleware)
 │
-├── public/                      assets Next (miroirs docs)
-│   ├── logo.svg, robots.txt
-│   └── demo/                    chat-demo.js, theme-*, theme-importe.json
+├── public/                      assets Next (miroirs design/ + docs)
+│   ├── design/                  miroir de design/ (servi par Next)
+│   ├── robots.txt
+│   └── demo/                    chat-demo.js
 │
 ├── mini-services/               ★ SERVICES LOCAUX INDÉPENDANTS
 │   ├── llm-bridge/              :3015  Bun — cascade multi-provider
@@ -385,7 +389,7 @@ cd mini-services/llm-chat && pip install fastapi uvicorn && bash daemon.sh  # :3
 
 | Couche | Fichiers | Rôle |
 |--------|----------|------|
-| UI | `chat-demo.js`, `index.html`, `athena-demo.css` | chat, HUD, design |
+| UI | `chat-demo.js`, `index.html`, `design/athena-demo.css` | chat, HUD, design |
 | Bridge navigateur | `api-shim.js` | catalogue, cascade LLM, exec |
 | Passerelle Next | `src/app/api/chat` | validation, sidecar, sanitize |
 | Agent déterministe | `mini-services/llm-chat` | planifier→agir→vérifier |

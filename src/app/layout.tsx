@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+import "../../design/globals.css";
 import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = Geist({
@@ -14,13 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Athéna v10.9.4 · design noir & blanc · HUD sélecteur de modèle (cloud + local, cascade sans secret)",
+  title: "Athéna — assistant",
   description:
-    "Athéna — agent à boucle planifier → agir → observer → vérifier → sous-agent. Mono-modèle (aucun juge 0.5B), design monochrome (blanc & noir / noir & blanc, liens rouges, symboles sans émoji, sans pied de page), thèmes importables, réponses vérifiées par outils d'autorité, échecs honnêtes.",
+    "Athéna — agent à boucle planifier → agir → observer → vérifier → sous-agent. Mono-modèle, design monochrome (blanc & noir / noir & blanc, liens rouges), thèmes importables, réponses vérifiées par outils d'autorité, échecs honnêtes.",
   keywords: ["Athéna", "agent", "IA", "vérification", "sous-agent", "traçabilité"],
   authors: [{ name: "Projet Athéna" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/design/logo.svg",
   },
 };
 

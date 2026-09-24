@@ -1670,7 +1670,7 @@ function markdownInline(texte) {
 
 /* Un bloc de code ``` avec étiquette de langage + bouton copier.
    Langage spécial « athena-exec » : bouton Exécuter → local-agent :3020
-   (via /api/exec du shim / route Next). Confirmation modale obligatoire. */
+   (via /api/exec du shim). Confirmation modale obligatoire sauf agent --auto. */
 function creerBlocCode(langage, code) {
   const pre = document.createElement('pre');
   const etiquette = document.createElement('span');
@@ -1700,7 +1700,7 @@ function creerBlocCode(langage, code) {
   return pre;
 }
 
-/* Envoie la commande à /api/exec (→ local-agent). Flux :
+/* Envoie la commande à /api/exec (shim → local-agent). Flux :
    1) POST confirme:false → 428 = confirmation requise (ou 403 bloqué)
    2) modale utilisateur
    3) POST confirme:true → sortie/stderr affichées sous le bloc */

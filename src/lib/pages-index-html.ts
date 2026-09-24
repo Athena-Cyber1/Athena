@@ -1,4 +1,5 @@
-<!doctype html>
+/** docs/index.html exact bytes (LF) — served on GET / for Pages parity. */
+export const PAGES_INDEX_HTML = `<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
@@ -191,3 +192,4 @@
   </div>
 </body>
 </html>
+`;
