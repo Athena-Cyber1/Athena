@@ -136,6 +136,9 @@ class AgentState:
     # Drapeau NEUTRE (booléen) — remonte à l'UI pour un toast discret ; jamais
     # de nom de provider ni d'erreur HTTP (N4).
     mode_repli: bool = False
+    # v10.10 — skill sélectionné pour ce tour (id court, ex. « math-exact »).
+    # Vide = plan issu du fallback historique (pas de skill correspondant).
+    skill: str = ""
 
     # ------------------------------------------------------------------ util
     def annoter(self, code: str, detail: str = "") -> None:

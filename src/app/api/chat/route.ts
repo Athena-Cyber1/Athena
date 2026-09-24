@@ -71,6 +71,14 @@ const schemaCorpsDemo = z.object({
     .max(120)
     .regex(/^[A-Za-z0-9._\-:]+$/)
     .optional(),
+  // v10.10 — skill forcé côté UI (id court, ex. « math-exact »).
+  // Absent / vide → sélection automatique par type de tâche / motifs.
+  skill: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+    .optional(),
 });
 
 const schemaMessageLegacy = z.object({
@@ -177,6 +185,9 @@ function versSidecar(corps: z.infer<typeof schemaCorps>) {
   // (routage direct) ; "auto"/absent → cascade par défaut inchangée.
   const modelId = (corps as { model_id?: string }).model_id;
   if (modelId && modelId !== "auto") payload.model_id = modelId;
+  // v10.10 — skill forcé (playbook du planner) transmis au sidecar.
+  const skillId = (corps as { skill?: string }).skill;
+  if (skillId) payload.skill = skillId;
   // v10.6 (F12) : `outils` (bool OU liste) n'a pas d'équivalent sidecar —
   // les outils sont choisis par le planificateur ; le drapeau est accepté,
   // jamais simulé. `options` reste vide pour le contrat démo.

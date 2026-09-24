@@ -2,6 +2,8 @@
 
 Toute l'intelligence vit dans athena/ ; ce fichier ne fait que :
 POST /chat               → run_agent() (attachments[] → FILE_DATA, ids validés)
+                           + option skill (id court) pour forcer un playbook
+GET  /skills             → registre de skills du planner (lecture seule)
 POST /entrainer          → corpus (paire Q/R dédoublonnée par (question, source))
 GET  /entrainer          → état (conversations = fils distincts)
 DELETE /entrainer        → purge conversations (exige {confirm:true}, F1)
@@ -26,6 +28,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 import uuid  # noqa: E402
 
 from athena import __version__  # noqa: E402
+from athena.agent import skills as skill_reg  # noqa: E402 — enregistre les skills
 from athena.agent.agent import run_agent  # noqa: E402
 from athena.evals import runner as evals  # noqa: E402
 from athena.llm.engine import MOTEUR  # noqa: E402
@@ -55,6 +58,9 @@ class RequeteChat(BaseModel):
     # v10.9.4 (HUD) : modèle choisi côté UI (id complet « genre:nom »).
     # Optionnel : absent/vide/"auto" → cascade par défaut inchangée.
     model_id: str | None = Field(default=None, max_length=120)
+    # v10.10 — skill forcé (id court, ex. « math-exact »). Absent/vide →
+    # sélection automatique par type de tâche / motifs.
+    skill: str | None = Field(default=None, max_length=64)
 
 
 class RequeteEntrainement(BaseModel):
@@ -72,6 +78,14 @@ class RequeteConfirmation(BaseModel):
 def sante() -> dict:
     return {"ok": True, "service": "athena", "version": __version__,
             "llm": MOTEUR.disponible(), "memoire": memoire.stat()}
+
+
+@app.get("/skills")
+def skills_liste() -> dict:
+    """v10.10 — registre de skills (playbooks du planner) : lecture seule.
+    Chaque skill porte son type de tâche, ses outils, le genre de
+    vérificateur et s'il repose sur l'autorité déterministe."""
+    return {"skills": skill_reg.lister()}
 
 
 @app.get("/telemetrie")
@@ -110,7 +124,8 @@ def chat(req: RequeteChat) -> dict:
             })
         return run_agent(req.question, historique=historique, fil_id=req.fil_id,
                          max_etapes=max_etapes, mode=mode, attachments=pieces,
-                         model_id=(req.model_id or None))
+                         model_id=(req.model_id or None),
+                         skill=(req.skill or None))
     except Exception as e:  # jamais de crash silencieux : échec honnête
         # v10.9.2 (P0) : le DÉTAIL (type + message d'exception) reste dans le
         # log serveur (uvicorn/console). Le corps HTTP n'emporte qu'une phrase

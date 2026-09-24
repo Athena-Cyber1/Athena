@@ -35,7 +35,7 @@ from ..llm import prompts
 from ..memory import store as memoire
 from ..verification import canari
 from ..verification import facts as vfacts
-from . import critic, executor, observer, planner, policies, sous_agent, verifier, voix
+from . import critic, executor, observer, planner, policies, skills, sous_agent, verifier, voix
 from .state import Action, AgentState
 
 Emitter = Callable[[dict[str, Any]], None]
@@ -213,7 +213,7 @@ def run_agent(question: str, historique: list[dict[str, str]] | None = None,
               fil_id: str | None = None, max_etapes: int = 14,
               mode: str = "auto", emetteur: Emitter | None = None,
               attachments: list[dict[str, str]] | None = None,
-              model_id: str | None = None) -> dict[str, Any]:
+              model_id: str | None = None, skill: str | None = None) -> dict[str, Any]:
     debut = time.time()
     fil_id = fil_id or f"fil-{uuid.uuid4().hex[:8]}"
     historique = historique or []
@@ -270,12 +270,14 @@ def run_agent(question: str, historique: list[dict[str, str]] | None = None,
                {"entite": canon["entite"], "valeur": canon["valeur"]})
     _contexte_fichiers(state, attachments)
 
-    plan = planner.creer_plan(state)
+    plan = planner.creer_plan(state, skill_force=skill)
     _trace(state, "progress", "plan_cree",
-           f"Plan établi : {' → '.join(a.objectif for a in plan if a.type != 'final')}",
-           {"etapes": [a.vers_dict() for a in plan]})
+           f"Plan établi ({state.skill or 'sans skill'}) : "
+           f"{' → '.join(a.objectif for a in plan if a.type != 'final')}",
+           {"etapes": [a.vers_dict() for a in plan], "skill": state.skill})
     if emetteur:
-        emetteur({"event": "plan_created", "goal": state.but, "task_type": state.type_tache})
+        emetteur({"event": "plan_created", "goal": state.but, "task_type": state.type_tache,
+                  "skill": state.skill})
 
     explication = ""
     rendu = None
@@ -492,6 +494,7 @@ def _paquet_final(state: AgentState, fil_id: str, debut: float) -> dict[str, Any
         "reponse": state.reponse_finale,
         "reponse_courte": state.reponse_courte,
         "type_tache": state.type_tache,
+        "skill": state.skill,
         "statut": state.statut,
         "complexite": state.complexite,
         "classe_terminal": state.classe_terminal,

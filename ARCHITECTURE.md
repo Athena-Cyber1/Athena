@@ -94,7 +94,7 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 │   ├── llm-chat/                :3010  Python — moteur Athéna (agent)
 │   │   ├── serveur.py           HTTP mince → run_agent()
 │   │   ├── athena/
-│   │   │   ├── agent/           agent.py, planner, executor, critic…
+│   │   │   ├── agent/           agent.py, planner, skills, executor, critic…
 │   │   │   ├── llm/             engine.py (→ bridge), prompts.py
 │   │   │   ├── tools/           registry, enregistres (solveur, sandbox…)
 │   │   │   ├── memory/          store.py (fils, faits, RAG)
@@ -309,9 +309,15 @@ Endpoint : `https://text.pollinations.ai/openai/chat/completions`
   "model_id": "openrouter:z-ai/glm-5.2:free",
   "outils": true,
   "conversation_id": "conv-abc",
+  "skill": "math-exact",
   "attachments": [{"file_id": "f1", "name": "note.txt"}]
 }
 ```
+
+`skill` (optionnel) force un playbook du registre (`GET /api/skills` → sidecar
+`GET /skills`). Absent → sélection auto par type de tâche / motifs
+(`athena/agent/skills.py`). Le skill actif figure dans `state.skill`, la trace
+(`plan_cree` / `plan_created`) et le paquet final.
 
 **Sortie NDJSON :**
 ```
@@ -344,6 +350,7 @@ Sans agent démarré : `{"erreur":"agent local injoignable…"}`.
 | Route | Pages |
 |-------|-------|
 | `GET /api/modeles` | catalogue |
+| `GET /api/skills` | registre skills (sidecar) ou `{skills:[],dispo:false}` |
 | `POST /api/files` | file_id synthétique |
 | `GET/DELETE /api/entrainer` | désactivé (message honnête) |
 | `GET/POST/DELETE /api/design` | tokens null / import refusé |

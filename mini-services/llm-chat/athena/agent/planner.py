@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import skills as skill_reg
 from .state import Action, AgentState
 
 # ------------------------------------------------------------ classification
@@ -171,8 +172,21 @@ def _actions(type_tache: str, question: str, niveau: str) -> list[Action]:
     return actions
 
 
-def creer_plan(state: AgentState) -> list[Action]:
+def creer_plan(state: AgentState, skill_force: str | None = None) -> list[Action]:
+    """Construit le plan via le registre de skills (fallback : templates historiques).
+
+    skill_force (option API/UI) sélectionne explicitement un skill actif ;
+    sinon le skill est choisi par type de tâche / motifs. Le skill retenu est
+    stocké sur le state pour la trace et le paquet final.
+    """
+    s = skill_reg.selectionner(state.type_tache, state.but, skill_force=skill_force)
+    if s is not None:
+        actions = skill_reg.plan_de(s, state.but, state.complexite)
+        state.skill = s.nom
+        state.plan = actions
+        return actions
     actions = _actions(state.type_tache, state.but, state.complexite)
+    state.skill = ""
     state.plan = actions
     return actions
 
