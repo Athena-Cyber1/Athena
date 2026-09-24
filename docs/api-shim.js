@@ -322,21 +322,21 @@
             prochaine = liste.slice(1).concat(liste.slice(0, 1));
           }
           var attente = delaisRetry[n];
-          /* quota OpenRouter free/min : Reset = timestamp ms (max 40 s) */
+          /* quota OpenRouter free/min : Reset = timestamp ms.
+             On attend jusqu'à ~64 s si compatible avec borneMs OR (70 s),
+             sinon fail-fast → pollinations répond tout de suite. */
           if (err.resetAt) {
             var reste = err.resetAt - Date.now();
-            if (reste > 0 && reste < 55000) {
-              attente = Math.min(reste + 250, 40000);
-            } else if (reste >= 55000) {
-              /* fenêtre encore pleine (~1 min) : inutile d'attendre ici,
-                 on rend la main → pollinations répond vite, retry plus tard */
+            if (reste > 0 && reste < 64000) {
+              attente = Math.min(reste + 250, 64000);
+            } else if (reste >= 64000) {
               throw err;
             }
           } else if (err.retryAfter) {
             var ra = parseInt(err.retryAfter, 10);
             if (!isNaN(ra) && ra > 0 && ra < 8) attente = Math.min(ra * 1000, 5000);
           }
-          /* free-models-per-min sans reset exploitable : 1 cycle max */
+          /* free-models-per-min : 1 seul cycle d'attente-reset puis on rend la main */
           if (err.limitSource === 'openrouter_free_tier_per_minute' && n >= 1) {
             throw err;
           }
