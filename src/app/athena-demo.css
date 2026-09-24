@@ -893,6 +893,47 @@ a:hover {
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* Bloc ```athena-exec — commande locale via agent :3020 */
+.exec-bloc {
+  border: 1px solid color-mix(in srgb, var(--violet-texte, #8b7cf6) 45%, transparent);
+}
+.code-exec {
+  position: absolute;
+  top: 6px;
+  right: 42px;
+  background: color-mix(in srgb, var(--violet-texte, #8b7cf6) 35%, #1a1a1a);
+  color: #f2f2f2;
+  border: 1px solid color-mix(in srgb, var(--violet-texte, #8b7cf6) 55%, transparent);
+  border-radius: 7px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.code-exec:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--violet-texte, #8b7cf6) 55%, #1a1a1a);
+}
+.code-exec:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.exec-sortie {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(0, 0, 0, 0.35);
+  border-left: 3px solid #6fcf97;
+  color: #e8e8e8;
+}
+.exec-sortie.err {
+  border-left-color: #eb5757;
+  color: #ffb4b4;
+}
+
 /* Panneau de raisonnement */
 details.raisonnement {
   margin: 0 0 10px;
@@ -1684,6 +1725,7 @@ span.think:not(details .think) {
   color: var(--texte-doux);
   font-size: 0.9rem;
   line-height: 1.5;
+  white-space: pre-line;
 }
 .modale-champ {
   width: 100%;

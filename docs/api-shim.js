@@ -50,6 +50,22 @@
     { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter' },
     { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter' },
     { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'nemotron-3-ultra 550b free · openrouter' },
+    { provider: 'openrouter', model: 'google/gemma-4-26b-a4b-it:free', name: 'gemma-4-26b free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'nemotron-3-super free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free', name: 'nemotron-3.5-lightning free · openrouter' },
+    { provider: 'openrouter', model: 'thinkingmachines/inkling:free', name: 'inkling free · openrouter' },
+    { provider: 'openrouter', model: 'thinkingmachines/inkling-small:free', name: 'inkling-small free · openrouter' },
+    { provider: 'openrouter', model: 'poolside/laguna-s-2.1:free', name: 'laguna-s free · openrouter' },
+    { provider: 'openrouter', model: 'poolside/laguna-xs-2.1:free', name: 'laguna-xs free · openrouter' },
+    { provider: 'openrouter', model: 'cohere/north-mini-code:free', name: 'north-mini-code free · openrouter' },
+    { provider: 'openrouter', model: 'nex-agi/nex-n2.5-mini:free', name: 'nex-n2.5-mini free · openrouter' },
+    { provider: 'openrouter', model: 'nex-agi/nex-n2.5-pro:free', name: 'nex-n2.5-pro free · openrouter' },
+    { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free', name: 'ling-3.0-flash-sante free · openrouter' },
+    { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-fin:free', name: 'ling-3.0-flash-fin free · openrouter' },
+    { provider: 'openrouter', model: 'dots-studio/dots-3-note-preview:free', name: 'dots-3-note free · openrouter' },
+    { provider: 'openrouter', model: 'liquid/lfm-2.5-2.6b:free', name: 'lfm-2.5-2.6b free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3.5-content-safety:free', name: 'nemotron-3.5-safety free · openrouter' },
+    { provider: 'openrouter', model: 'openrouter/free', name: 'free models router · openrouter' },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -213,7 +229,24 @@
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
     'nvidia/nemotron-3-ultra-550b-a55b:free',
   ];
-  var OR_FREE = OR_TRIO.concat(OR_EXTRA);
+  var OR_FREE = OR_TRIO.concat(OR_EXTRA, [
+    'google/gemma-4-26b-a4b-it:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'nvidia/nemotron-3.5-lightning:free',
+    'thinkingmachines/inkling:free',
+    'thinkingmachines/inkling-small:free',
+    'poolside/laguna-s-2.1:free',
+    'poolside/laguna-xs-2.1:free',
+    'cohere/north-mini-code:free',
+    'nex-agi/nex-n2.5-mini:free',
+    'nex-agi/nex-n2.5-pro:free',
+    'inclusionai/ling-3.0-flash-sante:free',
+    'inclusionai/ling-3.0-flash-fin:free',
+    'dots-studio/dots-3-note-preview:free',
+    'liquid/lfm-2.5-2.6b:free',
+    'nvidia/nemotron-3.5-content-safety:free',
+    'openrouter/free',
+  ]);
 
   function orModelsBody(entryModel) {
     if (OR_FREE.indexOf(entryModel) < 0) return null;
@@ -222,8 +255,56 @@
       var autresTrio = OR_TRIO.filter(function (m) { return m !== entryModel; });
       return [entryModel].concat(autresTrio); /* 3 = trio complet */
     }
-    var autresExtra = OR_EXTRA.filter(function (m) { return m !== entryModel; });
-    return [entryModel].concat(autresExtra, OR_TRIO.slice(0, 1)); /* 3 : extra + 1er free */
+    if (entryModel === 'openrouter/free') return [entryModel];
+    /* free hors trio : cible + 2 du trio (cascade maximale) */
+    var pad = OR_TRIO.filter(function (m) { return m !== entryModel; }).slice(0, 2);
+    return [entryModel].concat(pad);
+  }
+
+  /* ---- Agent local (:3020) — exécution de commandes PC ----
+     Le navigateur ne peut pas lancer un shell : on délègue à
+     mini-services/local-agent (127.0.0.1). Absent → erreur honnête. */
+  var LOCAL_AGENT = 'http://127.0.0.1:3020';
+
+  var ATHENA_SYSTEM_EXEC =
+    'Athéna · outil local : pour exécuter une commande sur le PC de l\'utilisateur, ' +
+    'réponds UNIQUEMENT avec un bloc de code fenced avec le langage exact athena-exec ' +
+    'contenant la commande shell exacte, par exemple:\n```athena-exec\nhostname\n```\n' +
+    'La UI affichera un bouton « Exécuter » (confirmation obligatoire → agent local 127.0.0.1:3020). ' +
+    'N\'invente pas d\'autres balises d\'exécution. Si l\'agent est injoignable, dis-le simplement.';
+
+  async function agentLocalExec(payload, signal) {
+    try {
+      var r = await appelBorne(realFetch(LOCAL_AGENT + '/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: signal || undefined,
+      }), 25000);
+      var t = await r.text();
+      var d = null;
+      try { d = JSON.parse(t); } catch (e) { d = null; }
+      if (!d) return json({ erreur: 'agent local : réponse illisible' }, 502);
+      return json(d, r.status || 200);
+    } catch (e) {
+      return json({
+        erreur: 'Agent local injoignable — démarrez : node mini-services/local-agent/index.js',
+        detail: String((e && e.message) || e).slice(0, 160),
+      }, 503);
+    }
+  }
+
+  async function gererExec(bodyStr, signal) {
+    var body = {};
+    try { body = JSON.parse(bodyStr || '{}'); } catch (e) { body = {}; }
+    var commande = String(body.commande || body.command || '').trim();
+    if (!commande) return json({ erreur: 'commande absente' }, 400);
+    return agentLocalExec({
+      commande: commande,
+      confirme: body.confirme === true,
+      cwd: typeof body.cwd === 'string' ? body.cwd : undefined,
+      timeout_ms: typeof body.timeout_ms === 'number' ? body.timeout_ms : undefined,
+    }, signal);
   }
 
   function callModel(entry, messages, signal) {
@@ -393,6 +474,20 @@
     }
 
     await refreshDyn();
+
+    /* Instructions systèmePages : le bloc ```athena-exec est le SEUL chemin
+       d'exécution de commande (bouton UI → /api/exec → local-agent). */
+    var aSystem = messages.some(function (m) { return m.role === 'system'; });
+    if (!aSystem) {
+      messages = [{ role: 'system', content: ATHENA_SYSTEM_EXEC }].concat(messages);
+    } else if (body.outils !== false) {
+      messages = messages.map(function (m, idx) {
+        if (m.role !== 'system' || idx !== 0) return m;
+        if (m.content.indexOf('athena-exec') >= 0) return m;
+        return { role: 'system', content: m.content + '\n\n' + ATHENA_SYSTEM_EXEC };
+      });
+    }
+
     var plan = construireChaine(typeof body.model_id === 'string' ? body.model_id : '');
     if (!plan.chaine.length) {
       var e2 = 'Aucun modèle disponible (clé API manquante pour tous les providers non gratuits).';
@@ -462,6 +557,18 @@
     }
     if (path === '/chat-attache') {
       if (method === 'POST') return gererChat(body, signal);
+      return json({ erreur: 'méthode' }, 405);
+    }
+    if (path === '/api/exec') {
+      if (method === 'POST') return gererExec(body, signal);
+      if (method === 'GET') {
+        try {
+          var hs = await appelBorne(realFetch(LOCAL_AGENT + '/sante'), 2000);
+          return json(await hs.json(), hs.status);
+        } catch (e) {
+          return json({ ok: false, erreur: 'agent local injoignable', port: 3020 }, 503);
+        }
+      }
       return json({ erreur: 'méthode' }, 405);
     }
     if (path === '/api/modeles') {

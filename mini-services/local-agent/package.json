@@ -1,0 +1,11 @@
+{
+  "name": "athena-local-agent",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Agent local Athéna : exécution de commandes PC (127.0.0.1:3020)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start-auto": "node index.js --auto"
+  }
+}

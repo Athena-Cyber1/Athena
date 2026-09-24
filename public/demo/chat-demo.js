@@ -1668,7 +1668,9 @@ function markdownInline(texte) {
   }).join('');
 }
 
-/* Un bloc de code ``` avec étiquette de langage + bouton copier. */
+/* Un bloc de code ``` avec étiquette de langage + bouton copier.
+   Langage spécial « athena-exec » : bouton Exécuter → local-agent :3020
+   (via /api/exec du shim / route Next). Confirmation modale obligatoire. */
 function creerBlocCode(langage, code) {
   const pre = document.createElement('pre');
   const etiquette = document.createElement('span');
@@ -1684,7 +1686,87 @@ function creerBlocCode(langage, code) {
   copier.appendChild(icoSvg('copy'));
   copier.addEventListener('click', () => copierTexte(code, copier));
   pre.append(etiquette, codeEl, copier);
+  if ((langage || '').toLowerCase() === 'athena-exec') {
+    pre.classList.add('exec-bloc');
+    const executer = document.createElement('button');
+    executer.type = 'button';
+    executer.className = 'code-exec';
+    executer.title = 'Exécuter via l’agent local (127.0.0.1:3020)';
+    executer.setAttribute('aria-label', 'Exécuter la commande');
+    executer.textContent = 'Exécuter';
+    executer.addEventListener('click', () => lancerCommandeLocale(code, executer, codeEl));
+    pre.appendChild(executer);
+  }
   return pre;
+}
+
+/* Envoie la commande à /api/exec (→ local-agent). Flux :
+   1) POST confirme:false → 428 = confirmation requise (ou 403 bloqué)
+   2) modale utilisateur
+   3) POST confirme:true → sortie/stderr affichées sous le bloc */
+async function lancerCommandeLocale(commande, bouton, codeEl) {
+  if (bouton.disabled) return;
+  const brut = String(commande || '').trim();
+  if (!brut) return;
+  bouton.disabled = true;
+  bouton.textContent = '…';
+  const zone = () => codeEl.closest('pre')?.querySelector('.exec-sortie')
+    || (() => {
+      const d = document.createElement('div');
+      d.className = 'exec-sortie';
+      codeEl.closest('pre')?.appendChild(d);
+      return d;
+    })();
+  try {
+    const probe = await fetch('/api/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commande: brut, confirme: false }),
+    });
+    const dj = await probe.json().catch(() => ({}));
+    if (probe.status === 403 || (dj && dj.erreur && dj.motif)) {
+      zone().textContent = 'Bloqué : ' + (dj.motif || dj.erreur);
+      zone().className = 'exec-sortie err';
+      return;
+    }
+    if (probe.status !== 428 && !probe.ok) {
+      zone().textContent = (dj && dj.erreur) || ('Erreur agent (' + probe.status + ')');
+      zone().className = 'exec-sortie err';
+      return;
+    }
+    const ok = await boiteModale({
+      titre: 'Exécuter sur ce PC ?',
+      message: 'Commande : ' + brut.slice(0, 180) + (brut.length > 180 ? '…' : '') +
+        '\nAgent local 127.0.0.1:3020 — confirmez seulement si vous faites confiance à cette commande.',
+      labelOk: 'Exécuter',
+      danger: true,
+    });
+    if (!ok) { zone().textContent = 'Annulé.'; return; }
+    const r = await fetch('/api/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commande: brut, confirme: true }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.erreur) {
+      zone().textContent = (d && d.erreur) || ('HTTP ' + r.status);
+      zone().className = 'exec-sortie err';
+      return;
+    }
+    const parts = [];
+    if (d.stdout) parts.push(d.stdout);
+    if (d.stderr) parts.push('[stderr]\n' + d.stderr);
+    parts.push('— code=' + d.code + ' · ' + d.duree_ms + ' ms');
+    zone().textContent = parts.join('\n').slice(0, 8000);
+    zone().className = 'exec-sortie' + (d.ok ? '' : ' err');
+  } catch (e) {
+    const z = zone();
+    z.textContent = String((e && e.message) || e).slice(0, 400);
+    z.className = 'exec-sortie err';
+  } finally {
+    bouton.disabled = false;
+    bouton.textContent = 'Exécuter';
+  }
 }
 
 /* Analyse bloc par bloc (ligne à ligne) ; retourne un DocumentFragment. */
