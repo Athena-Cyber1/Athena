@@ -1785,7 +1785,7 @@ span.think:not(details .think) {
 .btn-attacher {
   flex: 0 0 auto;
   width: 24px;
-  height: 24px;
+  height: 26px;
   border-radius: 9px;
   border: 1px solid var(--bord);
   background: var(--carte-doux);
@@ -1805,6 +1805,7 @@ span.think:not(details .think) {
 .btn-attacher .ico {
   width: 16px;
   height: 16px;
+  transform: translateX(-2px);
 }
 .compteur-saisie {
   position: absolute;
@@ -1845,7 +1846,7 @@ span.think:not(details .think) {
 
 /* Background gris clair au survol uniquement */
 .btn-envoyer:hover:not(:disabled) {
-  background: #e5e5e5;       /* Gris clair (utilisez rgba(255, 255, 255, 0.1) si vous êtes en thème sombre) */
+  background: #545353;       /* Gris clair (utilisez rgba(255, 255, 255, 0.1) si vous êtes en thème sombre) */
 }
 
 .btn-envoyer:active:not(:disabled) {
@@ -2797,7 +2798,6 @@ details.raisonnement summary {
   width: 24px;
   height: 24px;
   border-color: transparent;
-  border-radius: 50%;
   background: transparent;
   color: #bdbdbd;
 }
@@ -3424,11 +3424,11 @@ details.trace-cmd.echec .trace-cmd-status {
 .composeur-carte {
   width: min(900px, 100%);
   max-width: 900px;
-  min-height: 64px;
-  height: 64px;
+  min-height: 30px;
+  height: 30px;
   max-height: 64px;
   padding: 8px 10px;
-  border-radius: 22px;
+  border-radius: 15px;
   background: #181818;
   border-color: #333333;
 }
@@ -3436,8 +3436,8 @@ details.trace-cmd.echec .trace-cmd-status {
 .saisie-zone,
 .saisie-mirror,
 .saisie {
-  min-height: 40px;
-  height: 40px;
+  min-height: 35px;
+  height: 35px;
   max-height: 40px;
 }
 
@@ -3462,17 +3462,4 @@ details.trace-cmd.echec .trace-cmd-status {
   .row.bot {
     margin-left: 14px;
   }
-}
-
-.btn-envoyer {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--texte);
-  transition: background-color 0.15s, transform 0.1s, opacity 0.15s;
-}
-
-.btn-envoyer:hover:not(:disabled) {
-  background: #e5e5e5;
 }
