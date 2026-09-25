@@ -3419,9 +3419,9 @@ details.trace-cmd.echec .trace-cmd-status {
   width: min(900px, 100%);
   max-width: 900px;
   min-height: 30px;
-  height: auto;
-  max-height: none;
-  padding: 8px 10px 22px;
+  height: 30px;
+  max-height: 64px;
+  padding: 8px 10px;
   border-radius: 15px;
   background: #181818;
   border-color: #333333;
@@ -3437,6 +3437,20 @@ details.trace-cmd.echec .trace-cmd-status {
 
 .saisie {
   overflow: hidden;
+  overflow-y: auto !important;
+  min-height: 0;
+  max-height: 1.45em;
+  padding-bottom: 0;
+  color: #eeeeee;
+  scrollbar-width: none;
+}
+
+.saisie::-webkit-scrollbar {
+  display: none;
+}
+
+.saisie-mirror {
+  display: none;
 }
 
 .composeur-pied {
