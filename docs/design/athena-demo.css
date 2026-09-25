@@ -2778,7 +2778,7 @@ details.raisonnement summary {
 
 .saisie {
   min-height: 46px;
-  max-height: 10px;
+  max-height: 120px;
   padding: 11px 7px;
   resize: none;
   overflow-y: auto;
