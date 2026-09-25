@@ -1783,8 +1783,8 @@ span.think:not(details .think) {
 }
 .btn-attacher {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border-radius: 9px;
   border: 1px solid var(--bord);
   background: var(--carte-doux);
@@ -1829,8 +1829,8 @@ span.think:not(details .think) {
 }
 .btn-envoyer {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border-radius: 10px;
   border: none;
   background: var(--primaire);
@@ -2778,7 +2778,7 @@ details.raisonnement summary {
 
 .saisie {
   min-height: 46px;
-  max-height: 170px;
+  max-height: 180px;
   padding: 11px 7px;
   resize: none;
   overflow-y: auto;
@@ -2787,8 +2787,8 @@ details.raisonnement summary {
 }
 
 .btn-attacher {
-  width: 24px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   border-color: transparent;
   border-radius: 50%;
   background: transparent;
@@ -2802,8 +2802,8 @@ details.raisonnement summary {
 }
 
 .btn-envoyer {
-  width: 24px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: #ededed;
   color: #202020;
