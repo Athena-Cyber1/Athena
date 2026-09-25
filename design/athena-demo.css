@@ -1758,7 +1758,7 @@ span.think:not(details .think) {
   background: var(--carte);
   border: 1px solid var(--bord-fort);
   border-radius: 13px;
-  padding: 3px 3px;
+  padding: 2px 8px;
   position: relative;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -1774,8 +1774,8 @@ span.think:not(details .think) {
   background: transparent;
   color: var(--texte);
   font-size: 0.92rem;
-  min-height: 1px;
-  padding: 4px 4px;
+  min-height: 20px;
+  padding: 1px 4px;
 }
 .saisie::placeholder {
   color: var(--texte-doux);
