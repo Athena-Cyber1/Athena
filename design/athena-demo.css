@@ -3464,9 +3464,35 @@ details.trace-cmd.echec .trace-cmd-status {
   }
 }
 
+.btn-attacher,
 .btn-envoyer {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
+}
+
+.btn-modele {
+  font-family: inherit;
+  font-size: 0.88rem;
+  transition: color 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.btn-modele .modele-actif-nom {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.btn-modele:active {
+  transform: scale(0.94);
+}
+
+.hud-modeles {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.btn-envoyer {
+  width: 28px;
+  height: 28px;
   border-radius: 9px;
   border-color: transparent;
   background: transparent;
