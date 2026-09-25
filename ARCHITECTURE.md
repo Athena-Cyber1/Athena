@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260925v`
+> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260925w`
 
 ---
 
