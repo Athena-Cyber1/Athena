@@ -221,7 +221,7 @@ export default function Accueil() {
                 title="Envoyer"
                 aria-label="Envoyer"
               >
-                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5.5M6 11l6-5.5L18 11" /></svg>
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 10l-5 5 5 5M4 15h11a4 4 0 0 0 4-4V7" /></svg>
               </button>
             </div>
             <div className="composeur-pied">
