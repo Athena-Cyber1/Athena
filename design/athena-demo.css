@@ -3463,3 +3463,16 @@ details.trace-cmd.echec .trace-cmd-status {
     margin-left: 14px;
   }
 }
+
+.btn-envoyer {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--texte);
+  transition: background-color 0.15s, transform 0.1s, opacity 0.15s;
+}
+
+.btn-envoyer:hover:not(:disabled) {
+  background: #e5e5e5;
+}
