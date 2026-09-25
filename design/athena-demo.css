@@ -2245,18 +2245,19 @@ span.think:not(details .think) {
   padding: 0 10px;
   border-radius: 8px;
   border: 1px solid var(--bord);
-  background: var(--carte);
+  background: var(--carte-doux); /* Même fond que .btn-attacher */
   color: var(--texte);
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
   max-width: 180px;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s, border-color 0.15s, transform 0.1s; /* Même transition que .btn-attacher */
 }
-.btn-modele:hover,
-.btn-modele[aria-expanded="true"] {
-  border-color: var(--bord-fort);
-  background: var(--carte-doux);
+
+.btn-modele:hover {
+  border-color: transparent;
+  background: #3d3d3d; /* Même fond au survol que .btn-attacher */
+  color: #f1f1f1;
 }
 
 .modele-actif-nom {
@@ -2625,6 +2626,20 @@ span.think:not(details .think) {
   padding: 12px 24px;
   border-bottom-color: #3b3b3b;
   background: var(--carte);
+}
+
+.chat-marque {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-marque h1 {
+  overflow: hidden;
+  color: #e8e8e8;
+  font-size: 0.94rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bascule {
@@ -3452,6 +3467,7 @@ details.trace-cmd.echec .trace-cmd-status {
 .btn-modele {
   font-family: inherit;
   font-size: 0.88rem;
+  background: transparent; /* Aligné avec la surcharge de .btn-attacher */
   transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
 
@@ -3461,7 +3477,7 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 .btn-modele:active {
-  transform: scale(0.94);
+  transform: scale(0.94); /* Effet d'enfoncement identique à .btn-attacher */
 }
 
 .hud-modeles {
