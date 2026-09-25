@@ -3163,17 +3163,15 @@ details.raisonnement li.doute {
 .saisie-mirror,
 .saisie {
   width: 100%;
-  min-height: 46px;
-  max-height: 180px;
-  margin: 0;
-  padding: 11px 7px;
-  border: 0;
-  border-radius: 10px;
-  font: inherit;
-  font-size: 0.94rem;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  resize: none;
+  field-sizing: content; /* Fait varier la hauteur selon le nombre de lignes */
 }
 
 .saisie-mirror {
@@ -3416,15 +3414,19 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 .composeur-carte {
+  box-sizing: border-box;
   width: min(900px, 100%);
   max-width: 900px;
   min-height: 30px;
   height: auto;
   max-height: 64px;
-  padding: 8px 10px;
+  padding: 4px 10px; /* Ajusté pour respecter les 30px au total */
   border-radius: 15px;
   background: #181818;
-  border-color: #333333;
+  border: 1px solid #333333;
+  overflow-y: auto; /* Affiche un scroll si le texte dépasse max-height */
+  display: flex;
+  align-items: center;
 }
 
 .saisie-zone,
