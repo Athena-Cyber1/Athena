@@ -18,3 +18,13 @@ data/
 # Build / OS
 .next/
 .DS_Store
+
+# Generated publication assets
+/docs/design/
+/public/design/
+/public/chat-demo.js
+/public/demo/
+/public/api-shim.js
+/public/_index.html
+/src/lib/pages-index-html.ts
+/public/keys.js

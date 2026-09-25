@@ -21,11 +21,9 @@ import path from "path";
 
 const DOSSIER_UPLOAD = path.join(process.cwd(), "upload");
 const CHEMIN_THEME = path.join(process.cwd(), "design", "theme-importe.json");
-const CHEMIN_THEME_PAGES = path.join(process.cwd(), "docs", "design", "theme-importe.json");
-const CHEMIN_THEME_PUBLIC = path.join(process.cwd(), "public", "design", "theme-importe.json");
 const TAILLE_MAX = 300_000; // 300 Ko de contenu collé/uploadé max.
 
-/** Tokens de thème réellement consommés par public/demo/chat-demo.js. */
+/** Tokens de thème réellement consommés par public/chat-demo.js. */
 const TOKENS_AUTORISES = new Set([
   "fond", "carte", "carte-doux", "texte", "texte-doux", "bord", "bord-fort",
   "primaire", "primaire-fort", "primaire-doux", "primaire-texte",
@@ -186,9 +184,7 @@ export async function POST(req: Request) {
       tokens,
     };
     const brut = JSON.stringify(theme, null, 2);
-    for (const chemin of [CHEMIN_THEME, CHEMIN_THEME_PAGES, CHEMIN_THEME_PUBLIC]) {
-      await fs.writeFile(chemin, brut, "utf8");
-    }
+    await fs.writeFile(CHEMIN_THEME, brut, "utf8");
 
     return Response.json({
       ok: true,
@@ -215,12 +211,10 @@ export async function DELETE(req: Request) {
     return reponseRefus(garde.raison ?? "origine non autorisée");
   }
   try {
-    for (const chemin of [CHEMIN_THEME, CHEMIN_THEME_PAGES, CHEMIN_THEME_PUBLIC]) {
-      try {
-        await fs.unlink(chemin);
-      } catch {
-        // absent → déjà l'état par défaut, ce n'est pas une erreur.
-      }
+    try {
+      await fs.unlink(CHEMIN_THEME);
+    } catch {
+      // absent → déjà l'état par défaut, ce n'est pas une erreur.
     }
   } catch {
     // ignore

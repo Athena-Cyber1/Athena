@@ -13,9 +13,10 @@ Dépôt de code source du projet **Athéna** (pipeline v10.9.4).
 
 | Dossier | Rôle |
 |---------|------|
-| `docs/` | **GitHub Pages** — site statique + `api-shim.js` (chat réel côté navigateur) |
+| `docs/` | **GitHub Pages** — site statique; `design/` est généré depuis la source canonique |
+| `design/` | **Source canonique** des CSS, logo et loader de thème |
 | `src/` | App **Next.js** (dev local, passerelle `/api/chat` → sidecar) |
-| `public/` | Assets statiques Next (miroirs `docs/`) |
+| `public/` | Assets statiques Next générés depuis `design/` et `docs/` |
 | `mini-services/llm-bridge/` | Pont LLM **:3015** (Bun) — cascade + circuit-breaker |
 | `mini-services/llm-chat/` | Moteur Athéna **:3010** (Python) — agent déterministe |
 | `mini-services/local-agent/` | Agent **:3020** — **exécution de commandes sur le PC** |
@@ -33,19 +34,22 @@ node mini-services/local-agent/index.js
 #    ou sans confirmation (dev) :
 node mini-services/local-agent/index.js --auto
 
-# 3. Application Next.js
+# 3. Générer les sorties Next/Pages depuis les sources canoniques
+node tools/prepare-assets.js
+
+# 4. Application Next.js
 bun install && bun run dev            # → http://localhost:3000
 
-# 4. Bridge LLM
+# 5. Bridge LLM
 cd mini-services/llm-bridge && bun install && bun --hot index.ts   # :3015
 
-# 5. Moteur Athéna
+# 6. Moteur Athéna
 cd mini-services/llm-chat && pip install fastapi uvicorn && bash daemon.sh  # :3010
 ```
 
 ## Vitrine GitHub Pages
 
-`https://athena-cyber1.github.io/Athena/` — servie depuis **`docs/`**.
+`https://athena-cyber1.github.io/Athena/` — servie depuis **`docs/`** après génération des assets par GitHub Actions.
 Fonctionne **sans backend** (modèles gratuits via navigateur).
 Le pipeline complet (crans, canari, mémoire) exige le stack local.
 

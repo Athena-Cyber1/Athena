@@ -65,11 +65,11 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 │   ├── chat-demo.js             logique chat (stream, HUD, markdown)
 │   ├── keys.js                  clés API (PUBLIC — plafond limité)
 │   ├── .nojekyll                désactive Jekyll Pages
-│   └── design/                  miroir de design/ (servi par Pages)
+│   └── design/                  sortie générée depuis design/ (servie par Pages)
 │
 ├── src/                         ★ APPLICATION NEXT.JS (dev local)
 │   ├── app/
-│   │   ├── page.tsx             coquille DOM (miroir docs/index.html)
+│   │   ├── page.tsx             coquille DOM alignée sur docs/index.html
 │   │   ├── layout.tsx           importe design/athena-demo.css
 │   │   ├── not-found.tsx
 │   │   └── api/
@@ -82,10 +82,10 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 │   ├── lib/                     db.ts, secu.ts (garde origine)
 │   └── proxy.ts                 en-têtes sécurité (ex-middleware)
 │
-├── public/                      assets Next (miroirs design/ + docs)
-│   ├── design/                  miroir de design/ (servi par Next)
+├── public/                      assets Next générés (design/ + docs/)
+│   ├── design/                  sortie générée depuis design/
 │   ├── robots.txt
-│   └── demo/                    chat-demo.js
+│   └── chat-demo.js             sortie générée depuis docs/chat-demo.js
 │
 ├── mini-services/               ★ SERVICES LOCAUX INDÉPENDANTS
 │   ├── llm-bridge/              :3015  Bun — cascade multi-provider
