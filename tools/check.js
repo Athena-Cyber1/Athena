@@ -28,6 +28,9 @@ const need = [...new Set([...js.matchAll(/getElementById\(\s*["'`]([^"'`]+)["'`]
 const dyn = new Set(['entrainement-exemples','entrainement-progres','entrainement-sujets','entrainement-web','entrainement-info','entrainement-lancer','import-fichiers','bandeau-stockage']);
 const missing = need.filter(i => !ids.includes(i) && !dyn.has(i));
 console.log('JS needs=' + need.length + ' MISSING=' + JSON.stringify(missing));
+const uiContract = ['side-nav', 'nav-projets', 'nav-artefacts', 'nav-code', 'nav-personnaliser', 'titre-conversation', 'partager', 'saisie-mirror', 'composeur-pied'];
+const uiMissing = uiContract.filter(i => !ids.includes(i) && !h.includes('class="' + i) && !h.includes(' ' + i + '"') && !h.includes(i + ' '));
+console.log('UI contract missing=' + JSON.stringify(uiMissing));
 
 const needClasses = ['chat-shell', 'page-demo'];
 for (const c of needClasses) console.log('class ' + c + ': ' + (h.includes('class="' + c) || h.includes(' ' + c + '"') || h.includes(c + ' ')));

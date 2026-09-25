@@ -20,9 +20,32 @@ export default function Accueil() {
               Nouvelle discussion
             </button>
 
+            <nav className="side-nav" aria-label="Navigation principale">
+              <button id="nav-projets" className="side-nav-item" type="button">
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5H18A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z" /></svg>
+                <span>Projets</span>
+              </button>
+              <button id="nav-artefacts" className="side-nav-item" type="button">
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 4-7 4-7-4 7-4Z" /><path d="m5 12 7 4 7-4M5 17l7 4 7-4" /></svg>
+                <span>Artefacts</span>
+              </button>
+              <button id="nav-code" className="side-nav-item" type="button">
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14" /></svg>
+                <span>Code</span>
+                <span className="nav-badge">Mettre à niveau</span>
+              </button>
+              <button id="nav-personnaliser" className="side-nav-item" type="button">
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h16v11H4zM8 8.5V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2.5M4 12h16M10 12v2h4v-2" /></svg>
+                <span>Personnaliser</span>
+              </button>
+            </nav>
+
             <div className="side-bloc">
               <div className="side-bloc-titre">
-                <span>Conversations</span>
+                <span>Discussions et tâches</span>
+                <button id="filtre-discussions" className="filtre-discussions" type="button" title="Filtrer les discussions" aria-label="Filtrer les discussions">
+                  <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+                </button>
               </div>
               <div className="side-recherche">
                 <input
@@ -55,7 +78,7 @@ export default function Accueil() {
               </p>
             </div>
 
-            <div className="side-section">
+            <div className="side-section" hidden>
               <div className="side-section-titre">
                 <span>Projets</span>
                 <button
@@ -74,7 +97,7 @@ export default function Accueil() {
           </div>
 
           <div className="side-pied">
-            <div className="side-actions">
+            <div className="side-actions" hidden>
               <button id="ouvrir-projets" type="button" className="side-onglet">
                 <span className="onglet-ico" aria-hidden="true">
                   <svg className="ico" viewBox="0 0 24 24"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5H18A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z" /></svg>
@@ -107,7 +130,7 @@ export default function Accueil() {
                 <span className="avatar" aria-hidden="true">N</span>
                 <span className="compte-infos">
                   <span className="compte-nom">Neyzoxx</span>
-                  <small>Plan gratuit · local</small>
+                  <small>Free</small>
                 </span>
               </button>
               <div id="menu-compte" className="menu-compte" hidden role="menu" aria-label="Menu du compte">
@@ -121,6 +144,14 @@ export default function Accueil() {
                   <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M9.7 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .9-1 1.6v.3" /><path d="M12 16.8h.01" /></svg> Aide et assistance
                 </button>
               </div>
+            </div>
+            <div className="side-utilitaires">
+              <button id="telecharger-conversations" type="button" title="Télécharger les conversations" aria-label="Télécharger les conversations">
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10m0 0 3.5-3.5M12 14.5 8.5 11M5 19.5h14" /></svg>
+              </button>
+              <button id="rechercher-conversations" type="button" title="Rechercher une discussion" aria-label="Rechercher une discussion">
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
+              </button>
             </div>
           </div>
         </aside>
@@ -195,16 +226,19 @@ export default function Accueil() {
               >
                 <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 9.5 10 17a3.5 3.5 0 0 1-5-5l8-8a5 5 0 0 1 7 7l-8.5 8.5a6.5 6.5 0 0 1-9-9L11 3.5" /></svg>
               </button>
-              <textarea
-                id="saisie"
-                name="saisie"
-                className="saisie"
-                rows={1}
-                maxLength={4000}
-                autoComplete="off"
-                placeholder="Écrivez votre message…"
-                aria-label="Votre message"
-              ></textarea>
+              <div className="saisie-zone">
+                <span id="saisie-mirror" className="saisie-mirror" aria-hidden="true"></span>
+                <textarea
+                  id="saisie"
+                  name="saisie"
+                  className="saisie"
+                  rows={1}
+                  maxLength={4000}
+                  autoComplete="off"
+                  placeholder="Écrivez votre message…"
+                  aria-label="Votre message"
+                ></textarea>
+              </div>
               <span id="compteur-saisie" className="compteur-saisie" aria-live="off">
                 0 / 4000
               </span>
@@ -218,14 +252,18 @@ export default function Accueil() {
                 <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5.5M6 11l6-5.5L18 11" /></svg>
               </button>
             </div>
+            <div className="composeur-pied">
+              <span>Athéna est une IA et peut commettre des erreurs. Vérifiez les réponses.</span>
+              <span className="composeur-niveau"><strong id="modele-pied">auto</strong><span>Élevé</span></span>
+            </div>
             <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabIndex={-1} />
           </form>
         </main>
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260924o" strategy="beforeInteractive" />
-      <Script src="/demo/chat-demo.js?v=20260924o" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260924q" strategy="beforeInteractive" />
+      <Script src="/demo/chat-demo.js?v=20260924q" strategy="beforeInteractive" />
     </div>
   );
 }

@@ -59,6 +59,9 @@ const MODE_QA = new URLSearchParams(location.search).has('qa');
 function publierHooks(nom, obj) { if (MODE_QA) window[nom] = obj; }
 const msgsEl = $('msgs'), saisieEl = $('saisie'), btnEl = $('btn');
 const titreConversationEl = $('titre-conversation'), partagerEl = $('partager');
+const saisieMirrorEl = $('saisie-mirror'), modelePiedEl = $('modele-pied');
+const navProjetsEl = $('nav-projets'), navArtefactsEl = $('nav-artefacts');
+const navCodeEl = $('nav-code'), navPersonnaliserEl = $('nav-personnaliser');
 const statutEl = $('statut'), dotEl = $('dot');
 const fichiersEl = $('fichiers'), attacherEl = $('attacher'), apercuFichiersEl = $('file-preview');
 const compteurSaisieEl = $('compteur-saisie');
@@ -85,6 +88,16 @@ const SVG_ICOS = {
   send: '<path d="M12 19V5.5M6 11l6-5.5L18 11"/>',
   alert: '<path d="M12 4.5 3 19.5h18z"/><path d="M12 10v3.5M12 16.5h.01"/>',
   terminal: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 9.5 10.2 12 7 14.5"/><path d="M12 14.5h5"/>',
+  folder: '<path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5h7A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z"/>',
+  layers: '<path d="m12 3 7 4-7 4-7-4 7-4Z"/><path d="m5 12 7 4 7-4M5 17l7 4 7-4"/>',
+  code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
+  briefcase: '<path d="M4 8.5h16v11H4zM8 8.5V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2.5M4 12h16M10 12v2h4v-2"/>',
+  filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
+  volume: '<path d="M5 10v4h3l4 3V7l-4 3H5Z"/><path d="M15 9.5a3 3 0 0 1 0 5M17.5 7a6 6 0 0 1 0 10"/>',
+  thumbUp: '<path d="M7 10v10H4V10h3ZM7 20h8.2a2 2 0 0 0 1.9-1.4l1.8-5.5A2 2 0 0 0 17 10h-4l.7-3.1A2.2 2.2 0 0 0 11.5 4L7 10"/>',
+  thumbDown: '<path d="M7 14V4H4v10h3ZM7 4h8.2a2 2 0 0 1 1.9 1.4l1.8 5.5A2 2 0 0 1 17 14h-4l.7 3.1a2.2 2.2 0 0 1-2.2 2.9L7 14"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.7-4L4 9"/><path d="M4 4v5h5M4 13a8 8 0 0 0 14.7 4L20 15"/><path d="M20 20v-5h-5"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
 };
 
 /* Version chaîne (pas un nœud DOM) — pour injecter une icône dans du HTML
@@ -421,7 +434,7 @@ window.addEventListener('storage', (e) => {
     if (c.messages.length === 0) exemplesInitiaux();
     else c.messages.forEach((m) => {
       try {
-        bulle(m.role === 'user' ? 'user' : 'assistant', m.content, m.outil, { verification: m.verification, rag: m.rag, raisonnement: m.raisonnement, attachments: m.attachments || null });
+        bulle(m.role === 'user' ? 'user' : 'assistant', m.content, m.outil, { verification: m.verification, rag: m.rag, raisonnement: m.raisonnement, attachments: m.attachments || null, traces: m.traces || null });
       } catch { bulle('assistant', '(message non affiché — erreur de rejeu)'); }
     });
     rendreConversations();
@@ -626,7 +639,7 @@ function ouvrirConversation(id) {
          JAMAIS tuer tout le rejeu ni la sidebar — on rend un placeholder et on
          continue (avant : exception -> module mort au chargement). */
       try {
-        bulle(m.role === 'user' ? 'user' : 'assistant', m.content, m.outil, { verification: m.verification, rag: m.rag, raisonnement: m.raisonnement, attachments: m.attachments || null });
+        bulle(m.role === 'user' ? 'user' : 'assistant', m.content, m.outil, { verification: m.verification, rag: m.rag, raisonnement: m.raisonnement, attachments: m.attachments || null, traces: m.traces || null });
       } catch (e) {
         if (console && console.warn) console.warn('rejeu : message non rendu', e);
         bulle('assistant', '(message non affiché — erreur de rejeu)');
@@ -1202,7 +1215,7 @@ publierHooks('__atelierProjets', {
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
 
-const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true };
+const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: false };
 let preferences = { ...preferencesParDefaut };
 try {
   preferences = { ...preferencesParDefaut, ...JSON.parse(localStorage.getItem('chat-preferences') || '{}') };
@@ -1784,6 +1797,9 @@ function creerBlocTraceCommande(donnees) {
   const label = document.createElement('span');
   label.className = 'trace-cmd-label';
   label.textContent = String(d.commande || '').trim() || '(commande)';
+  const status = document.createElement('span');
+  status.className = 'trace-cmd-status';
+  status.textContent = d.ok === false ? 'échec' : 'succès';
   const meta = document.createElement('span');
   meta.className = 'trace-cmd-meta';
   const bits = [];
@@ -1793,7 +1809,7 @@ function creerBlocTraceCommande(donnees) {
   const chev = document.createElement('span');
   chev.className = 'chev';
   chev.appendChild(icoSvg('chevron'));
-  sum.append(label, meta, chev);
+  sum.append(label, status, meta, chev);
   det.appendChild(sum);
 
   const corps = document.createElement('div');
@@ -1834,42 +1850,67 @@ function creerBlocTraceCommande(donnees) {
    1) POST confirme:false → 428 = confirmation requise (ou 403 bloqué)
    2) modale utilisateur
    3) POST confirme:true → sortie/stderr affichées sous le bloc */
+function creerGroupeActivite() {
+  const groupe = document.createElement('details');
+  groupe.className = 'activity-group';
+  groupe.open = true;
+  const sum = document.createElement('summary');
+  sum.appendChild(icoSvg('terminal'));
+  const label = document.createElement('span');
+  label.className = 'activity-label';
+  label.textContent = 'Exécuté';
+  const count = document.createElement('span');
+  count.className = 'activity-count';
+  count.textContent = '0 commande';
+  const chev = document.createElement('span');
+  chev.className = 'chev';
+  chev.appendChild(icoSvg('chevron'));
+  sum.append(label, count, chev);
+  const body = document.createElement('div');
+  body.className = 'activity-body';
+  groupe.append(sum, body);
+  return groupe;
+}
+function ajouterTraceAuGroupe(groupe, donnees) {
+  const body = groupe.querySelector('.activity-body');
+  body.appendChild(creerBlocTraceCommande({ ...donnees, ok: donnees.ok !== false }));
+  const n = body.querySelectorAll('.trace-cmd').length;
+  groupe.querySelector('.activity-count').textContent = n + ' commande' + (n > 1 ? 's' : '');
+}
 function ajouterTraceActivite(codeEl, donnees) {
   const pre = codeEl.closest('pre');
   const parent = pre?.parentElement;
   if (!pre || !parent) return;
   let groupe = parent.querySelector('.activity-group');
   if (!groupe) {
-    groupe = document.createElement('details');
-    groupe.className = 'activity-group';
-    groupe.open = true;
-    const sum = document.createElement('summary');
-    sum.appendChild(icoSvg('terminal'));
-    const label = document.createElement('span');
-    label.className = 'activity-label';
-    label.textContent = 'Exécuté';
-    const count = document.createElement('span');
-    count.className = 'activity-count';
-    count.textContent = '0 commande';
-    const chev = document.createElement('span');
-    chev.className = 'chev';
-    chev.appendChild(icoSvg('chevron'));
-    sum.append(label, count, chev);
-    const body = document.createElement('div');
-    body.className = 'activity-body';
-    groupe.append(sum, body);
+    groupe = creerGroupeActivite();
     parent.appendChild(groupe);
   }
-  const body = groupe.querySelector('.activity-body');
-  body.appendChild(creerBlocTraceCommande({ ...donnees, ok: donnees.ok !== false }));
-  const n = body.querySelectorAll('.trace-cmd').length;
-  groupe.querySelector('.activity-count').textContent = n + ' commande' + (n > 1 ? 's' : '');
+  ajouterTraceAuGroupe(groupe, donnees);
+}
+
+function memoriserTraceActivite(commande, donnees, convoId = idConversation) {
+  const c = conversations.find((item) => item.id === convoId) || conversationOuverte();
+  const dernier = [...(c.messages || [])].reverse().find((m) => m && m.role === 'assistant');
+  if (!dernier) return;
+  dernier.traces = Array.isArray(dernier.traces) ? dernier.traces : [];
+  dernier.traces.push({
+    commande: String(commande || '').slice(0, 4000),
+    ok: donnees.ok !== false,
+    code: typeof donnees.code === 'number' ? donnees.code : null,
+    stdout: String(donnees.stdout || '').slice(0, 8000),
+    stderr: String(donnees.stderr || '').slice(0, 8000),
+    duree_ms: typeof donnees.duree_ms === 'number' ? donnees.duree_ms : null,
+  });
+  c.maj = Date.now();
+  sauverConversations();
 }
 
 async function lancerCommandeLocale(commande, bouton, codeEl) {
   if (bouton.disabled) return;
   const brut = String(commande || '').trim();
   if (!brut) return;
+  const convoId = idConversation;
   bouton.disabled = true;
   bouton.textContent = '…';
   const zone = () => codeEl.closest('pre')?.querySelector('.exec-sortie')
@@ -1879,6 +1920,13 @@ async function lancerCommandeLocale(commande, bouton, codeEl) {
       codeEl.closest('pre')?.appendChild(d);
       return d;
     })();
+  const echec = (raison) => {
+    const d = { commande: brut, ok: false, stderr: raison, code: null, duree_ms: null };
+    zone().textContent = raison;
+    zone().className = 'exec-sortie err';
+    ajouterTraceActivite(codeEl, d);
+    memoriserTraceActivite(brut, d, convoId);
+  };
   try {
     const probe = await fetch('/api/exec', {
       method: 'POST',
@@ -1887,13 +1935,11 @@ async function lancerCommandeLocale(commande, bouton, codeEl) {
     });
     const dj = await probe.json().catch(() => ({}));
     if (probe.status === 403 || (dj && dj.erreur && dj.motif)) {
-      zone().textContent = 'Bloqué : ' + (dj.motif || dj.erreur);
-      zone().className = 'exec-sortie err';
+      echec('Bloqué : ' + (dj.motif || dj.erreur));
       return;
     }
     if (probe.status !== 428 && !probe.ok) {
-      zone().textContent = (dj && dj.erreur) || ('Erreur agent (' + probe.status + ')');
-      zone().className = 'exec-sortie err';
+      echec((dj && dj.erreur) || ('Erreur agent (' + probe.status + ')'));
       return;
     }
     const ok = await boiteModale({
@@ -1911,8 +1957,7 @@ async function lancerCommandeLocale(commande, bouton, codeEl) {
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.erreur) {
-      zone().textContent = (d && d.erreur) || ('HTTP ' + r.status);
-      zone().className = 'exec-sortie err';
+      echec((d && d.erreur) || ('HTTP ' + r.status));
       return;
     }
     // v-next : compte-rendu repliable (commande + code + durée + sortie)
@@ -1920,10 +1965,9 @@ async function lancerCommandeLocale(commande, bouton, codeEl) {
     const ancienneZone = codeEl.closest('pre')?.querySelector('.exec-sortie');
     if (ancienneZone) ancienneZone.remove();
     ajouterTraceActivite(codeEl, d);
+    memoriserTraceActivite(brut, d, convoId);
   } catch (e) {
-    const z = zone();
-    z.textContent = String((e && e.message) || e).slice(0, 400);
-    z.className = 'exec-sortie err';
+    echec(String((e && e.message) || e).slice(0, 400));
   } finally {
     bouton.disabled = false;
     bouton.textContent = 'Exécuter';
@@ -2444,6 +2488,41 @@ new MutationObserver((mutations) => {
 }).observe(msgsEl, { childList: true, subtree: false });
 document.querySelector('.chat-shell').appendChild(pastilleReponseEl);
 
+function actionMessage(contenu, role) {
+  const actions = document.createElement('div');
+  actions.className = 'message-actions';
+  const ajouter = (icone, label, handler) => {
+    const bouton = document.createElement('button');
+    bouton.type = 'button';
+    bouton.title = label;
+    bouton.setAttribute('aria-label', label);
+    bouton.appendChild(icoSvg(icone));
+    if (handler) bouton.addEventListener('click', handler);
+    actions.appendChild(bouton);
+    return bouton;
+  };
+  ajouter('copy', 'Copier le message', (event) => copierTexte(contenu, event.currentTarget));
+  if (role === 'assistant') {
+    ajouter('volume', 'Lire le message', (event) => {
+      const bouton = event.currentTarget;
+      if (!('speechSynthesis' in window)) {
+        notifier('La lecture vocale n’est pas disponible dans ce navigateur.');
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const lecture = new SpeechSynthesisUtterance(contenu);
+      lecture.lang = 'fr-FR';
+      bouton.classList.add('actif');
+      lecture.onend = () => bouton.classList.remove('actif');
+      window.speechSynthesis.speak(lecture);
+    });
+    const like = ajouter('thumbUp', 'Réponse utile', () => like.classList.toggle('actif'));
+    ajouter('thumbDown', 'Réponse à améliorer', () => like.classList.remove('actif'));
+    ajouter('refresh', 'Régénérer la réponse', () => regenererDerniereReponse());
+  }
+  return actions;
+}
+
 /* ---------- Rendu des messages ---------- */
 function bulle(role, contenu, outil, meta) {
   const row = document.createElement('div');
@@ -2462,6 +2541,11 @@ function bulle(role, contenu, outil, meta) {
     b.appendChild(corps);
   } else {
     b.textContent = contenu; // un message TAPÉ n'est pas du Markdown
+  }
+  if (meta && Array.isArray(meta.traces) && meta.traces.length) {
+    const groupe = creerGroupeActivite();
+    meta.traces.forEach((trace) => ajouterTraceAuGroupe(groupe, trace));
+    b.appendChild(groupe);
   }
   /* v9.5 : fichiers joints du message (affichés, pas cousus dans le texte) */
   if (meta && meta.attachments && meta.attachments.length) {
@@ -2504,14 +2588,7 @@ function bulle(role, contenu, outil, meta) {
     }
   }
   row.appendChild(b);
-  const copier = document.createElement('button');
-  copier.type = 'button';
-  copier.className = 'copier';
-  copier.title = 'Copier le message';
-  copier.setAttribute('aria-label', 'Copier le message');
-  copier.appendChild(icoSvg('copy'));
-  copier.addEventListener('click', () => copierTexte(b.textContent, copier));
-  row.appendChild(copier);
+  row.appendChild(actionMessage(contenu, role));
   msgsEl.appendChild(row);
   return b;
 }
@@ -2667,18 +2744,7 @@ async function genererReponse(convo) {
   /* v7.1 : panneau « raisonnement en direct » (canal de progression NDJSON) */
   const panneau = preferences.raisonnementVisible !== false
     ? creerPanneauRaisonnement(think, vueOuverte) : null;
-  if (!panneau) {
-    const sp = document.createElement('span');
-    sp.className = 'think';
-    sp.textContent = 'réfléchit… ';
-    const mini = document.createElement('span');
-    mini.style.cssText = 'font-size:.72rem;opacity:.6';
-    mini.textContent = '(CPU, quelques secondes)';
-    think.textContent = '';
-    think.appendChild(sp);
-    think.appendChild(document.createTextNode(' '));
-    think.appendChild(mini);
-  }
+  if (!panneau) think.replaceChildren();
   if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
   controleurEnCours = new AbortController();
   let r = null;
@@ -2779,10 +2845,26 @@ async function genererReponse(convo) {
 /* v9.4 — limite de saisie (audit : aucune borne) : 4 000 caractères, côté
    client (la borne serveur est 8 000 par message avec pièces jointes). Le
    compteur n'apparaît qu'à l'approche de la limite — sobre par défaut. */
+function majMirrorSaisie() {
+  if (!saisieMirrorEl) return;
+  const valeur = saisieEl.value;
+  saisieMirrorEl.replaceChildren();
+  if (!valeur) return;
+  const commande = valeur.match(/^\/[^\s]+/);
+  if (!commande) {
+    saisieMirrorEl.textContent = valeur;
+    return;
+  }
+  const bleu = document.createElement('span');
+  bleu.className = 'commande';
+  bleu.textContent = commande[0];
+  saisieMirrorEl.append(bleu, document.createTextNode(valeur.slice(commande[0].length)));
+}
 function ajusterSaisie() {
-  saisieEl.style.height = 'auto';
-  saisieEl.style.height = Math.min(saisieEl.scrollHeight, 180) + 'px';
-  saisieEl.style.overflowY = saisieEl.scrollHeight > 180 ? 'auto' : 'hidden';
+  majMirrorSaisie();
+  saisieEl.style.height = '40px';
+  saisieEl.style.overflowY = 'hidden';
+  if (saisieMirrorEl) saisieMirrorEl.scrollTop = 0;
 }
 const MAX_SAISIE = 4000;
 saisieEl.maxLength = MAX_SAISIE;
@@ -2803,6 +2885,7 @@ $('form').addEventListener('submit', (e) => {
   envoyer();
 });
 saisieEl.addEventListener('input', () => { ajusterSaisie(); majBouton(); majCompteurSaisie(); });
+saisieEl.addEventListener('scroll', () => { if (saisieMirrorEl) saisieMirrorEl.scrollTop = saisieEl.scrollTop; });
 saisieEl.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
@@ -2840,6 +2923,23 @@ fichiersEl.addEventListener('change', () => {
 nouvelleDiscussionEl.addEventListener('click', () => nouvelleDiscussion());
 ouvrirProjetsEl.addEventListener('click', () => afficherProjets());
 ouvrirParametresEl.addEventListener('click', () => afficherParametres());
+navProjetsEl?.addEventListener('click', () => afficherProjets());
+navArtefactsEl?.addEventListener('click', () => afficherVue('Artefacts', 'Les artefacts générés apparaîtront ici.'));
+navCodeEl?.addEventListener('click', () => afficherVue('Code', 'Les extraits et commandes exécutables apparaîtront ici.'));
+navPersonnaliserEl?.addEventListener('click', () => afficherParametres());
+$('telecharger-conversations')?.addEventListener('click', () => exporterToutesConversations());
+$('rechercher-conversations')?.addEventListener('click', () => {
+  const zone = document.querySelector('.side-recherche');
+  if (!zone) return;
+  zone.classList.toggle('ouverte');
+  if (zone.classList.contains('ouverte')) rechercheConversationsEl?.focus();
+});
+$('filtre-discussions')?.addEventListener('click', () => {
+  const zone = document.querySelector('.side-recherche');
+  if (!zone) return;
+  zone.classList.add('ouverte');
+  rechercheConversationsEl?.focus();
+});
 ajouterProjetEl.addEventListener('click', ajouterProjet);
 ouvrirCompteEl.addEventListener('click', () => {
   const estOuvert = !menuCompteEl.hidden;
@@ -3024,6 +3124,7 @@ try {
 function majBadgeModele() {
   const el = document.getElementById('modele-actif-nom');
   if (el) el.textContent = modeleChoisi ? modeleChoisi.name : 'auto';
+  if (modelePiedEl) modelePiedEl.textContent = modeleChoisi ? modeleChoisi.name : 'auto';
   const bouton = document.getElementById('btn-modele');
   if (bouton) {
     bouton.title = modeleChoisi
