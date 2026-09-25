@@ -3418,7 +3418,7 @@ details.trace-cmd.echec .trace-cmd-status {
   width: min(900px, 100%);
   max-width: 900px;
   min-height: 30px;
-  height: auto;
+  height: 30px;
   max-height: 64px;
   padding: 4px 10px; /* Ajusté pour respecter les 30px au total */
   border-radius: 15px;
