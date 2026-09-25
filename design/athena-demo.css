@@ -1750,6 +1750,8 @@ span.think:not(details .think) {
   background: linear-gradient(to top, var(--fond) 78%, transparent);
 }
 .composeur-carte {
+  min-height: 30px;
+  height: 30px;
   max-width: 880px;
   margin: 0 auto;
   display: flex;
@@ -1828,32 +1830,38 @@ span.think:not(details .think) {
 }
 .btn-envoyer {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  border-radius: 10px;
+  width: 32px;               /* Carré : largeur égale à la hauteur */
+  height: 32px;
+  border-radius: 8px;        /* Bords arrondis du carré */
   border: none;
-  background: var(--primaire);
-  color: var(--sur-primaire);
+  background: transparent;   /* Translucide/masqué par défaut */
+  color: var(--texte);       /* Couleur de l'icône adaptée au fond */
   font-size: 0.95rem;
   cursor: pointer;
   display: inline-grid;
   place-items: center;
-  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  transition: background-color 0.15s, transform 0.1s, opacity 0.15s;
 }
+
+/* Background gris clair au survol uniquement */
 .btn-envoyer:hover:not(:disabled) {
-  background: var(--primaire-fort);
+  background: #e5e5e5;       /* Gris clair (utilisez rgba(255, 255, 255, 0.1) si vous êtes en thème sombre) */
 }
+
 .btn-envoyer:active:not(:disabled) {
   transform: scale(0.94);
 }
+
 .btn-envoyer:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
 .btn-envoyer .ico {
   width: 17px;
   height: 17px;
 }
+
 .btn-envoyer.en-cours {
   background: var(--texte);
   color: var(--fond);
