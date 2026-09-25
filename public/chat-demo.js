@@ -2592,22 +2592,7 @@ function bulle(role, contenu, outil, meta) {
   msgsEl.appendChild(row);
   return b;
 }
-function exemplesInitiaux() {
-  const wrap = document.createElement('div');
-  wrap.className = 'examples';
-  const p = document.createElement('p');
-  p.textContent = 'Bonjour, comment puis-je vous aider ?';
-  wrap.appendChild(p);
-  for (const ex of ['Calcule 12 % de 250', "Qu'est-ce qu'un VPN ?", 'Écris une fonction Python est_pair(n)']) {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip';
-    chip.textContent = ex;
-    chip.addEventListener('click', () => envoyer(ex));
-    wrap.appendChild(chip);
-  }
-  msgsEl.appendChild(wrap);
-}
+function exemplesInitiaux() {}
 
 /* ---------- Envoi, arrêt, historique de saisie ---------- */
 let controleurEnCours = null;

@@ -26,7 +26,6 @@ export const PAGES_INDEX_HTML = `<!doctype html>
       <aside id="sidebar" class="sidebar" aria-label="Barre latérale">
         <div class="side-corps">
           <div class="side-brand">
-            <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 2 1.65 6.35L20 10l-6.35 1.65L12 18l-1.65-6.35L4 10l6.35-1.65L12 2Z"/></svg></span>
             <span>Athéna</span>
           </div>
           <button id="nouvelle-discussion" type="button" class="btn-nouvelle">
@@ -165,25 +164,6 @@ export const PAGES_INDEX_HTML = `<!doctype html>
           <div class="chat-marque">
             <h1 id="titre-conversation">Nouvelle discussion</h1>
           </div>
-          <div class="etat-moteur" role="status" aria-label="État du moteur">
-            <span id="dot" class="dot" aria-hidden="true"></span>
-            <span id="statut">vérification…</span>
-          </div>
-          <div class="hud-modele-wrap">
-            <button
-              id="btn-modele"
-              type="button"
-              class="btn-modele"
-              aria-haspopup="dialog"
-              aria-expanded="false"
-              aria-controls="hud-modeles"
-              title="Modèle de langue — auto = cascade (gratuit → zai)"
-            >
-              <span id="modele-actif-nom" class="modele-actif-nom">auto</span>
-              <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
-            </button>
-            <div id="hud-modeles" class="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
-          </div>
           <button id="partager" class="btn-partager" type="button" title="Copier la conversation">
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
             <span>Partager</span>
@@ -202,7 +182,7 @@ export const PAGES_INDEX_HTML = `<!doctype html>
               class="btn-attacher"
               title="Joindre un fichier (Alt+A)"
               aria-label="Joindre un fichier"
-            ><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 9.5 10 17a3.5 3.5 0 0 1-5-5l8-8a5 5 0 0 1 7 7l-8.5 8.5a6.5 6.5 0 0 1-9-9L11 3.5"/></svg></button>
+            ><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
             <div class="saisie-zone">
               <span id="saisie-mirror" class="saisie-mirror" aria-hidden="true"></span>
               <textarea
@@ -223,7 +203,16 @@ export const PAGES_INDEX_HTML = `<!doctype html>
           </div>
           <div class="composeur-pied">
             <span>Athéna est une IA et peut commettre des erreurs. Vérifiez les réponses.</span>
-            <span class="composeur-niveau"><strong id="modele-pied">auto</strong><span>Élevé</span></span>
+            <div class="composeur-modele">
+              <div class="hud-modele-wrap hud-modele-bas">
+                <button id="btn-modele" type="button" class="btn-modele" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-modeles" title="Modèle de langue — auto = cascade (gratuit → zai)">
+                  <span id="modele-actif-nom" class="modele-actif-nom">auto</span>
+                  <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+                </button>
+                <div id="hud-modeles" class="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
+              </div>
+              <span class="composeur-niveau">Élevé</span>
+            </div>
           </div>
           <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabindex="-1" />
         </form>
