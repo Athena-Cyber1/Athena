@@ -2763,7 +2763,7 @@ details.raisonnement summary {
   max-width: 920px;
   align-items: flex-end;
   gap: 8px;
-  min-height: 48px;
+  min-height: 64px;
   padding: 9px 11px;
   border-color: #505050;
   border-radius: 24px;
@@ -2778,7 +2778,7 @@ details.raisonnement summary {
 
 .saisie {
   min-height: 46px;
-  max-height: 120px;
+  max-height: 10px;
   padding: 11px 7px;
   resize: none;
   overflow-y: auto;
