@@ -2757,7 +2757,7 @@ details.raisonnement summary {
 }
 
 .composeur {
-  padding: 10px 58px 0px;
+  padding: 10px 58px;
   background: linear-gradient(to top, var(--fond) 76%, transparent);
 }
 
