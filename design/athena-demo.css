@@ -42,6 +42,14 @@
   --heros: linear-gradient(135deg, #fafafa 0%, #f1f1f1 55%, #ffffff 100%);
   --ombre: 0 1px 3px rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 0, 0, 0.07);
   --rayon: 12px;
+  /* ———— Réglages de position (modifiez ici) ————
+     Largeur + décalages de la sidebar : une seule valeur à changer.
+     `width` et `flex-basis` suivent --pos-sidebar-largeur ; la marge du
+     mode « fermé » en est calculée ; `translateX` du voile mobile est
+     piloté par --pos-sidebar-cachee / --pos-sidebar-ouverte. */
+  --pos-sidebar-largeur: 300px;
+  --pos-sidebar-cachee: translateX(-104%);
+  --pos-sidebar-ouverte: translateX(0);
   --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
@@ -162,8 +170,8 @@ a:hover {
 }
 
 .sidebar {
-  flex: 0 0 288px;
-  width: 288px;
+  flex: 0 0 var(--pos-sidebar-largeur);
+  width: var(--pos-sidebar-largeur);
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -172,7 +180,7 @@ a:hover {
   transition: margin 0.22s ease, opacity 0.18s ease;
 }
 #app.sidebar-fermee .sidebar {
-  margin-left: -289px;
+  margin-left: calc(-1 * (var(--pos-sidebar-largeur) + 1px));
   opacity: 0;
   pointer-events: none;
 }
@@ -1662,29 +1670,6 @@ span.think:not(details .think) {
   margin-top: 10px;
 }
 
-/* Régénérer */
-.action-regenerer {
-  display: flex;
-  justify-content: center;
-  margin: 10px 0 4px;
-}
-.btn-regenerer {
-  border: 1px solid var(--bord-fort);
-  background: var(--carte);
-  color: var(--primaire-texte);
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 0.78rem;
-  cursor: pointer;
-  box-shadow: var(--ombre);
-  transition: border-color 0.15s, background 0.15s;
-  min-height: 32px;
-}
-.btn-regenerer:hover {
-  border-color: var(--primaire);
-  background: var(--primaire-doux);
-}
-
 /* ————— Pièces jointes ————— */
 .file-preview {
   max-width: 880px;
@@ -2145,10 +2130,10 @@ span.think:not(details .think) {
     bottom: 0;
     left: 0;
     z-index: 30;
-    width: min(300px, 86vw);
+    width: min(var(--pos-sidebar-largeur), 86vw);
     flex-basis: auto;
     box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0);
-    transform: translateX(-104%);
+    transform: var(--pos-sidebar-cachee);
     transition: transform 0.24s ease, box-shadow 0.24s ease;
     margin-left: 0 !important;
     opacity: 1;
@@ -2157,7 +2142,7 @@ span.think:not(details .think) {
   /* Inversion mobile : la classe du bouton sert d'OUVERTURE. */
   #app.sidebar-fermee .sidebar {
     margin-left: 0;
-    transform: translateX(0);
+    transform: var(--pos-sidebar-ouverte);
     box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
     opacity: 1;
   }
@@ -2480,14 +2465,14 @@ span.think:not(details .think) {
 }
 
 .sidebar {
-  flex-basis: 324px;
-  width: 324px;
+  flex-basis: var(--pos-sidebar-largeur);
+  width: var(--pos-sidebar-largeur);
   background: var(--sidebar);
   border-right-color: #3b3b3b;
 }
 
 #app.sidebar-fermee .sidebar {
-  margin-left: -325px;
+  margin-left: calc(-1 * (var(--pos-sidebar-largeur) + 1px));
 }
 
 .side-corps {
@@ -2885,7 +2870,7 @@ details.raisonnement summary {
 
 @media (max-width: 940px) {
   .sidebar {
-    width: min(320px, 88vw);
+    width: min(var(--pos-sidebar-largeur), 88vw);
   }
 
   .chat-tete {
@@ -3331,12 +3316,12 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 .sidebar {
-  flex-basis: 348px;
-  width: 348px;
+  flex-basis: var(--pos-sidebar-largeur);
+  width: var(--pos-sidebar-largeur);
 }
 
 #app.sidebar-fermee .sidebar {
-  margin-left: -349px;
+  margin-left: calc(-1 * (var(--pos-sidebar-largeur) + 1px));
 }
 
 .side-recherche {
@@ -3461,7 +3446,7 @@ details.trace-cmd.echec .trace-cmd-status {
 
 @media (max-width: 940px) {
   .sidebar {
-    width: min(320px, 88vw);
+    width: min(var(--pos-sidebar-largeur), 88vw);
   }
 
   .row.bot,

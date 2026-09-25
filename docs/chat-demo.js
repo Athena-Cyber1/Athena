@@ -3007,22 +3007,12 @@ window.addEventListener('keydown', (e) => {
 /* (Fond 3D Three.js supprimé — voir note en tête de fichier) */
 
 /* ---------- Régénération de la dernière réponse (v8.6, section isolée) ----------
-   Un seul petit bouton sobre sous la dernière réponse : supprime la réponse
-   de l'historique et rejoue le pipeline d'envoi (genererReponse). Sert aussi
+   Le bouton « ↻ Régénérer » sous la dernière réponse (btn-regenerer) a été
+   retiré de l'interface ; la fonction reste accessible par le menu d'actions
+   du message et le raccourci Alt + R. Elle supprime la réponse de
+   l'historique et rejoue le pipeline d'envoi (genererReponse). Sert aussi
    de « réessayer » après une erreur ou une interruption (bulle non
-   persistée : l'historique se termine alors par le message utilisateur).
-   L'état du bouton est réévalué à chaque mutation du fil — aucun code
-   existant n'est modifié pour l'afficher/masquer. */
-const actionRegenerer = document.createElement('div');
-actionRegenerer.className = 'action-regenerer';
-const boutonRegenerer = document.createElement('button');
-boutonRegenerer.type = 'button';
-boutonRegenerer.className = 'btn-regenerer';
-boutonRegenerer.textContent = '↻ Régénérer';
-boutonRegenerer.title = 'Régénérer la dernière réponse (Alt + R)';
-boutonRegenerer.setAttribute('aria-label', 'Régénérer la dernière réponse');
-boutonRegenerer.addEventListener('click', () => regenererDerniereReponse());
-actionRegenerer.appendChild(boutonRegenerer);
+   persistée : l'historique se termine alors par le message utilisateur). */
 
 function regenererPossible() {
   if (occupe) return false;
@@ -3034,19 +3024,6 @@ function regenererPossible() {
      à une rangée d'une autre vue, et un souci de classes ne masque plus la
      régénération de la dernière réponse de la conversation courante. */
   return !derniere.dataset.convo || derniere.dataset.convo === String(idConversation || '');
-}
-function majActionRegenerer() {
-  if (!regenererPossible()) {
-    if (actionRegenerer.isConnected) actionRegenerer.remove();
-    return;
-  }
-  const rangees = msgsEl.querySelectorAll('.row');
-  const derniere = rangees[rangees.length - 1];
-  /* Déjà bien placée -> NE RIEN FAIRE : after() muterait le DOM (retrait +
-     réinsertion), ce qui re-déclencherait cet observateur en boucle infinie
-     et figerait l'onglet (bug attrapé par la QA navigateur de ce tour). */
-  if (actionRegenerer.isConnected && actionRegenerer.previousElementSibling === derniere) return;
-  derniere.after(actionRegenerer);
 }
 async function regenererDerniereReponse() {
   if (!regenererPossible()) return;
@@ -3067,20 +3044,18 @@ async function regenererDerniereReponse() {
   convo.maj = Date.now();
   sauverConversations();
   rangeesReponse.forEach((rangee) => rangee.remove());
-  if (actionRegenerer.isConnected) actionRegenerer.remove();
   rendreConversations();
   occupe = true;
   majBoutonArret();
   await genererReponse(convo);
 }
-new MutationObserver(majActionRegenerer).observe(msgsEl, { childList: true });
 window.addEventListener('keydown', (e) => {
   if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key.toLowerCase() === 'r') {
     e.preventDefault();
     regenererDerniereReponse();
   }
 });
-publierHooks('__atelierRegenerer', { regenerer: regenererDerniereReponse, visible: () => actionRegenerer.isConnected }); /* hook QA — non utilisé par l'interface */
+publierHooks('__atelierRegenerer', { regenerer: regenererDerniereReponse, visible: () => false }); /* hook QA — bouton retiré de l'interface */
 
 /* ---------- v10.9.4 (HUD) — SÉLECTEUR DE MODÈLE DE LANGUE ----------
    Badge compact dans le header (modèle actif) + panneau overlay (sections
