@@ -3520,11 +3520,11 @@ details.trace-cmd.echec .trace-cmd-status {
   align-items: center;
   gap: 0;
   min-height: 0;
-  height: auto;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--bord);
+  border-radius: 9px;
+  background: var(--carte-doux);
   box-shadow: none;
   color: var(--texte);
   font-family: inherit;
@@ -3535,8 +3535,8 @@ details.trace-cmd.echec .trace-cmd-status {
 
 .btn-modele:hover,
 .btn-modele[aria-expanded="true"] {
-  border-color: transparent;
-  background: transparent;
+  border-color: var(--primaire);
+  background: var(--carte-doux);
   color: var(--primaire);
 }
 
@@ -3552,4 +3552,19 @@ details.trace-cmd.echec .trace-cmd-status {
 
 .btn-modele .modele-ico {
   display: none;
+}
+
+.btn-attacher,
+.btn-modele {
+  background: var(--carte-doux);
+  border-color: var(--bord);
+  border-radius: 9px;
+}
+
+.btn-attacher:hover,
+.btn-modele:hover,
+.btn-modele[aria-expanded="true"] {
+  background: var(--carte-doux);
+  border-color: var(--primaire);
+  color: var(--primaire);
 }
