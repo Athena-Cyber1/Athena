@@ -118,6 +118,11 @@ function icoSvg(nom) {
 let messages = [];   // référence vers les messages de la conversation OUVERTE
 let occupe = false;
 let fichiersJoints = [];
+/* v20260926a (pièces jointes) : contenu TEXTUEL lu côté navigateur à l'ajout
+   du fichier, indexé par file_id. Non persisté (les conversations ne gardent
+   que {file_id,name}) : la lecture est donc valable pour la SESSION en cours,
+   y compris après la purge des puces (envoyer) et pendant une régénération. */
+const contenusFichiers = new Map();
 /* v20260922l (21) : true PENDANT un re-rendu complet de vue (changement de
    conversation) — l'observateur de pastille ignore ces mutations-là. */
 let renduVueEnCours = false;
@@ -210,6 +215,14 @@ async function ajouterFichiers(liste) {
       attente.status = 'failed';
       attente.erreur = (e && e.message) || 'transfert impossible';
     }
+    /* v20260926a (pièces jointes) : on garde en mémoire le contenu TEXTUEL du
+       fichier — seul moyen pour les chemins sans serveur (Pages) de faire
+       lire le fichier au modèle. Borne stricte + sniffer binaire ; si c'est du
+       binaire ou trop gros, rien n'est retenu (le nom reste joint). */
+    if (attente.file_id) {
+      const texte = await lireTexteSiPossible(fichier);
+      if (texte) contenusFichiers.set(attente.file_id, texte);
+    }
     /* v20260922j (bug 11) : retrait PENDANT l'upload -> le file_id n'est
        connu qu'ici : purge serveur différée ; la puce ne revient pas. */
     if (attente.abandonne) {
@@ -228,11 +241,58 @@ function attachmentsEnvoyes() {
     .filter((f) => f.file_id && f.status === 'indexed')
     .map((f) => ({ file_id: f.file_id, name: f.name }));
 }
-/* v9.5 : la route /api/chat (non modifiable) ne transmet que messages/outils/
-   stream — les fichiers passent par /chat-attache (rewrite -> heartbeat-proxy
-   -> sidecar, corps complet conservé). Sans fichier, chemin historique. */
-function endpointChat(attachments) {
-  return (attachments && attachments.length) ? '/chat-attache' : '/api/chat';
+/* v9.5 : /chat-attache était une passerelle vers un proxy dédié — ce chemin
+   n'existe plus côté Next (404) ni côté Pages (handler identique). /api/chat
+   accepte les pièces jointes (schéma + transmission au sidecar en FILE_DATA),
+   on l'utilise donc TOUJOURS. /chat-attache reste géré par le shim pour la
+   compatibilité des pages mises en cache. */
+function endpointChat() {
+  return '/api/chat';
+}
+/* v20260926a (pièces jointes) : borne de lecture NAVIGATEUR (le serveur a sa
+   propre borne de découpage/indexation). */
+const MAX_CONTENU_JOINT = 200000;
+const MAX_PIECES = 10;
+/* Lecture texte : on ne garde que ce qui ressemble vraiment à du texte — un
+   PNG/PDF/DOCX décodé en UTF-8 contient des octets de contrôle et est rejeté. */
+function lectureTexte(fichier) {
+  return new Promise((resolve) => {
+    try {
+      const lecteur = new FileReader();
+      lecteur.onload = () => resolve(typeof lecteur.result === 'string' ? lecteur.result : null);
+      lecteur.onerror = () => resolve(null);
+      lecteur.readAsText(fichier);
+    } catch (e) { resolve(null); }
+  });
+}
+function compteOctetsDeControle(texte) {
+  let mauvais = 0;
+  for (let i = 0; i < texte.length; i += 1) {
+    const code = texte.charCodeAt(i);
+    /* tabulation, LF et CR sont admis ; tout autre octet de contrôle = binaire */
+    if (code < 32 && code !== 9 && code !== 10 && code !== 13) mauvais += 1;
+  }
+  return mauvais;
+}
+async function lireTexteSiPossible(fichier) {
+  if (!fichier || fichier.size <= 0 || fichier.size > MAX_CONTENU_JOINT) return null;
+  const texte = await lectureTexte(fichier);
+  if (texte == null || !texte.length) return null;
+  if (compteOctetsDeControle(texte) / texte.length > 0.02) return null;
+  return texte;
+}
+/* v20260926a : le contenu lu part UNIQUEMENT au moment de l'appel (jamais
+   persisté avec la conversation — seul {file_id,name} est stocké). */
+function enrichirPieces(pieces) {
+  if (!pieces || !pieces.length) return [];
+  return pieces.slice(0, MAX_PIECES).map((p) => {
+    const piece = p || {};
+    const sortie = { file_id: piece.file_id };
+    if (piece.name) sortie.name = piece.name;
+    const contenu = piece.file_id ? contenusFichiers.get(piece.file_id) : null;
+    if (contenu) sortie.contenu = contenu;
+    return sortie;
+  });
 }
 function majBouton() {
   // Pendant une génération, le bouton sert à ARRÊTER (il reste actif)
@@ -2769,7 +2829,10 @@ async function genererReponse(convo) {
   /* v9.5 : les fichiers joints au DERNIER message utilisateur (s'il y en a)
      accompagnent cet appel — « Régénérer » les renvoie donc à l'identique. */
   const dernierUser = [...convo.messages].reverse().find((m) => m.role === 'user');
-  const attachesTour = (dernierUser && dernierUser.attachments) || [];
+  /* v20260926a : le contenu TEXTUEL lu à l'ajout (mémoire de session) est
+     ajouté ici, au moment de l'appel — les conversations ne stockent jamais
+     que {file_id,name}. */
+  const attachesTour = enrichirPieces((dernierUser && dernierUser.attachments) || []);
   try {
     r = await appelerApi(preparerHistorique(convo.messages), controleurEnCours.signal,
       panneau ? (ev) => panneau.ajouter(ev) : null, attachesTour);

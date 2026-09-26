@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ag`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ah`
 
 ---
 
@@ -314,7 +314,7 @@ Endpoint : `https://text.pollinations.ai/openai/chat/completions`
   "outils": true,
   "conversation_id": "conv-abc",
   "skill": "math-exact",
-  "attachments": [{"file_id": "f1", "name": "note.txt"}]
+   "attachments": [{"file_id": "f1", "name": "note.txt", "contenu": "… (texte lu côté navigateur — Pages uniquement)"}]
 }
 ```
 
@@ -322,6 +322,15 @@ Endpoint : `https://text.pollinations.ai/openai/chat/completions`
 `GET /skills`). Absent → sélection auto par type de tâche / motifs
 (`athena/agent/skills.py`). Le skill actif figure dans `state.skill`, la trace
 (`plan_cree` / `plan_created`) et le paquet final.
+
+Pièces jointes — Pages : le navigateur lit le contenu TEXTE à l'ajout du fichier
+(≤ 200 Ko, sniffer binaire, mémoire de session non persistée) et l'envoie dans
+`attachments[].contenu` ; le shim l'injecte dans le dernier message (budget total
+60 000 caractères, marqué donnée NON FIABLE). Les binaires (PDF, images…)
+arrivent sans contenu. Stack locale : le sidecar relit ses chunks indexés
+(PDF/DOCX/XLSX inclus). Le client utilise toujours `/api/chat` — la route
+historique `/chat-attache` n'existe plus côté Next (le shim la garde pour les
+pages en cache).
 
 **Sortie NDJSON :**
 ```
@@ -365,6 +374,7 @@ Sans agent démarré : `{"erreur":"agent local injoignable…"}`.
 | `GET /api/modeles` | catalogue |
 | `GET /api/skills` | registre skills (sidecar) ou `{skills:[],dispo:false}` |
 | `POST /api/files` | file_id synthétique |
+| `POST /chat-attache` | compatibilité (pages en cache) → même handler que `/api/chat` |
 | `GET/DELETE /api/entrainer` | désactivé (message honnête) |
 | `GET/POST/DELETE /api/design` | tokens null / import refusé |
 
