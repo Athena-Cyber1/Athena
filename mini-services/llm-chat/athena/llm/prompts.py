@@ -65,6 +65,19 @@ Autorités et limites :
 Les outils et vérificateurs sont l'autorité sur les résultats qu'ils mesurent."""
 
 
+OUTILS_POSTE = (
+    "\n\nOUTILS DU POSTE (c'est l'application qui exécute ces blocs, pas toi) :\n"
+    "- Exécuter une commande shell sur le PC de l'utilisateur : bloc fenced de langage "
+    "exact athena-exec contenant la commande seule, ex : ```athena-exec\nhostname\n``` — "
+    "exécution automatique, commandes destructrices refusées par l'agent.\n"
+    "- Créer un fichier sur le PC : bloc fenced de langage exact athena-file dont la "
+    "première ligne est le chemin, ex : ```athena-file notes/idees.md\ncontenu…\n``` — "
+    "chemin relatif (dossier de travail de l'agent) ou absolu, dossiers système refusés, "
+    "enregistrement automatique + fichier téléchargeable dans la conversation.\n"
+    "Ne t'en sers que quand l'action le demande vraiment ; contenu légitime et sans danger uniquement."
+)
+
+
 def prompt_explication(type_tache: str, question: str, observations: str) -> list[dict[str, str]]:
     """Explication à partir d'observations VÉRIFIÉES — le nombre/outil fait foi."""
     return [
@@ -74,7 +87,8 @@ def prompt_explication(type_tache: str, question: str, observations: str) -> lis
             f"OBSERVATIONS VÉRIFIÉES (autorité absolue, ne modifie JAMAIS ces résultats) :\n{observations}\n\n"
             "Rédige une explication claire en français (4 à 8 phrases) qui s'appuie STRICTEMENT sur ces "
             "observations. Réponds d'abord par la réponse courte en gras, puis explique. "
-            "Si une information manque pour aller plus loin, dis-le explicitement."},
+            "Si une information manque pour aller plus loin, dis-le explicitement."
+            + OUTILS_POSTE},
     ]
 
 
@@ -138,7 +152,8 @@ def prompt_redaction(contexte: str, question: str,
             f"QUESTION POSÉE : {question}\n\n"
             f"{regle_contexte}\n\n"
             "Rédige une réponse utile et concise. Distingue clairement faits sourcés (avec source) "
-            "et hypothèses (marque « hypothèse »)."},
+            "et hypothèses (marque « hypothèse »)."
+            + OUTILS_POSTE},
     ]
 
 

@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ah`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ai`
 
 ---
 
@@ -335,8 +335,13 @@ pages en cache).
 **Sortie NDJSON :**
 ```
 {"type":"progress","etape":"generation","message":"Réponse générée via glm-5.2 free · openrouter"}
+{"type":"jeton","canal":"reponse","texte":"… (texte NOUVEAU — l'UI l'affiche au fil de l'eau)"}
 {"type":"final","reponse":"…","outil":null,"verification":null,"rag":null,"tache":null,"conversation_id":"fil-…","raisonnement":null,"modele_repli":false}
 ```
+
+`jeton` (canal `reponse`|`raisonnement`) : frappe et réflexion EN DIRECT —
+émis au fil du SSE amont (Pages). Chemins tamponnés (stack locale) : aucun
+jeton, l'UI révèle le texte final en machine à écrire plutôt que d'un bloc.
 
 Erreur : `{"type":"erreur","erreur":"Échec des modèles : …"}`
 
@@ -353,6 +358,20 @@ rechargement et réouverture de conversation ne ré-exécutent rien. Désactiver
 restaure le flux historique (probe `428` → modale → `confirme:true`). Les garde-fous
 local-agent (liste de refus, origine, bind 127.0.0.1, timeout, journal) sont identiques
 dans les deux cas.
+
+**Sortie en direct :** `POST /api/exec {…, flux:true}` renvoie du NDJSON
+(`{type:'sortie',canal,texte}*` puis `{type:'fin', …résultat complet}`) pipé
+sans tampon (agent → shim/Next → UI) ; le terminal s'écrit en live dans la
+bulle. En cas de coupure, l'UI finalise le partiel — jamais de second POST
+(pas de double exécution). Sans `flux` (vieil agent) : JSON unique réutilisé.
+
+**`POST /api/write` → local-agent :** enregistre un fichier créé par le modèle
+(blocs ```athena-file chemin="…" — spec dans le prompt système, Pages comme
+sidecar) : `{chemin, contenu, confirme?, ecraser?}`. `confirme:false` → 428
+(avec `existe`) ; existe sans `ecraser:true` → 409 ; dossiers système interdits,
+2 Mo max, `mkdir -p`, journal. En auto (executionAuto), un seul POST ; sinon
+probe → modale (écrasement annoncé). Sans agent : bouton Télécharger (le contenu
+est persisté dans le texte du message).
 
 **Chemin stack local :** même UI → route Next `src/app/api/exec/route.ts` (proxy serveur,
 pas de restriction navigateur / LNA).
@@ -375,6 +394,7 @@ Sans agent démarré : `{"erreur":"agent local injoignable…"}`.
 | `GET /api/skills` | registre skills (sidecar) ou `{skills:[],dispo:false}` |
 | `POST /api/files` | file_id synthétique |
 | `POST /chat-attache` | compatibilité (pages en cache) → même handler que `/api/chat` |
+| `POST /api/write` | écriture fichier (agent local) ou 503 honnête |
 | `GET/DELETE /api/entrainer` | désactivé (message honnête) |
 | `GET/POST/DELETE /api/design` | tokens null / import refusé |
 

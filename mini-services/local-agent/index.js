@@ -14,6 +14,8 @@
  *  - confirmation requise sauf mode --auto (dev)
  *  - timeout + capture stdout/stderr bornée
  *  - journal local des exécutions
+ *  - écriture /write : dossiers système interdits, 2 Mo max, écrasement
+ *    refusé sans ecraser:true (sauf --auto), sortie terminal en direct (flux)
  *
  * Usage :
  *   node index.js
@@ -28,10 +30,20 @@ const os = require('os');
 
 const PORT = 3020;
 const HOST = '127.0.0.1';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const AUTO = process.argv.includes('--auto');
 const TIMEOUT_MS = 20000;
 const MAX_OUT = 64 * 1024;
+/* v1.1 (direct) : écriture de fichiers créés par le modèle. */
+const MAX_WRITE = 2 * 1024 * 1024;
+const DENY_WRITE = [
+  /^[a-z]:\\windows([\\\/]|$)/i,
+  /\\system32([\\\/]|$)/i,
+  /\\syswow64([\\\/]|$)/i,
+  /^[a-z]:\\program files([\\\/]|$)/i,
+  /^[a-z]:\\programdata\\microsoft([\\\/]|$)/i,
+  /^\/(etc|sys|proc|bin|sbin|usr\/bin|usr\/sbin|boot)([\/]|$)/,
+];
 const ALLOW_DIR = (() => {
   const i = process.argv.indexOf('--allow');
   return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : null;
@@ -102,12 +114,13 @@ function json(res, status, body, origin, req) {
   res.end(JSON.stringify(body));
 }
 
-function lireCorps(req) {
+function lireCorps(req, max) {
+  const limite = typeof max === 'number' && max > 0 ? max : 8000;
   return new Promise((resolve, reject) => {
     let t = '';
     req.on('data', (c) => {
       t += c;
-      if (t.length > 8000) {
+      if (t.length > limite) {
         reject(new Error('corps trop volumineux'));
         req.destroy();
       }
@@ -128,7 +141,10 @@ function dansAllowDir(cwd) {
   return abs === ALLOW_DIR || abs.startsWith(ALLOW_DIR + path.sep);
 }
 
-function executer(commande, cwd, timeoutMs) {
+/* v1.1 (direct) : surDonnees(canal, texte) optionnel — appelé à chaque
+   paquet stdout/stderr pour la diffusion EN DIRECT (NDJSON) ; sans lui,
+   comportement historique (attente de la fin). */
+function executer(commande, cwd, timeoutMs, surDonnees) {
   return new Promise((resolve) => {
     const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
     const args = process.platform === 'win32'
@@ -160,8 +176,18 @@ function executer(commande, cwd, timeoutMs) {
       });
     }, timeoutMs);
 
-    enfant.stdout.on('data', (d) => { if (sortie.length < MAX_OUT) sortie += d; });
-    enfant.stderr.on('data', (d) => { if (err.length < MAX_OUT) err += d; });
+    enfant.stdout.on('data', (d) => {
+      if (sortie.length < MAX_OUT) sortie += d;
+      if (typeof surDonnees === 'function') {
+        try { surDonnees('stdout', String(d).slice(0, 8000)); } catch (_) {}
+      }
+    });
+    enfant.stderr.on('data', (d) => {
+      if (err.length < MAX_OUT) err += d;
+      if (typeof surDonnees === 'function') {
+        try { surDonnees('stderr', String(d).slice(0, 8000)); } catch (_) {}
+      }
+    });
     enfant.on('error', (e) => {
       if (termine) return;
       termine = true;
@@ -253,6 +279,33 @@ const serveur = http.createServer(async (req, res) => {
         return;
       }
       const t = Math.min(Number(corps.timeout_ms) || TIMEOUT_MS, TIMEOUT_MS);
+      /* v1.1 (direct) : flux:true (+confirme) → NDJSON EN DIRECT :
+         {type:'sortie',canal,texte}* puis {type:'fin', ...résultat complet}.
+         Le résultat complet reste dans 'fin' (même forme que le JSON unique)
+         pour que l'UI persiste la trace à l'identique. */
+      if (corps.flux === true) {
+        const h = cors(origin, req);
+        for (const [k, v] of Object.entries(h)) if (v) res.setHeader(k, v);
+        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+        res.writeHead(200);
+        const ligne = (o) => { try { res.write(JSON.stringify(o) + '\n'); } catch (_) {} };
+        const rf = await executer(commande, cwd, t, (canal, texte) => {
+          ligne({ type: 'sortie', canal, texte });
+        });
+        const entreef = {
+          ts: Date.now(),
+          commande: commande.slice(0, 200),
+          ok: rf.ok,
+          code: rf.code,
+          duree_ms: rf.duree_ms,
+        };
+        journal.push(entreef);
+        if (journal.length > 200) journal.shift();
+        console.log(`[local-agent] ${rf.ok ? 'OK' : 'ERR'} code=${rf.code} ${rf.duree_ms}ms :: ${entreef.commande}`);
+        ligne({ type: 'fin', ...rf, commande });
+        res.end();
+        return;
+      }
       const r = await executer(commande, cwd, t);
       const entree = {
         ts: Date.now(),
@@ -268,7 +321,63 @@ const serveur = http.createServer(async (req, res) => {
       return;
     }
 
-    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, POST /exec)' }, origin, req);
+    /* v1.1 (direct) : écriture d'un fichier créé par le modèle.
+       {chemin, contenu, confirme?, ecraser?} — chemin relatif = cwd de l'agent.
+       confirme:false → 428 (avec `existe`) ; existe && !ecraser → 409.
+       Garde-fous : origine (plus haut), DENY_WRITE (dossiers système),
+       taille bornée, journal. */
+    if (req.method === 'POST' && chemin === '/write') {
+      const brutw = await lireCorps(req, 3 * 1024 * 1024);
+      let corpsw = {};
+      try { corpsw = JSON.parse(brutw || '{}'); } catch (_) {}
+      const cheminDemande = String(corpsw.chemin || corpsw.path || '').trim();
+      const contenu = typeof corpsw.contenu === 'string' ? corpsw.contenu : null;
+      if (!cheminDemande || cheminDemande.length > 500 || contenu == null) {
+        json(res, 400, { erreur: 'chemin (≤500 car.) et contenu requis' }, origin, req);
+        return;
+      }
+      if (contenu.length > MAX_WRITE) {
+        json(res, 413, { erreur: 'contenu trop volumineux (limite 2 Mo)' }, origin, req);
+        return;
+      }
+      const abs = path.resolve(process.cwd(), cheminDemande);
+      if (DENY_WRITE.some((re) => re.test(abs))) {
+        json(res, 403, { erreur: 'écriture bloquée : dossier système', chemin: abs }, origin, req);
+        return;
+      }
+      let existe = false;
+      try { existe = fs.existsSync(abs) && fs.statSync(abs).isFile(); } catch (_) { existe = false; }
+      const confirmew = corpsw.confirme === true || AUTO;
+      if (!confirmew) {
+        json(res, 428, {
+          erreur: 'confirmation requise',
+          chemin: abs,
+          existe,
+          octets: contenu.length,
+          hint: 'Renvoyez avec confirme:true après validation utilisateur (ecraser:true si le fichier existe)',
+        }, origin, req);
+        return;
+      }
+      if (existe && corpsw.ecraser !== true && !AUTO) {
+        json(res, 409, { erreur: 'le fichier existe déjà (ecraser:true pour remplacer)', chemin: abs, existe: true }, origin, req);
+        return;
+      }
+      try {
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, contenu, 'utf8');
+      } catch (e) {
+        json(res, 500, { erreur: 'écriture impossible : ' + String((e && e.message) || e).slice(0, 160) }, origin, req);
+        return;
+      }
+      const entreew = { ts: Date.now(), ecriture: abs.slice(0, 300), octets: contenu.length, ecrase: existe };
+      journal.push(entreew);
+      if (journal.length > 200) journal.shift();
+      console.log(`[local-agent] WRITE ${contenu.length}o ${existe ? '(écrasé)' : ''} :: ${entreew.ecriture}`);
+      json(res, 200, { ok: true, chemin: abs, octets: contenu.length, ecrase: existe }, origin, req);
+      return;
+    }
+
+    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, POST /exec, POST /write)' }, origin, req);
   } catch (e) {
     json(res, 500, { erreur: String((e && e.message) || e).slice(0, 200) }, origin, req);
   }
@@ -277,5 +386,6 @@ const serveur = http.createServer(async (req, res) => {
 serveur.listen(PORT, HOST, () => {
   console.log(`[athena-local-agent] v${VERSION} → http://${HOST}:${PORT}`);
   console.log(`  auto=${AUTO} allow=${ALLOW_DIR || '(tout)'} user=${os.userInfo().username}`);
-  console.log('  POST /exec {commande, confirme:true, cwd?, timeout_ms?}');
+  console.log('  POST /exec {commande, confirme:true, cwd?, timeout_ms?, flux?} (flux:true = NDJSON en direct)');
+  console.log('  POST /write {chemin, contenu, confirme:true, ecraser?} (428 = confirmation requise)');
 });

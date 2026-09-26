@@ -3546,3 +3546,129 @@ details.trace-cmd.echec .trace-cmd-status {
 .hud-efforts {
   width: 268px;
 }
+
+/* v20260926b (direct) : diffusion en direct, terminal live, cartes fichier. */
+.diffusion {
+  margin: 6px 0 2px;
+}
+.diffusion-texte {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.92rem;
+}
+.diffusion-curseur {
+  display: inline-block;
+  margin-left: 1px;
+  animation: diffusion-clignote 0.9s steps(2) infinite;
+}
+.reduce-animation .diffusion-curseur {
+  animation: none;
+}
+@keyframes diffusion-clignote {
+  50% { opacity: 0; }
+}
+.pensee-vive {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  opacity: 0.85;
+  margin: 6px 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.exec-terminal {
+  margin-top: 6px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  background: #111;
+  color: #e8e8e8;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  max-height: 240px;
+  overflow: auto;
+}
+.exec-terminal-tete {
+  padding: 4px 8px;
+  border-bottom: 1px solid #2c2c2c;
+  color: #a9a9a9;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.exec-terminal-corps {
+  margin: 0;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.exec-terminal-corps .term-err {
+  color: #f0b429;
+}
+.file-bloc {
+  margin: 8px 0;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.file-tete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #161616;
+}
+.file-tete .ico {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+.file-nom {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-taille {
+  font-size: 0.75rem;
+  color: #a9a9a9;
+  flex: 0 0 auto;
+}
+.file-statut {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #a9a9a9;
+  flex: 0 0 auto;
+}
+.file-apercu {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #0e0e0e;
+  color: #d8d8d8;
+}
+.file-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.file-enregistrer,
+.file-telecharger {
+  font-size: 0.8rem;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid #4a4a4a;
+  background: #1d1d1d;
+  color: #eee;
+  cursor: pointer;
+}
+.file-enregistrer:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

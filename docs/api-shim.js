@@ -343,6 +343,20 @@
     'ni d\'ajouter d\'autre balise. Sers-t\'en UNIQUEMENT quand l\'action demande réellement ' +
     'le shell ; si l\'agent est injoignable ou si la commande est bloquée, dis-le simplement.';
 
+  /* v20260926b (direct) : le modèle peut aussi CRÉER des fichiers sur le PC —
+     bloc fenced athena-file avec le chemin en première ligne, contenu ensuite.
+     Enregistré sur le poste (agent local) + carte téléchargeable dans la
+     conversation. */
+  var ATHENA_SYSTEM_FICHIER =
+    'Pour créer un fichier sur le PC de l\'utilisateur, réponds avec un bloc de code fenced ' +
+    'de langage exact athena-file dont la première ligne donne le chemin, par exemple:\n' +
+    '```athena-file notes/idees.md\ncontenu du fichier…\n```\n' +
+    'Le chemin peut être relatif (dossier de travail de l\'agent) ou absolu ; les dossiers ' +
+    'système sont refusés. Le fichier est enregistré AUTOMATIQUEMENT sur le poste (comme les ' +
+    'commandes) et reste téléchargeable dans la conversation. N\'y mets que du contenu ' +
+    'légitime et sans danger ; si l\'agent est injoignable, dis-le simplement.';
+  var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER;
+
   async function agentLocalExec(payload, signal) {
     try {
       /* Chrome Local Network Access (2026) : une page HTTPS publique doit
@@ -380,11 +394,100 @@
     try { body = JSON.parse(bodyStr || '{}'); } catch (e) { body = {}; }
     var commande = String(body.commande || body.command || '').trim();
     if (!commande) return json({ erreur: 'commande absente' }, 400);
+    /* v20260926b (direct) : flux:true → sortie EN DIRECT : on pipe le NDJSON
+       de l'agent tel quel (même content-type), sans le tamponner. */
+    if (body.flux === true) {
+      var msgAgentJoint = 'Agent local injoignable ou Local Network bloqué — démarrez node mini-services/local-agent/index.js, puis autorisez le site (⋮ → Local Network → Allow).';
+      try {
+        var corpsAgent = {
+          commande: commande,
+          confirme: body.confirme === true,
+          cwd: typeof body.cwd === 'string' ? body.cwd : undefined,
+          timeout_ms: typeof body.timeout_ms === 'number' ? body.timeout_ms : undefined,
+          flux: true,
+        };
+        var reqInitF = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(corpsAgent),
+          signal: signal || undefined,
+        };
+        var rF;
+        try {
+          var rqF = new Request(LOCAL_AGENT + '/exec', reqInitF);
+          if ('targetAddressSpace' in rqF) rqF.targetAddressSpace = 'loopback';
+          rF = await realFetch(rqF);
+        } catch (eF) {
+          rF = await realFetch(LOCAL_AGENT + '/exec', reqInitF);
+        }
+        if (!rF.ok || !rF.body) {
+          var tF = await rF.text();
+          var dF = null;
+          try { dF = JSON.parse(tF); } catch (eP) { dF = null; }
+          if (!dF) return json({ erreur: 'agent local : réponse illisible' }, 502);
+          return json(dF, rF.status || 200);
+        }
+        return new Response(rF.body, {
+          status: 200,
+          headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
+        });
+      } catch (e) {
+        return json({
+          erreur: msgAgentJoint,
+          detail: String((e && e.message) || e).slice(0, 160),
+        }, 503);
+      }
+    }
     return agentLocalExec({
       commande: commande,
       confirme: body.confirme === true,
       cwd: typeof body.cwd === 'string' ? body.cwd : undefined,
       timeout_ms: typeof body.timeout_ms === 'number' ? body.timeout_ms : undefined,
+    }, signal);
+  }
+
+  /* v20260926b (direct) : enregistrement des fichiers créés par le modèle —
+     même pattern que l'exec (428 = confirmation, garde-fous côté agent). */
+  async function agentLocalWrite(payload, signal) {
+    try {
+      var reqInit = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: signal || undefined,
+      };
+      var r;
+      try {
+        var reqObj = new Request(LOCAL_AGENT + '/write', reqInit);
+        if ('targetAddressSpace' in reqObj) reqObj.targetAddressSpace = 'loopback';
+        r = await appelBorne(realFetch(reqObj), 25000);
+      } catch (eReq) {
+        r = await appelBorne(realFetch(LOCAL_AGENT + '/write', reqInit), 25000);
+      }
+      var t = await r.text();
+      var d = null;
+      try { d = JSON.parse(t); } catch (e) { d = null; }
+      if (!d) return json({ erreur: 'agent local : réponse illisible' }, 502);
+      return json(d, r.status || 200);
+    } catch (e) {
+      return json({
+        erreur: 'Agent local injoignable ou Local Network bloqué — démarrez node mini-services/local-agent/index.js, puis autorisez le site (⋮ → Local Network → Allow).',
+        detail: String((e && e.message) || e).slice(0, 160),
+      }, 503);
+    }
+  }
+
+  async function gererWrite(bodyStr, signal) {
+    var body = {};
+    try { body = JSON.parse(bodyStr || '{}'); } catch (e) { body = {}; }
+    var chemin = String(body.chemin || body.path || '').trim();
+    var contenu = typeof body.contenu === 'string' ? body.contenu : null;
+    if (!chemin || contenu == null) return json({ erreur: 'chemin et contenu requis' }, 400);
+    return agentLocalWrite({
+      chemin: chemin,
+      contenu: contenu,
+      confirme: body.confirme === true,
+      ecraser: body.ecraser === true,
     }, signal);
   }
 
@@ -493,6 +596,12 @@
       var dernierEnvoi = 0;
       var fini = false;
       var emis = false;
+      /* v20260926b (direct) : curseurs des JETONS (texte nouveau depuis le
+         dernier envoi) — l'UI affiche la réponse et le raisonnement AU FUR
+         ET À MESURE au lieu d'attendre le bloc final. */
+      var emisJetonContenu = 0;
+      var emisJetonPensee = 0;
+      var dernierJeton = 0;
 
       function tranche(txt, dep) {
         var s = txt.slice(dep);
@@ -522,6 +631,25 @@
         }
         dernierEnvoi = maintenant;
         emis = true;
+      }
+      /* v20260926b (direct) : pousse le texte NOUVEAU en événements jeton
+         (canal reponse|raisonnement), au fil de l'eau — l'UI l'affiche
+         token par token. Seuil bas pour une frappe visible et fluide. */
+      function jetons() {
+        if (!onDelta) return;
+        var maintenant = Date.now();
+        var np = pensee.length - emisJetonPensee;
+        var nc = contenu.length - emisJetonContenu;
+        if (np > 0 && (np >= 24 || maintenant - dernierJeton > 150)) {
+          onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
+          emisJetonPensee = pensee.length;
+          dernierJeton = maintenant;
+        }
+        if (nc > 0 && (nc >= 24 || maintenant - dernierJeton > 150)) {
+          onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
+          emisJetonContenu = contenu.length;
+          dernierJeton = maintenant;
+        }
       }
 
       try {
@@ -553,6 +681,7 @@
               try { entry._modeleReel = String(d.model); } catch (e) {}
             }
             diffuser();
+            jetons();
           }
         }
       } catch (e) {
@@ -564,6 +693,12 @@
       var txt = contenu;
       if (!String(txt).trim()) txt = pensee;
       if (!String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
+      /* v20260926b (direct) : reliquat de jetons — tout le texte nouveau part
+         avant le final pour que l'UI n'ait rien à deviner. */
+      if (onDelta) {
+        if (pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
+        if (contenu.length > emisJetonContenu) onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
+      }
       return String(txt);
     }
 
@@ -707,17 +842,21 @@
 
     await refreshDyn();
 
-    /* Instructions systèmePages : le bloc ```athena-exec est le SEUL chemin
-       d'exécution de commande (exécution automatique via /api/exec →
-       local-agent, ou bouton UI + modale si executionAuto est off). */
+    /* Instructions système Pages : ```athena-exec (commandes) et ```athena-file
+       (création de fichiers) — exécution/enregistrement automatiques via
+       /api/exec + /api/write → local-agent, ou bouton UI + modale si
+       executionAuto est off. */
     var aSystem = messages.some(function (m) { return m.role === 'system'; });
     if (!aSystem) {
-      messages = [{ role: 'system', content: ATHENA_SYSTEM_EXEC }].concat(messages);
+      messages = [{ role: 'system', content: ATHENA_SYSTEM_OUTILS }].concat(messages);
     } else if (body.outils !== false) {
       messages = messages.map(function (m, idx) {
         if (m.role !== 'system' || idx !== 0) return m;
-        if (m.content.indexOf('athena-exec') >= 0) return m;
-        return { role: 'system', content: m.content + '\n\n' + ATHENA_SYSTEM_EXEC };
+        if (m.content.indexOf('athena-file') >= 0) return m;
+        if (m.content.indexOf('athena-exec') >= 0) {
+          return { role: 'system', content: m.content + '\n\n' + ATHENA_SYSTEM_FICHIER };
+        }
+        return { role: 'system', content: m.content + '\n\n' + ATHENA_SYSTEM_OUTILS };
       });
     }
 
@@ -792,7 +931,15 @@
           var p = PROVIDERS[pk];
           emit({ type: 'progress', etape: 'appel', message: 'Appel · ' + (entry.name || entry.id) });
           var onDelta = p && p.sse
-            ? function (etape, message) { emit({ type: 'progress', etape: etape, message: message }); }
+            ? function (etape, message) {
+                /* v20260926b (direct) : les jetons partent en {type:'jeton'}
+                   (canal + texte nouveau), le reste en progress. */
+                if (etape === 'jeton-reponse' || etape === 'jeton-raisonnement') {
+                  emit({ type: 'jeton', canal: etape === 'jeton-reponse' ? 'reponse' : 'raisonnement', texte: String(message || '') });
+                } else {
+                  emit({ type: 'progress', etape: etape, message: message });
+                }
+              }
             : null;
           try {
             var texte = await appelBorne(callModel(entry, messages, signal, onDelta), bornePour(entry));
@@ -866,6 +1013,10 @@
           }, 503);
         }
       }
+      return json({ erreur: 'méthode' }, 405);
+    }
+    if (path === '/api/write') {
+      if (method === 'POST') return gererWrite(body, signal);
       return json({ erreur: 'méthode' }, 405);
     }
     if (path === '/api/modeles') {

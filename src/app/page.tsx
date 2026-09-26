@@ -251,8 +251,8 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925ah" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925ah" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925ai" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925ai" strategy="beforeInteractive" />
     </div>
   );
 }

@@ -1842,6 +1842,83 @@ function creerBlocCode(langage, code) {
   return pre;
 }
 
+/* v20260926b (direct) : carte de fichier créé par le modèle
+   (```athena-file chemin="..."). Le contenu COMPLET est gardé en mémoire
+   (expando, jamais persisté en double — le texte du message le contient déjà)
+   : le téléchargement survit au rechargement via re-rendu, et
+   autoFileBlocs retrouve le contenu sans le DOM tronqué. */
+function analyserCheminFichier(params) {
+  const p = String(params || '').trim();
+  if (!p) return 'fichier-sans-nom.txt';
+  const m = /^(?:chemin|path|nom|fichier)\s*=\s*("([^"]+)"|'([^']+)'|(\S+))/.exec(p);
+  if (m) return (m[2] || m[3] || m[4] || '').trim() || 'fichier-sans-nom.txt';
+  const premier = p.split(/\s+/)[0].replace(/^["']|["']$/g, '');
+  return premier || 'fichier-sans-nom.txt';
+}
+function nomBaseFichier(chemin) {
+  const n = String(chemin || '').replace(/\\/g, '/').split('/');
+  return n[n.length - 1] || String(chemin || '');
+}
+function creerBlocFichier(params, contenu) {
+  const chemin = analyserCheminFichier(params);
+  const texte = contenu == null ? '' : String(contenu);
+  const carte = document.createElement('div');
+  carte.className = 'file-bloc';
+  carte.dataset.chemin = chemin;
+  carte._contenuComplet = texte;
+  const tete = document.createElement('div');
+  tete.className = 'file-tete';
+  tete.appendChild(icoSvg('file'));
+  const nom = document.createElement('span');
+  nom.className = 'file-nom';
+  nom.textContent = nomBaseFichier(chemin);
+  nom.title = chemin;
+  const taille = document.createElement('span');
+  taille.className = 'file-taille';
+  try {
+    taille.textContent = tailleFichier(new Blob([texte]).size);
+  } catch (e) { taille.textContent = texte.length + ' car.'; }
+  const statut = document.createElement('span');
+  statut.className = 'file-statut';
+  statut.textContent = 'prêt';
+  tete.append(nom, taille, statut);
+  const apercu = document.createElement('pre');
+  apercu.className = 'file-apercu';
+  const lignes = texte.split('\n');
+  apercu.textContent = lignes.slice(0, 40).join('\n').slice(0, 3000)
+    + ((lignes.length > 40 || texte.length > 3000) ? '\n[…]' : '');
+  const actions = document.createElement('div');
+  actions.className = 'file-actions';
+  const btnPc = document.createElement('button');
+  btnPc.type = 'button';
+  btnPc.className = 'file-enregistrer';
+  btnPc.textContent = 'Enregistrer sur ce PC';
+  btnPc.title = 'Écrit via l’agent local (127.0.0.1:3020)';
+  const btnDl = document.createElement('button');
+  btnDl.type = 'button';
+  btnDl.className = 'file-telecharger';
+  btnDl.textContent = 'Télécharger';
+  btnDl.addEventListener('click', () => telechargerFichier(chemin, texte, btnDl));
+  btnPc.addEventListener('click', () => enregistrerFichierLocal(chemin, texte, btnPc, carte, { auto: false }));
+  actions.append(btnPc, btnDl);
+  carte.append(tete, apercu, actions);
+  return carte;
+}
+function telechargerFichier(chemin, texte, bouton) {
+  try {
+    const url = URL.createObjectURL(new Blob([String(texte)], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nomBaseFichier(chemin) || 'fichier.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) {
+    if (bouton) bouton.textContent = 'Échec';
+  }
+}
+
 /* Compte-rendu repliable d'une commande exécutée. `donnees` reprend le
    format exact renvoyé par local-agent POST /exec :
    { commande, ok, code, stdout, stderr, duree_ms }.
@@ -1907,6 +1984,99 @@ function creerBlocTraceCommande(donnees) {
   return det;
 }
 
+/* v20260926b (direct) : terminal de sortie EN DIRECT — les paquets stdout /
+   stderr s'ajoutent au fil de l'exécution (autoscroll), au lieu d'attendre
+   la fin. Borné à 16 000 caractères affichés. */
+function creerTerminalExec(codeEl, commande) {
+  const pre = codeEl ? codeEl.closest('pre') : null;
+  if (!pre) return { el: null, ajouter: () => {}, texte: () => '' };
+  const term = document.createElement('div');
+  term.className = 'exec-terminal';
+  const tete = document.createElement('div');
+  tete.className = 'exec-terminal-tete';
+  tete.textContent = '$ ' + String(commande || '').slice(0, 200);
+  const corps = document.createElement('pre');
+  corps.className = 'exec-terminal-corps';
+  term.append(tete, corps);
+  pre.appendChild(term);
+  let total = 0;
+  function ajouter(canal, texte) {
+    const t = String(texte || '');
+    if (!t) return;
+    const span = document.createElement('span');
+    if (canal === 'stderr') span.className = 'term-err';
+    span.textContent = t.slice(0, 8000);
+    corps.appendChild(span);
+    total += t.length;
+    while (total > 16000 && corps.firstChild) {
+      total -= (corps.firstChild.textContent || '').length;
+      corps.removeChild(corps.firstChild);
+    }
+    term.scrollTop = term.scrollHeight;
+  }
+  return { el: term, ajouter, texte: () => corps.textContent || '' };
+}
+/* Lit un flux NDJSON d'exécution : {type:'sortie'}* puis {type:'fin'}.
+   Retourne l'objet 'fin', ou un objet {interrompu:true, stdout, stderr} si
+   le flux casse en route (JAMAIS de re-POST : pas de double exécution). */
+async function lireFluxExec(corpsFlux, terminal) {
+  const lecteur = corpsFlux.getReader();
+  const dec = new TextDecoder();
+  let tampon = '';
+  let stdout = '';
+  let stderr = '';
+  const traiter = (brute) => {
+    const ligne = brute.trim();
+    if (!ligne) return null;
+    try {
+      const ev = JSON.parse(ligne);
+      if (ev && ev.type === 'sortie') {
+        fluxStats.sorties += 1;
+        const canal = ev.canal === 'stderr' ? 'stderr' : 'stdout';
+        const txt = String(ev.texte || '');
+        if (terminal) terminal.ajouter(canal, txt);
+        if (canal === 'stderr') stderr += txt;
+        else stdout += txt;
+      } else if (ev && ev.type === 'fin') {
+        return ev;
+      }
+    } catch (e) { /* ligne partielle -> ignorée */ }
+    return null;
+  };
+  try {
+    for (;;) {
+      const lecture = await lecteur.read();
+      if (lecture.done) break;
+      tampon += dec.decode(lecture.value, { stream: true });
+      let idx;
+      while ((idx = tampon.indexOf('\n')) >= 0) {
+        const fin = traiter(tampon.slice(0, idx));
+        tampon = tampon.slice(idx + 1);
+        if (fin) { try { lecteur.cancel(); } catch (e) {} return fin; }
+      }
+    }
+    tampon += dec.decode();
+    const fin = traiter(tampon);
+    if (fin) return fin;
+  } catch (e) { /* coupure -> sortie partielle ci-dessous */ }
+  if (stdout || stderr) {
+    return { commande: '', ok: false, code: null, stdout, stderr, duree_ms: null, interrompu: true };
+  }
+  return null;
+}
+/* Finalisation commune (flux ou JSON) : trace repliable + persistance. */
+function conclureExec(codeEl, brut, d, auto, convoId) {
+  const ancienneZone = codeEl.closest('pre')?.querySelector('.exec-sortie');
+  if (ancienneZone) ancienneZone.remove();
+  ajouterTraceActivite(codeEl, d);
+  memoriserTraceActivite(brut, d, convoId);
+  if (auto) {
+    const p = codeEl.closest('pre');
+    if (p) p.dataset.execAuto = '1';
+  }
+  return d;
+}
+
 /* Envoie la commande à /api/exec (shim → local-agent 127.0.0.1:3020 — le
    shell tourne SUR LE POSTE, jamais dans le navigateur). Deux chemins :
    - manuel (défaut, ou préférence executionAuto off) :
@@ -1964,27 +2134,46 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       });
       if (!ok) { zone().textContent = 'Annulé.'; return null; }
     }
-    const r = await fetch('/api/exec', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ commande: brut, confirme: true }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (d && d.motif) return echec('Bloqué : ' + d.motif);
-    if (!r.ok || d.erreur) {
-      return echec((d && d.erreur) || ('HTTP ' + r.status));
+    /* v20260926b (direct) : UN SEUL POST avec flux:true — sortie EN DIRECT
+       (terminal ci-dessus), ou JSON unique si l'agent est ancien. En cas de
+       coupure on finalise le partiel : JAMAIS de second POST (la commande
+       ne doit pas tourner deux fois). */
+    const terminal = creerTerminalExec(codeEl, brut);
+    try {
+      const rf = await fetch('/api/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commande: brut, confirme: true, flux: true }),
+      });
+      const ctypeF = rf.headers.get('content-type') || '';
+      if (rf.ok && ctypeF.includes('ndjson') && rf.body) {
+        const dFin = await lireFluxExec(rf.body, terminal);
+        if (terminal.el) terminal.el.remove();
+        if (dFin && !dFin.interrompu) {
+          if (dFin.motif) return echec('Bloqué : ' + dFin.motif);
+          return conclureExec(codeEl, brut, dFin, auto, convoId);
+        }
+        return conclureExec(codeEl, brut, {
+          commande: brut,
+          ok: false,
+          code: (dFin && dFin.code) || null,
+          stdout: (dFin && dFin.stdout) || '',
+          stderr: ((dFin && dFin.stderr) || '') + '\n[flux interrompu — sortie partielle]',
+          duree_ms: (dFin && dFin.duree_ms) || null,
+        }, auto, convoId);
+      }
+      /* Vieil agent (sans flux) ou erreur structurée : JSON réutilisé tel quel. */
+      const d = await rf.json().catch(() => ({}));
+      if (terminal.el) terminal.el.remove();
+      if (d && d.motif) return echec('Bloqué : ' + d.motif);
+      if (!rf.ok || d.erreur) {
+        return echec((d && d.erreur) || ('HTTP ' + rf.status));
+      }
+      return conclureExec(codeEl, brut, d, auto, convoId);
+    } catch (e) {
+      if (terminal.el) terminal.el.remove();
+      return echec(String((e && e.message) || e).slice(0, 400));
     }
-    // v-next : compte-rendu repliable (commande + code + durée + sortie)
-    // plutôt qu'un dump de texte brut — voir creerBlocTraceCommande.
-    const ancienneZone = codeEl.closest('pre')?.querySelector('.exec-sortie');
-    if (ancienneZone) ancienneZone.remove();
-    ajouterTraceActivite(codeEl, d);
-    memoriserTraceActivite(brut, d, convoId);
-    if (auto) {
-      const p = codeEl.closest('pre');
-      if (p) p.dataset.execAuto = '1';
-    }
-    return d;
   } catch (e) {
     return echec(String((e && e.message) || e).slice(0, 400));
   } finally {
@@ -2008,6 +2197,103 @@ function autoExecBlocs(bulleEl) {
       if (!codeEl || !bouton || pre.dataset.execAuto === '1') continue;
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
       await lancerCommandeLocale(codeEl.textContent, bouton, codeEl, { auto: true });
+    }
+  })();
+}
+/* v20260926b (direct) : enregistre un fichier créé par le modèle sur le PC
+   (/api/write → agent local 127.0.0.1:3020).
+   - manuel (défaut, executionAuto off) : probe 428 → modale (écrasement
+     annoncé) → confirme + ecraser.
+   - auto ({auto:true}, executionAuto ON) : UN SEUL POST, sans modale
+     (écrasement inclus — comme l'exec auto).
+   Sans agent : statut d'échec honnête, le bouton Télécharger reste disponible. */
+async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
+  const auto = Boolean(opts && opts.auto);
+  if (!bouton || bouton.disabled) return null;
+  const brutChemin = String(chemin || '').trim();
+  const texte = contenu == null ? '' : String(contenu);
+  const statutEl = carte ? carte.querySelector('.file-statut') : null;
+  const statut = (t, detail) => {
+    if (statutEl) {
+      statutEl.textContent = t;
+      if (detail) statutEl.title = String(detail).slice(0, 200);
+    }
+  };
+  if (!brutChemin) { statut('chemin vide'); return null; }
+  bouton.disabled = true;
+  const libelle = bouton.textContent;
+  bouton.textContent = '…';
+  statut('envoi…');
+  try {
+    let existe = false;
+    let cheminAbs = brutChemin;
+    if (!auto) {
+      const probe = await fetch('/api/write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: false }),
+      });
+      const dj = await probe.json().catch(() => ({}));
+      if (!probe.ok && probe.status !== 428) {
+        statut('échec', (dj && dj.erreur) || ('HTTP ' + probe.status));
+        bouton.textContent = libelle;
+        bouton.disabled = false;
+        return null;
+      }
+      existe = Boolean(dj && dj.existe);
+      if (dj && dj.chemin) cheminAbs = String(dj.chemin);
+      const ok = await boiteModale({
+        titre: 'Enregistrer sur ce PC ?',
+        message: 'Fichier : ' + String(cheminAbs).slice(0, 180)
+          + '\nTaille : ' + tailleFichier(texte.length)
+          + (existe ? '\nRemplacera le fichier existant.' : '')
+          + '\nAgent local 127.0.0.1:3020 — confirmez seulement si vous faites confiance à ce contenu.',
+        labelOk: 'Enregistrer',
+        danger: existe,
+      });
+      if (!ok) {
+        statut('annulé');
+        bouton.textContent = libelle;
+        bouton.disabled = false;
+        return null;
+      }
+    }
+    const r = await fetch('/api/write', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: true, ecraser: true }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      statut('échec', (d && d.erreur) || ('HTTP ' + r.status));
+      bouton.textContent = libelle;
+      bouton.disabled = false;
+      return null;
+    }
+    statut('enregistré' + (d.ecrase ? ' (remplacé)' : ''), String(d.chemin || ''));
+    if (auto && carte) carte.dataset.fileAuto = '1';
+    bouton.textContent = libelle;
+    bouton.disabled = false;
+    return d;
+  } catch (e) {
+    statut('échec', String((e && e.message) || e).slice(0, 200));
+    bouton.textContent = libelle;
+    bouton.disabled = false;
+    return null;
+  }
+}
+/* Comme autoExecBlocs : les cartes ```athena-file de la réponse FRAÎCHE sont
+   enregistrées seules, dans l'ordre, sans modale. Jamais en rejeu. */
+function autoFileBlocs(bulleEl) {
+  const cartes = bulleEl ? [...bulleEl.querySelectorAll('.file-bloc')] : [];
+  if (!cartes.length) return;
+  (async () => {
+    for (const carte of cartes) {
+      const bouton = carte.querySelector('.file-enregistrer');
+      if (!bouton || carte.dataset.fileAuto === '1') continue;
+      const contenu = carte._contenuComplet != null ? carte._contenuComplet : '';
+      /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
+      await enregistrerFichierLocal(carte.dataset.chemin || '', contenu, bouton, carte, { auto: true });
     }
   })();
 }
@@ -2084,15 +2370,23 @@ function markdownVersFragment(texte) {
     const ligne = lignes[i];
     // Bloc de code clôturé (le 1.5B oublie parfois le ``` final : on clôt
     // alors à la fin du texte — mieux qu'un affichage en brut)
-    const ouverture = /^\s*```\s*(\S*)\s*$/.exec(ligne);
+    // v20260926b (direct) : le reste de la ligne d'ouverture est capturé
+    // (params) pour ```athena-file chemin="...".
+    const ouverture = /^\s*```\s*(\S*)\s*(.*)$/.exec(ligne);
     if (ouverture) {
       viderParagraphe();
       const langage = ouverture[1] || '';
+      const params = (ouverture[2] || '').trim();
       const corps = [];
       i++;
       while (i < lignes.length && !/^\s*```\s*$/.test(lignes[i])) { corps.push(lignes[i]); i++; }
       i++; // sauter le ``` de fermeture (ou dépasser la fin)
-      fragment.appendChild(creerBlocCode(langage, corps.join('\n')));
+      /* v20260926b (direct) : ```athena-file → carte fichier (PC + download). */
+      if (langage.toLowerCase() === 'athena-file') {
+        fragment.appendChild(creerBlocFichier(params, corps.join('\n')));
+      } else {
+        fragment.appendChild(creerBlocCode(langage, corps.join('\n')));
+      }
       continue;
     }
     if (!ligne.trim()) { viderParagraphe(); i++; continue; }
@@ -2284,6 +2578,80 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
   return { el: det, ajouter, finaliser, etapes };
 }
 
+/* v20260926b (direct) : compteur de diffusion (frappe + sorties live),
+   observable en test via window.__athenaFlux. */
+const fluxStats = { jetons: 0, sorties: 0 };
+window.__athenaFlux = fluxStats;
+
+/* Zone de diffusion EN DIRECT : la réponse s'écrit sous les yeux (texte brut
+   + curseur), la réflexion aussi (texte vif dans le panneau). Sans jetons
+   (chemin tamponné), reveler() rejoue le texte final en machine à écrire. */
+function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
+  const zone = document.createElement('div');
+  zone.className = 'diffusion';
+  zone.hidden = true;
+  const txtEl = document.createElement('span');
+  txtEl.className = 'diffusion-texte';
+  const curseur = document.createElement('span');
+  curseur.className = 'diffusion-curseur';
+  curseur.textContent = '▍';
+  curseur.setAttribute('aria-hidden', 'true');
+  zone.append(txtEl, curseur);
+  conteneur.appendChild(zone);
+  let penseeEl = null;
+  if (panneau && panneau.el) {
+    penseeEl = document.createElement('div');
+    penseeEl.className = 'pensee-vive';
+    penseeEl.hidden = true;
+    panneau.el.appendChild(penseeEl);
+  }
+  let reponse = '';
+  let pensee = '';
+  let recu = false;
+  let flushTimer = null;
+  const flusher = () => {
+    flushTimer = null;
+    if (!gardeVue || gardeVue()) {
+      txtEl.textContent = reponse.slice(-12000);
+      if (penseeEl) penseeEl.textContent = pensee.slice(-6000);
+      if (preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+  };
+  const planifierFlush = () => {
+    if (flushTimer) return;
+    flushTimer = setTimeout(flusher, 80);
+  };
+  function ingerer(ev) {
+    if (!ev || ev.type !== 'jeton' || typeof ev.texte !== 'string' || !ev.texte) return;
+    recu = true;
+    fluxStats.jetons += 1;
+    if (ev.canal === 'raisonnement') {
+      pensee += ev.texte;
+      if (penseeEl) { penseeEl.hidden = false; planifierFlush(); }
+    } else {
+      reponse += ev.texte;
+      if (zone.hidden) zone.hidden = false;
+      planifierFlush();
+    }
+  }
+  async function reveler(texteFinal) {
+    const cible = String(texteFinal || '');
+    if (!cible || recu) return;
+    recu = true;
+    zone.hidden = false;
+    let i = 0;
+    while (i < cible.length) {
+      if ((gardeVue && !gardeVue()) || !zone.isConnected) return;
+      i = Math.min(cible.length, i + 140);
+      reponse = cible.slice(0, i);
+      txtEl.textContent = reponse;
+      if (preferences.defilementAuto && (!gardeVue || gardeVue())) msgsEl.scrollTop = msgsEl.scrollHeight;
+      await new Promise((res) => setTimeout(res, 45));
+    }
+  }
+  return { ingerer, reveler, aRecu: () => recu, texte: () => reponse };
+}
+
 /* ---------- v7.4.1 : fenêtre d'historique envoyée à l'API ---------- */
 /* L'API n'accepte que 40 messages / 8 000 caractères par message. On coupe
    CÔTÉ CLIENT (les plus anciens tombent, une ouverture system éventuelle est
@@ -2417,8 +2785,13 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
   };
   return { ok: false, erreur: finales[cause] || finales.inconnue, cause };
 }
-async function appelerApi(historique, signal = null, surProgression = null, attachments = []) {
+/* v20260926b (direct) : surJeton reçoit les événements {type:'jeton',
+   canal:'reponse'|'raisonnement', texte} — l'UI affiche la frappe EN DIRECT.
+   Le compteur jetonsRecus permet le repli « machine à écrire » quand le
+   chemin est tamponné (pas de jetons : stack locale). */
+async function appelerApi(historique, signal = null, surProgression = null, attachments = [], surJeton = null) {
   let aRecuEvenement = false;
+  let jetonsRecus = 0;
   try {
     const r = await fetch(endpointChat(attachments), {
       method: 'POST',
@@ -2448,6 +2821,7 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
         try {
           const ev = JSON.parse(ligne);
           if (ev.type === 'progress') { aRecuEvenement = true; if (surProgression) surProgression(ev); }
+          else if (ev.type === 'jeton') { aRecuEvenement = true; jetonsRecus += 1; if (surJeton) surJeton(ev); }
           else if (ev.type === 'final') final = ev;
           else if (ev.type === 'erreur') erreurFlux = ev.erreur || 'Erreur du pipeline.';
         } catch { /* ligne partielle -> ignorée */ }
@@ -2469,7 +2843,7 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
       if (final) {
         /* v10.9.4 (HUD) : repli discret si le modèle choisi n'a pas répondu */
         if (final.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
-        return { ok: true, reponse: final.reponse || '(réponse vide)', outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null };
+        return { ok: true, reponse: final.reponse || '(réponse vide)', outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus };
       }
       return { ok: false, erreur: 'Le flux de raisonnement a été interrompu avant la réponse — renvoyez votre message.' };
     }
@@ -2823,6 +3197,8 @@ async function genererReponse(convo) {
   const panneau = preferences.raisonnementVisible !== false
     ? creerPanneauRaisonnement(think, vueOuverte) : null;
   if (!panneau) think.replaceChildren();
+  /* v20260926b (direct) : la frappe et la réflexion s'affichent EN DIRECT. */
+  const diffusion = creerZoneDiffusion(think, panneau, vueOuverte);
   if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
   controleurEnCours = new AbortController();
   let r = null;
@@ -2835,7 +3211,8 @@ async function genererReponse(convo) {
   const attachesTour = enrichirPieces((dernierUser && dernierUser.attachments) || []);
   try {
     r = await appelerApi(preparerHistorique(convo.messages), controleurEnCours.signal,
-      panneau ? (ev) => panneau.ajouter(ev) : null, attachesTour);
+      panneau ? (ev) => panneau.ajouter(ev) : null, attachesTour,
+      (ev) => diffusion.ingerer(ev));
   } catch (err) {
     if (err && err.name === 'AbortError') {
       /* v20260922j (bug 3) : pas de bulle « interrompue » dans une autre vue */
@@ -2846,7 +3223,12 @@ async function genererReponse(convo) {
         if (rangeePensee) rangeePensee.remove();
         bulle('assistant', 'Génération interrompue.');
       }
-      controleurEnCours = null;
+  controleurEnCours = null;
+  /* v20260926b (direct) : chemin tamponné (aucun jeton) — on révèle le texte
+     final en machine à écrire plutôt que de l'afficher d'un bloc. */
+  if (r && r.ok && !r.jetonsRecus && vueOuverte()) {
+    try { await diffusion.reveler(r.reponse); } catch (e) { /* rendu final direct */ }
+  }
       occupe = false;
       majBoutonArret();
       majBouton();
@@ -2903,6 +3285,8 @@ async function genererReponse(convo) {
            réponse fraîche : rejeu, rechargement et réouverture d'une
            conversation ne ré-exécutent rien. */
         if (preferences.executionAuto !== false) autoExecBlocs(bAssist);
+        /* v20260926b (direct) : idem pour les fichiers créés par le modèle. */
+        if (preferences.executionAuto !== false) autoFileBlocs(bAssist);
       } else {
         notifier('Réponse prête dans « ' + convo.titre + ' »', { label: 'Ouvrir', action: () => ouvrirConversation(convo.id) });
       }
