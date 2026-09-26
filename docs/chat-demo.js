@@ -1215,7 +1215,7 @@ publierHooks('__atelierProjets', {
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
 
-const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: false };
+const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: false, executionAuto: true };
 let preferences = { ...preferencesParDefaut };
 try {
   preferences = { ...preferencesParDefaut, ...JSON.parse(localStorage.getItem('chat-preferences') || '{}') };
@@ -1294,6 +1294,7 @@ function afficherParametres(ongletActif = 'Apparence') {
         creerInterrupteur('confirmationEnvoi', 'Confirmer avant l’envoi', 'Demande une confirmation avant chaque message.'),
         creerInterrupteur('outilsWeb', 'Outils web', 'Recherche internet, curl et lecture de pages quand la question le demande.'),
         creerInterrupteur('raisonnementVisible', 'Raisonnement visible', 'Affiche en direct les étapes : routage, recherche, mémoire, vérification.'),
+        creerInterrupteur('executionAuto', 'Exécution automatique des commandes', 'Les blocs athena-exec partent seuls sur l’agent local (127.0.0.1:3020) — sans modale « Exécuter sur ce PC ? ». Décocher pour reprendre la confirmation manuelle.'),
       );
     } else if (nom === 'Confidentialité') {
       description.textContent = 'Les données de cette démo restent sur cet appareil.';
@@ -1846,10 +1847,110 @@ function creerBlocTraceCommande(donnees) {
   return det;
 }
 
-/* Envoie la commande à /api/exec (shim → local-agent). Flux :
-   1) POST confirme:false → 428 = confirmation requise (ou 403 bloqué)
-   2) modale utilisateur
-   3) POST confirme:true → sortie/stderr affichées sous le bloc */
+/* Envoie la commande à /api/exec (shim → local-agent 127.0.0.1:3020 — le
+   shell tourne SUR LE POSTE, jamais dans le navigateur). Deux chemins :
+   - manuel (défaut, ou préférence executionAuto off) :
+       1) POST confirme:false → 428 = confirmation requise (ou 403 bloqué)
+       2) modale utilisateur
+       3) POST confirme:true → sortie/stderr affichées sous le bloc
+   - auto ({ auto: true }, préférence executionAuto ON) :
+       UN SEUL POST confirme:true, sans modale — le modèle « appuie » sur
+       la commande lui-même. Les garde-fous de l'agent (liste DENY, origine
+       autorisée, bind 127.0.0.1, timeout, journal) restent inchangés.
+   Retourne le détail {commande, ok, code, stdout, stderr, duree_ms} ou null. */
+async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
+  const auto = Boolean(opts && opts.auto);
+  if (bouton.disabled) return null;
+  const brut = String(commande || '').trim();
+  if (!brut) return null;
+  const convoId = idConversation;
+  bouton.disabled = true;
+  bouton.textContent = '…';
+  const zone = () => codeEl.closest('pre')?.querySelector('.exec-sortie')
+    || (() => {
+      const d = document.createElement('div');
+      d.className = 'exec-sortie';
+      codeEl.closest('pre')?.appendChild(d);
+      return d;
+    })();
+  const echec = (raison) => {
+    const d = { commande: brut, ok: false, stderr: raison, code: null, duree_ms: null };
+    zone().textContent = raison;
+    zone().className = 'exec-sortie err';
+    ajouterTraceActivite(codeEl, d);
+    memoriserTraceActivite(brut, d, convoId);
+    return null;
+  };
+  try {
+    if (!auto) {
+      const probe = await fetch('/api/exec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commande: brut, confirme: false }),
+      });
+      const dj = await probe.json().catch(() => ({}));
+      if (probe.status === 403 || (dj && dj.erreur && dj.motif)) {
+        return echec('Bloqué : ' + (dj.motif || dj.erreur));
+      }
+      if (probe.status !== 428 && !probe.ok) {
+        return echec((dj && dj.erreur) || ('Erreur agent (' + probe.status + ')'));
+      }
+      const ok = await boiteModale({
+        titre: 'Exécuter sur ce PC ?',
+        message: 'Commande : ' + brut.slice(0, 180) + (brut.length > 180 ? '…' : '') +
+          '\nAgent local 127.0.0.1:3020 — confirmez seulement si vous faites confiance à cette commande.',
+        labelOk: 'Exécuter',
+        danger: true,
+      });
+      if (!ok) { zone().textContent = 'Annulé.'; return null; }
+    }
+    const r = await fetch('/api/exec', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commande: brut, confirme: true }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d && d.motif) return echec('Bloqué : ' + d.motif);
+    if (!r.ok || d.erreur) {
+      return echec((d && d.erreur) || ('HTTP ' + r.status));
+    }
+    // v-next : compte-rendu repliable (commande + code + durée + sortie)
+    // plutôt qu'un dump de texte brut — voir creerBlocTraceCommande.
+    const ancienneZone = codeEl.closest('pre')?.querySelector('.exec-sortie');
+    if (ancienneZone) ancienneZone.remove();
+    ajouterTraceActivite(codeEl, d);
+    memoriserTraceActivite(brut, d, convoId);
+    if (auto) {
+      const p = codeEl.closest('pre');
+      if (p) p.dataset.execAuto = '1';
+    }
+    return d;
+  } catch (e) {
+    return echec(String((e && e.message) || e).slice(0, 400));
+  } finally {
+    bouton.disabled = false;
+    bouton.textContent = 'Exécuter';
+  }
+}
+
+/* Exécution automatique (préférence executionAuto, ON par défaut) :
+   les blocs ```athena-exec de la réponse fraîche partent seuls sur
+   l'agent local, dans l'ordre, sans modale. Appelé UNIQUEMENT après un
+   rendu neuf (genererReponse) : recharger ou rouvrir une conversation
+   ne ré-exécute JAMAIS rien. */
+function autoExecBlocs(bulleEl) {
+  const blocs = bulleEl ? [...bulleEl.querySelectorAll('.exec-bloc')] : [];
+  if (!blocs.length) return;
+  (async () => {
+    for (const pre of blocs) {
+      const codeEl = pre.querySelector('code');
+      const bouton = pre.querySelector('.code-exec');
+      if (!codeEl || !bouton || pre.dataset.execAuto === '1') continue;
+      /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
+      await lancerCommandeLocale(codeEl.textContent, bouton, codeEl, { auto: true });
+    }
+  })();
+}
 function creerGroupeActivite() {
   const groupe = document.createElement('details');
   groupe.className = 'activity-group';
@@ -1904,74 +2005,6 @@ function memoriserTraceActivite(commande, donnees, convoId = idConversation) {
   });
   c.maj = Date.now();
   sauverConversations();
-}
-
-async function lancerCommandeLocale(commande, bouton, codeEl) {
-  if (bouton.disabled) return;
-  const brut = String(commande || '').trim();
-  if (!brut) return;
-  const convoId = idConversation;
-  bouton.disabled = true;
-  bouton.textContent = '…';
-  const zone = () => codeEl.closest('pre')?.querySelector('.exec-sortie')
-    || (() => {
-      const d = document.createElement('div');
-      d.className = 'exec-sortie';
-      codeEl.closest('pre')?.appendChild(d);
-      return d;
-    })();
-  const echec = (raison) => {
-    const d = { commande: brut, ok: false, stderr: raison, code: null, duree_ms: null };
-    zone().textContent = raison;
-    zone().className = 'exec-sortie err';
-    ajouterTraceActivite(codeEl, d);
-    memoriserTraceActivite(brut, d, convoId);
-  };
-  try {
-    const probe = await fetch('/api/exec', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ commande: brut, confirme: false }),
-    });
-    const dj = await probe.json().catch(() => ({}));
-    if (probe.status === 403 || (dj && dj.erreur && dj.motif)) {
-      echec('Bloqué : ' + (dj.motif || dj.erreur));
-      return;
-    }
-    if (probe.status !== 428 && !probe.ok) {
-      echec((dj && dj.erreur) || ('Erreur agent (' + probe.status + ')'));
-      return;
-    }
-    const ok = await boiteModale({
-      titre: 'Exécuter sur ce PC ?',
-      message: 'Commande : ' + brut.slice(0, 180) + (brut.length > 180 ? '…' : '') +
-        '\nAgent local 127.0.0.1:3020 — confirmez seulement si vous faites confiance à cette commande.',
-      labelOk: 'Exécuter',
-      danger: true,
-    });
-    if (!ok) { zone().textContent = 'Annulé.'; return; }
-    const r = await fetch('/api/exec', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ commande: brut, confirme: true }),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok || d.erreur) {
-      echec((d && d.erreur) || ('HTTP ' + r.status));
-      return;
-    }
-    // v-next : compte-rendu repliable (commande + code + durée + sortie)
-    // plutôt qu'un dump de texte brut — voir creerBlocTraceCommande.
-    const ancienneZone = codeEl.closest('pre')?.querySelector('.exec-sortie');
-    if (ancienneZone) ancienneZone.remove();
-    ajouterTraceActivite(codeEl, d);
-    memoriserTraceActivite(brut, d, convoId);
-  } catch (e) {
-    echec(String((e && e.message) || e).slice(0, 400));
-  } finally {
-    bouton.disabled = false;
-    bouton.textContent = 'Exécuter';
-  }
 }
 
 /* Analyse bloc par bloc (ligne à ligne) ; retourne un DocumentFragment. */
@@ -2800,6 +2833,13 @@ async function genererReponse(convo) {
           versEntrainement.addEventListener('click', () => afficherParametres('Entraînement'));
           bAssist.appendChild(versEntrainement);
         }
+        /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
+           (préférence executionAuto, ON par défaut) — la commande part
+           seule sur l'agent local 127.0.0.1:3020, sans modale : c'est le
+           modèle qui « appuie ». Chemin emprunté UNIQUEMENT sur une
+           réponse fraîche : rejeu, rechargement et réouverture d'une
+           conversation ne ré-exécutent rien. */
+        if (preferences.executionAuto !== false) autoExecBlocs(bAssist);
       } else {
         notifier('Réponse prête dans « ' + convo.titre + ' »', { label: 'Ouvrir', action: () => ouvrirConversation(convo.id) });
       }
@@ -3248,13 +3288,16 @@ async function chargerModelesHud(rafraichir = false) {
    Bouton posé à droite du bouton modèle (celui-ci est poussé à gauche).
    L'effort est :
    - lu par api-shim.js et injecté dans le payload NVIDIA sous le nom
-     `reasoning_effort` (l'amont n'accepte que low / high / max) ;
+     `reasoning_effort` (échelle HUD : low / medium / high / max —
+     repli automatique sur l'échelon admis par le modèle choisi :
+     kimi-k3 refuse « medium » → low) ;
    - persisté comme la sélection de modèle (localStorage « athena_effort »).
    Un choix n'a d'effet que sur les chemins NVIDIA sans cadrage propre
    (llama-vision / content-safety refusent l'option). */
 const CLE_EFFORT = 'athena_effort';
 const EFFORTS = [
   { v: 'low', nom: 'low', aide: 'Rapide — raisonnement court' },
+  { v: 'medium', nom: 'medium', aide: 'Équilibré — raisonnement moyen' },
   { v: 'high', nom: 'high', aide: 'Approfondi — raisonnement long' },
   { v: 'max', nom: 'max', aide: 'Maximal — le plus profond (défaut)' },
 ];
@@ -3330,7 +3373,7 @@ function rendreHudEffort() {
   for (const e of EFFORTS) panneau.appendChild(itemEffortHud(e));
   const note = document.createElement('div');
   note.className = 'hud-note';
-  note.textContent = 'Envoyé en reasoning_effort (payload NVIDIA).';
+  note.textContent = 'Envoyé en reasoning_effort (payload NVIDIA) — repli automatique si le modèle refuse la valeur (ex. kimi-k3 : medium → low).';
   panneau.appendChild(note);
 }
 

@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925af`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ag`
 
 ---
 
@@ -175,9 +175,12 @@ providers distants ou locaux (Ollama/LM Studio/llama.cpp)
 │  dir C:\Users                                           │
 │  ```                                                    │
 └──────────────────────┬──────────────────────────────────┘
-                       │ chat-demo détecte le bloc
+                       │ chat-demo détecte le bloc (réponse fraîche)
                        ▼
-              bouton « Exécuter » (confirmation UI)
+              exécution AUTOMATIQUE (préf. executionAuto, ON) :
+              POST /api/exec {commande, confirme:true} — sans modale
+              • si executionAuto est décoché : bouton « Exécuter »
+                puis modale de confirmation (flux428 → confirme:true)
                        │
                        ▼
               POST /api/exec {commande}
@@ -333,6 +336,15 @@ Erreur : `{"type":"erreur","erreur":"Échec des modèles : …"}`
 **Chemin Pages :** UI `lancerCommandeLocale` → shim `/api/exec` → `fetch http://127.0.0.1:3020/exec`
 (`targetAddressSpace: 'loopback'` — opt-in Chrome Local Network Access).
 
+**Exécution automatique (défaut) :** la préférence `executionAuto` (`chat-preferences`, ON par
+défaut, réglable dans Paramètres → Discussion) fait partir les blocs ```athena-exec d'une
+réponse **fraîche** directement en `confirme:true` : le modèle exécute sa commande sur le PC
+sans clic ni modale. Le déclenchement n'a lieu qu'au rendu neuf d'une réponse — rejeu,
+rechargement et réouverture de conversation ne ré-exécutent rien. Désactiver la préférence
+restaure le flux historique (probe `428` → modale → `confirme:true`). Les garde-fous
+local-agent (liste de refus, origine, bind 127.0.0.1, timeout, journal) sont identiques
+dans les deux cas.
+
 **Chemin stack local :** même UI → route Next `src/app/api/exec/route.ts` (proxy serveur,
 pas de restriction navigateur / LNA).
 
@@ -394,7 +406,7 @@ cd mini-services/llm-chat && pip install fastapi uvicorn && bash daemon.sh  # :3
 
 | Couche | Fichiers | Rôle |
 |--------|----------|------|
-| UI | `chat-demo.js`, `index.html`, `design/athena-demo.css` | chat, HUD (modèle + effort `reasoning_effort`), design |
+| UI | `chat-demo.js`, `index.html`, `design/athena-demo.css` | chat, HUD (effort `reasoning_effort`), exécution auto des commandes, design |
 | Bridge navigateur | `api-shim.js` | catalogue, cascade LLM, exec |
 | Passerelle Next | `src/app/api/chat` | validation, sidecar, sanitize |
 | Agent déterministe | `mini-services/llm-chat` | planifier→agir→vérifier |

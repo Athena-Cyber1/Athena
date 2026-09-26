@@ -21,13 +21,21 @@
   var realFetch = window.fetch.bind(window);
 
   /* Effort de raisonnement choisi dans le HUD (bouton à droite du sélecteur
-     de modèle) : localStorage « athena_effort ». NVIDIA n'accepte que
-     low / high / max (erreur 400 sinon) → liste blanche, défaut « max ». */
-  var EFFORTS_NVIDIA = { low: 1, high: 1, max: 1 };
-  function effortNvidia() {
+     de modèle) : localStorage « athena_effort ». Échelle HUD = low / medium /
+     high / max. Chaque entry MODELS peut déclarer `efforts` (les valeurs que
+     l'amont accepte RÉELLEMENT pour ce modèle) : kimi-k3 refuse « medium »
+     (400 « supported values are low, high, and max », vérifié en direct) →
+     repli sur l'échelon inférieur, sinon sur le premier admis. */
+  var EFFORTS_HUD = ['low', 'medium', 'high', 'max'];
+  function effortNvidia(entry) {
     var v = '';
     try { v = String(localStorage.getItem('athena_effort') || ''); } catch (e) { v = ''; }
-    return EFFORTS_NVIDIA[v] ? v : 'max';
+    if (EFFORTS_HUD.indexOf(v) < 0) v = 'max';
+    var admis = (entry && entry.efforts) || EFFORTS_HUD;
+    if (admis.indexOf(v) >= 0) return v;
+    var i = EFFORTS_HUD.indexOf(v);
+    while (i > 0 && admis.indexOf(EFFORTS_HUD[i - 1]) < 0) i -= 1;
+    return admis.indexOf(EFFORTS_HUD[i]) >= 0 ? EFFORTS_HUD[i] : admis[0];
   }
 
   var PROVIDERS = {
@@ -57,9 +65,10 @@
       baseKey: 'nvidia_proxy',
       label: 'nvidia · proxy CF',
       sse: true,
-      payload: function () {
-        /* reasoning_effort = effort choisi dans le HUD (athena_effort). */
-        return { temperature: 1, max_tokens: 16384, seed: 0, reasoning_effort: effortNvidia() };
+      payload: function (entry) {
+        /* reasoning_effort = effort choisi dans le HUD (athena_effort),
+           replié sur l'échelon admis par CE modèle (voir effortNvidia). */
+        return { temperature: 1, max_tokens: 16384, seed: 0, reasoning_effort: effortNvidia(entry) };
       },
     },
   };
@@ -109,12 +118,15 @@
        account », 500/503 ou timeout). FAQ officielle NVIDIA : free tier
        40 RPM par modèle, AUCUN billing par token → 0 €.
        kimi-k3 en tête (modèle de référence : effort « max », 16 384 tok).
-       Les entrées sans `payload` héritent du cadrage PROVIDERS.nvidia ;
-       `payload` local remplace le cadrage pour les modèles qui refusent
-       reasoning_effort ou plafonnent sous 16 384 tokens.
-       Exclu : nvidia/nemotron-parse-2.0 (répond en ~2 M d'événements SSE
+        Les entrées sans `payload` héritent du cadrage PROVIDERS.nvidia ;
+        `payload` local remplace le cadrage pour les modèles qui refusent
+        reasoning_effort ou plafonnent sous 16 384 tokens.
+        `efforts` = liste des reasoning_effort admis par l'amont POUR CE
+        modèle (défaut : toute l'échelle HUD). kimi-k3 = low/high/max :
+        « medium » y renvoie 400 (vérifié en direct) → repli automatique.
+        Exclu : nvidia/nemotron-parse-2.0 (répond en ~2 M d'événements SSE
        sans texte lisible → inutilisable en discussion). */
-    { provider: 'nvidia', model: 'moonshotai/kimi-k3', name: 'kimi-k3 · nvidia' },
+    { provider: 'nvidia', model: 'moonshotai/kimi-k3', name: 'kimi-k3 · nvidia', efforts: ['low', 'high', 'max'] },
     { provider: 'nvidia', model: 'z-ai/glm-5.3', name: 'glm-5.3 · nvidia' },
     { provider: 'nvidia', model: 'z-ai/glm-5.3-flash', name: 'glm-5.3-flash · nvidia' },
     { provider: 'nvidia', model: 'google/gemma-4-31b-it', name: 'gemma-4-31b · nvidia' },
@@ -257,7 +269,7 @@
       if (!up && p && !p.free) {
         label = m.provider + ' · ' + (!aCle ? 'clé manquante' : 'proxy non déployé');
       }
-      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null };
+      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
@@ -326,8 +338,10 @@
     'Athéna · outil local : pour exécuter une commande sur le PC de l\'utilisateur, ' +
     'réponds UNIQUEMENT avec un bloc de code fenced avec le langage exact athena-exec ' +
     'contenant la commande shell exacte, par exemple:\n```athena-exec\nhostname\n```\n' +
-    'La UI affichera un bouton « Exécuter » (confirmation obligatoire → agent local 127.0.0.1:3020). ' +
-    'N\'invente pas d\'autres balises d\'exécution. Si l\'agent est injoignable, dis-le simplement.';
+    'Ce bloc est exécuté AUTOMATIQUEMENT sur le poste (agent local 127.0.0.1:3020) ' +
+    'sans intervention de l\'utilisateur : tu n\'as pas besoin de demander la permission ' +
+    'ni d\'ajouter d\'autre balise. Sers-t\'en UNIQUEMENT quand l\'action demande réellement ' +
+    'le shell ; si l\'agent est injoignable ou si la commande est bloquée, dis-le simplement.';
 
   async function agentLocalExec(payload, signal) {
     try {
@@ -415,7 +429,7 @@
          seed 0, max_tokens 16384, reasoning_effort « max ») ; une entry
          peut le surcharger (payload local) pour un modèle qui refuse
          reasoning_effort ou plafonne sous 16 384 tokens. */
-      var opts = entry.payload || (p.payload ? p.payload() : null);
+      var opts = entry.payload || (p.payload ? p.payload(entry) : null);
       if (opts) {
         Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
       }
@@ -671,7 +685,8 @@
     await refreshDyn();
 
     /* Instructions systèmePages : le bloc ```athena-exec est le SEUL chemin
-       d'exécution de commande (bouton UI → /api/exec → local-agent). */
+       d'exécution de commande (exécution automatique via /api/exec →
+       local-agent, ou bouton UI + modale si executionAuto est off). */
     var aSystem = messages.some(function (m) { return m.role === 'system'; });
     if (!aSystem) {
       messages = [{ role: 'system', content: ATHENA_SYSTEM_EXEC }].concat(messages);
