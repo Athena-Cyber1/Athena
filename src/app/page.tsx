@@ -77,7 +77,7 @@ export default function Accueil() {
               </p>
             </div>
 
-            <div className="side-section" hidden>
+            <div className="side-section">
               <div className="side-section-titre">
                 <span>Projets</span>
                 <button
@@ -96,7 +96,7 @@ export default function Accueil() {
           </div>
 
           <div className="side-pied">
-            <div className="side-actions" hidden>
+            <div className="side-actions">
               <button id="ouvrir-projets" type="button" className="side-onglet">
                 <span className="onglet-ico" aria-hidden="true">
                   <svg className="ico" viewBox="0 0 24 24"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5H18A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z" /></svg>
@@ -251,8 +251,8 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925ak" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925ak" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925al" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925al" strategy="beforeInteractive" />
     </div>
   );
 }

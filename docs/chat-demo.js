@@ -1288,7 +1288,7 @@ publierHooks('__atelierProjets', {
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
 
-const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: false, executionAuto: true };
+const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true };
 let preferences = { ...preferencesParDefaut };
 try {
   preferences = { ...preferencesParDefaut, ...JSON.parse(localStorage.getItem('chat-preferences') || '{}') };
@@ -3103,6 +3103,14 @@ function exemplesInitiaux() {
 
 /* ---------- Envoi, arrêt, historique de saisie ---------- */
 let controleurEnCours = null;
+/* v20260926c (affichage) : le STOP fait rejeter en chaîne des promesses
+   (fetch, lecteurs de flux) dont certaines n'ont plus de consommateur au
+   moment de l'abort — AbortError bénin (l'interruption elle-même est gérée
+   et affichée), jamais un crash : on l'absorbe pour ne pas polluer la
+   console. Tout autre rejet non géré remonte normalement. */
+window.addEventListener('unhandledrejection', (e) => {
+  if (e && e.reason && e.reason.name === 'AbortError') e.preventDefault();
+});
 const CLE_SAISIES = 'chat-saisies';
 let saisies = chargerStockage(CLE_SAISIES, []);
 if (!Array.isArray(saisies)) saisies = [];
