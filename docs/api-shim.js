@@ -20,6 +20,16 @@
 
   var realFetch = window.fetch.bind(window);
 
+  /* Effort de raisonnement choisi dans le HUD (bouton à droite du sélecteur
+     de modèle) : localStorage « athena_effort ». NVIDIA n'accepte que
+     low / high / max (erreur 400 sinon) → liste blanche, défaut « max ». */
+  var EFFORTS_NVIDIA = { low: 1, high: 1, max: 1 };
+  function effortNvidia() {
+    var v = '';
+    try { v = String(localStorage.getItem('athena_effort') || ''); } catch (e) { v = ''; }
+    return EFFORTS_NVIDIA[v] ? v : 'max';
+  }
+
   var PROVIDERS = {
     pollinations: { base: 'https://text.pollinations.ai/openai', free: true, label: 'pollinations · gratuit' },
     groq:         { base: 'https://api.groq.com/openai/v1', label: 'groq · clé API' },
@@ -48,7 +58,8 @@
       label: 'nvidia · proxy CF',
       sse: true,
       payload: function () {
-        return { temperature: 1, max_tokens: 16384, seed: 0, reasoning_effort: 'max' };
+        /* reasoning_effort = effort choisi dans le HUD (athena_effort). */
+        return { temperature: 1, max_tokens: 16384, seed: 0, reasoning_effort: effortNvidia() };
       },
     },
   };

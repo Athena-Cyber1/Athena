@@ -3510,3 +3510,39 @@ details.trace-cmd.echec .trace-cmd-status {
   width: 16px;
   height: 16px;
 }
+
+/* ---------- Effort de raisonnement ----------
+   Sélecteur posé à droite du bouton modèle : celui-ci est ainsi poussé un
+   peu vers la gauche et l'espace libéré à sa droite reçoit le nouvel
+   effort (appliqué au payload NVIDIA via api-shim.js). */
+.composeur-modele {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-effort-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.btn-effort {
+  gap: 5px;
+}
+
+.btn-effort .effort-ico .ico {
+  width: 13px;
+  height: 13px;
+  color: #a9a9a9;
+}
+
+.btn-effort .effort-valeur {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  min-width: 3em;
+  text-align: left;
+}
+
+.hud-efforts {
+  width: 268px;
+}

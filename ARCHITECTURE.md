@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ae`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925af`
 
 ---
 
@@ -11,7 +11,7 @@
 │  UTILISATEUR                                                            │
 │  Navigateur (Pages GitHub  OU  Next.js :3000 local)                     │
 │    ├─ index.html / page.tsx   (coquille DOM monochrome)                 │
-│    ├─ chat-demo.js            (UI chat, streaming NDJSON, HUD modèles)  │
+│    ├─ chat-demo.js   (UI chat, streaming NDJSON, HUD modèles + effort)  │
 │    ├─ keys.js                 (clés API — PUBLIC, choix utilisateur)    │
 │    └─ api-shim.js             (Pages seulement) intercepte /api/*       │
 └───────────────┬─────────────────────────────────────┬───────────────────┘
@@ -394,7 +394,7 @@ cd mini-services/llm-chat && pip install fastapi uvicorn && bash daemon.sh  # :3
 
 | Couche | Fichiers | Rôle |
 |--------|----------|------|
-| UI | `chat-demo.js`, `index.html`, `design/athena-demo.css` | chat, HUD, design |
+| UI | `chat-demo.js`, `index.html`, `design/athena-demo.css` | chat, HUD (modèle + effort `reasoning_effort`), design |
 | Bridge navigateur | `api-shim.js` | catalogue, cascade LLM, exec |
 | Passerelle Next | `src/app/api/chat` | validation, sidecar, sanitize |
 | Agent déterministe | `mini-services/llm-chat` | planifier→agir→vérifier |

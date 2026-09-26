@@ -7,7 +7,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925ae" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925af" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -210,6 +210,16 @@
                 </button>
                 <div id="hud-modeles" class="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
               </div>
+              <!-- Effort de raisonnement : décalé à droite du bouton modèle
+                   (celui-ci se retrouve donc poussé vers la gauche). -->
+              <div class="hud-effort-wrap hud-effort-bas">
+                <button id="btn-effort" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-efforts" title="Effort de raisonnement — clic pour changer (low / high / max)">
+                  <span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></span>
+                  <span id="effort-actif-nom" class="modele-actif-nom effort-valeur">max</span>
+                  <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+                </button>
+                <div id="hud-efforts" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Choisir l'effort de raisonnement"></div>
+              </div>
             </div>
           </div>
           <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabindex="-1" />
@@ -220,9 +230,9 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260925ae"></script>
-    <script src="./api-shim.js?v=20260925ae"></script>
-    <script src="./chat-demo.js?v=20260925ae"></script>
+    <script src="./keys.js?v=20260925af"></script>
+    <script src="./api-shim.js?v=20260925af"></script>
+    <script src="./chat-demo.js?v=20260925af"></script>
   </div>
 </body>
 </html>

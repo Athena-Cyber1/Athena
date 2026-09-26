@@ -3096,9 +3096,11 @@ function majBadgeModele() {
 function fermerHud() {
   const panneau = document.getElementById('hud-modeles');
   const bouton = document.getElementById('btn-modele');
-  if (!panneau || panneau.hidden) return;
-  panneau.hidden = true;
-  if (bouton) bouton.setAttribute('aria-expanded', 'false');
+  if (panneau && !panneau.hidden) {
+    panneau.hidden = true;
+    if (bouton) bouton.setAttribute('aria-expanded', 'false');
+  }
+  fermerHudEffort();
 }
 
 function itemModeleHud(m, selectionCourante) {
@@ -3227,6 +3229,7 @@ async function chargerModelesHud(rafraichir = false) {
   bouton.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!panneau.hidden) { fermerHud(); return; }
+    fermerHudEffort(); /* un seul panneau ouvert à la fois */
     panneau.hidden = false;
     bouton.setAttribute('aria-expanded', 'true');
     if (!hudCharge) chargerModelesHud(false);
@@ -3239,6 +3242,112 @@ async function chargerModelesHud(rafraichir = false) {
   window.addEventListener('athena-modeles-rafraichir', () => chargerModelesHud(true));
   // Pré-chargement discret (liste prête à l'ouverture du panneau).
   setTimeout(() => chargerModelesHud(false), 2500);
+})();
+
+/* ---------- HUD — SÉLECTEUR D'EFFORT DE RAISONNEMENT ----------
+   Bouton posé à droite du bouton modèle (celui-ci est poussé à gauche).
+   L'effort est :
+   - lu par api-shim.js et injecté dans le payload NVIDIA sous le nom
+     `reasoning_effort` (l'amont n'accepte que low / high / max) ;
+   - persisté comme la sélection de modèle (localStorage « athena_effort »).
+   Un choix n'a d'effet que sur les chemins NVIDIA sans cadrage propre
+   (llama-vision / content-safety refusent l'option). */
+const CLE_EFFORT = 'athena_effort';
+const EFFORTS = [
+  { v: 'low', nom: 'low', aide: 'Rapide — raisonnement court' },
+  { v: 'high', nom: 'high', aide: 'Approfondi — raisonnement long' },
+  { v: 'max', nom: 'max', aide: 'Maximal — le plus profond (défaut)' },
+];
+const EFFORT_DEFAUT = 'max';
+let effortChoisi = EFFORT_DEFAUT;
+
+try {
+  const brutEffort = localStorage.getItem(CLE_EFFORT);
+  if (typeof brutEffort === 'string' && EFFORTS.some((e) => e.v === brutEffort)) {
+    effortChoisi = brutEffort;
+  }
+} catch { /* stockage optionnel — « max » par défaut */ }
+
+function majBadgeEffort() {
+  const el = document.getElementById('effort-actif-nom');
+  if (el) el.textContent = effortChoisi;
+  const bouton = document.getElementById('btn-effort');
+  if (bouton) {
+    const courant = EFFORTS.find((e) => e.v === effortChoisi);
+    bouton.title = `Effort de raisonnement : ${effortChoisi} — ${courant ? courant.aide : ''} (clic pour changer)`;
+  }
+}
+
+function fermerHudEffort() {
+  const panneau = document.getElementById('hud-efforts');
+  const bouton = document.getElementById('btn-effort');
+  if (!panneau || panneau.hidden) return;
+  panneau.hidden = true;
+  if (bouton) bouton.setAttribute('aria-expanded', 'false');
+}
+
+function itemEffortHud(e) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'hud-item' + (e.v === effortChoisi ? ' actif' : '');
+  const point = document.createElement('span');
+  point.className = 'hud-point';
+  point.setAttribute('aria-hidden', 'true');
+  const infos = document.createElement('span');
+  infos.className = 'hud-item-infos';
+  const nom = document.createElement('span');
+  nom.className = 'hud-item-nom';
+  nom.textContent = e.nom;
+  const aide = document.createElement('span');
+  aide.className = 'hud-item-provider';
+  aide.textContent = e.aide;
+  infos.append(nom, aide);
+  item.append(point, infos);
+  if (e.v === effortChoisi) {
+    const badge = document.createElement('span');
+    badge.className = 'hud-badge actif';
+    badge.textContent = 'actif';
+    item.appendChild(badge);
+  }
+  item.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    effortChoisi = e.v;
+    try { localStorage.setItem(CLE_EFFORT, e.v); } catch { /* stockage optionnel */ }
+    majBadgeEffort();
+    fermerHudEffort();
+  });
+  return item;
+}
+
+function rendreHudEffort() {
+  const panneau = document.getElementById('hud-efforts');
+  if (!panneau) return;
+  panneau.replaceChildren();
+  const titre = document.createElement('div');
+  titre.className = 'hud-section-titre';
+  titre.textContent = 'Effort de raisonnement';
+  panneau.appendChild(titre);
+  for (const e of EFFORTS) panneau.appendChild(itemEffortHud(e));
+  const note = document.createElement('div');
+  note.className = 'hud-note';
+  note.textContent = 'Envoyé en reasoning_effort (payload NVIDIA).';
+  panneau.appendChild(note);
+}
+
+(function initHudEffort() {
+  const bouton = document.getElementById('btn-effort');
+  const panneau = document.getElementById('hud-efforts');
+  if (!bouton || !panneau) return;
+  majBadgeEffort();
+  bouton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!panneau.hidden) { fermerHudEffort(); return; }
+    fermerHud(); /* un seul panneau ouvert à la fois */
+    rendreHudEffort();
+    panneau.hidden = false;
+    bouton.setAttribute('aria-expanded', 'true');
+  });
+  panneau.addEventListener('click', (e) => e.stopPropagation());
 })();
 
 /* ---------- INITIALISATION — v7.2.2 : déplacée ICI (fin de module) ----------

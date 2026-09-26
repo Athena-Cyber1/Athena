@@ -234,6 +234,14 @@ export default function Accueil() {
                   </button>
                   <div id="hud-modeles" className="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
                 </div>
+                <div className="hud-effort-wrap hud-effort-bas">
+                  <button id="btn-effort" type="button" className="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-efforts" title="Effort de raisonnement — clic pour changer (low / high / max)">
+                    <span className="effort-ico" aria-hidden="true"><svg className="ico" viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6" /></svg></span>
+                    <span id="effort-actif-nom" className="modele-actif-nom effort-valeur">max</span>
+                    <span className="modele-ico" aria-hidden="true"><svg className="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg></span>
+                  </button>
+                  <div id="hud-efforts" className="hud-modeles hud-efforts" hidden role="dialog" aria-label="Choisir l'effort de raisonnement"></div>
+                </div>
                 <span className="composeur-niveau">Élevé</span>
               </div>
             </div>
@@ -243,8 +251,8 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925ae" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925ae" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925af" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925af" strategy="beforeInteractive" />
     </div>
   );
 }
