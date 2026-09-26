@@ -20,7 +20,7 @@ Dépôt de code source du projet **Athéna** (pipeline v10.9.4).
 | `mini-services/llm-bridge/` | Pont LLM **:3015** (Bun) — cascade + circuit-breaker |
 | `mini-services/llm-chat/` | Moteur Athéna **:3010** (Python) — agent déterministe |
 | `mini-services/local-agent/` | Agent **:3020** — **exécution de commandes sur le PC** |
-| `worker/` | Proxy CORS Cloudflare (tokenrouter) |
+| `worker/` | Proxy CORS Cloudflare (tokenrouter, nvidia) |
 | `tools/` | Scripts utilitaires |
 
 ## Lancer le stack en local

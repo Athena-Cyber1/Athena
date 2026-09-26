@@ -28,3 +28,6 @@ data/
 /public/_index.html
 /src/lib/pages-index-html.ts
 /public/keys.js
+
+# Workers — état local wrangler (jamais committé)
+worker/.wrangler/

@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-24 · pipeline v10.9.4 · Pages `?v=20260925ac`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ad`
 
 ---
 
@@ -106,7 +106,7 @@ Athena/                          ← racine git (repo Athena-Cyber1/Athena)
 │       ├── index.js             HTTP 127.0.0.1, déni motifs, confirm
 │       └── package.json
 │
-├── worker/                      proxy CORS Cloudflare (tokenrouter)
+├── worker/                      proxy CORS Cloudflare (tokenrouter, nvidia)
 │   ├── index.js
 │   └── wrangler.toml
 │
@@ -286,6 +286,7 @@ Endpoint : `https://text.pollinations.ai/openai/chat/completions`
 | zai | glm-4.5-air | |
 | cerebras / nebius / xai | llama-3.3-70b / grok-3-mini | |
 | tokenrouter | catalogue dyn (300+) via Worker CF | quota souvent 0 |
+| nvidia | `moonshotai/kimi-k3` — SSE + `reasoning_effort:max` via Worker CF `/nvidia/v1` | `nvapi-…` |
 
 ### 4.4 Locaux (détection best-effort par le bridge)
 
@@ -366,7 +367,7 @@ Sans agent démarré : `{"erreur":"agent local injoignable…"}`.
 | Next API | `garderOrigine()` CSRF + sanitization fuite infra (P0) |
 | local-agent | **127.0.0.1**, CORS + `Access-Control-Allow-Private-Network`, déni motifs dangereux, confirmation, timeout, journal |
 | sidecar | canari anti-injection, FILE_DATA = non fiable, refus exécutables upload |
-| Worker | relaie Authorization sans Origin (contourne 403 tokenrouter) |
+| Worker | relaie Authorization sans Origin (403 tokenrouter, CORS absent nvidia) |
 
 **Ce que le navigateur ne peut PAS faire seul :** exécuter une commande locale — d'où l'obligation du process `local-agent`.
 
@@ -399,4 +400,4 @@ cd mini-services/llm-chat && pip install fastapi uvicorn && bash daemon.sh  # :3
 | Agent déterministe | `mini-services/llm-chat` | planifier→agir→vérifier |
 | Pont LLM | `mini-services/llm-bridge` | multi-provider résilient |
 | Commandes PC | `mini-services/local-agent` | shell local sécurisé |
-| Proxy réseaux | `worker/` | CORS tokenrouter |
+| Proxy réseaux | `worker/` | CORS tokenrouter + nvidia |

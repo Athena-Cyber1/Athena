@@ -9,8 +9,10 @@
    - pollinations : gratuit, sans clé (primary).
    - autres providers : nécessitent une clé (keys.js ou
      localStorage.athena_api_keys) — visibles dans le HUD,
-     grisées tant que la clé manque.
-   - Cascade : modèle choisi → pollinations → autres dispos.
+      grisées tant que la clé manque.
+    - proxy Cloudflare (worker/index.js) : tokenrouter (403 sur
+      Origin) et nvidia (aucun en-tête CORS) — URLs dans keys.js.
+    - Cascade : modèle choisi → pollinations → autres dispos.
      Échec du modèle choisi → modele_repli:true (toast UI).
    ============================================================ */
 (function () {
@@ -34,6 +36,19 @@
     /* tokenrouter : amont 403 sur Origin navigateur → base = URL du
        proxy Cloudflare Worker (stockée dans keys.js: tokenrouter_proxy). */
     tokenrouter:  { baseKey: 'tokenrouter_proxy', label: 'tokenrouter · proxy CF' },
+    /* NVIDIA : integrate.api.nvidia.com ne renvoie AUCUN en-tête CORS →
+       base = URL du proxy Worker (keys.js: nvidia_proxy, monture /nvidia/v1).
+       sse: la réponse amont arrive en flux SSE (delta.reasoning_content
+       puis delta.content) — agrégée ici, diffusée à l'UI en progress.
+       payload: cadrage imposé pour kimi-k3 (voir plus bas). */
+    nvidia:       {
+      baseKey: 'nvidia_proxy',
+      label: 'nvidia · proxy CF',
+      sse: true,
+      payload: function () {
+        return { temperature: 1, max_tokens: 16384, seed: 0, reasoning_effort: 'max' };
+      },
+    },
   };
 
   var MODELS = [
@@ -75,6 +90,9 @@
     { provider: 'cerebras', model: 'llama-3.3-70b', name: 'llama-3.3-70b · cerebras' },
     { provider: 'nebius', model: 'meta-llama/Llama-3.3-70B-Instruct', name: 'llama-3.3-70b · nebius' },
     { provider: 'xai', model: 'grok-3-mini', name: 'grok-3-mini · xai' },
+    /* NVIDIA : kimi-k3 — raisonnement long (effort « max ») : placé en FIN
+       de cascade pour ne jamais précéder pollinations par défaut. */
+    { provider: 'nvidia', model: 'moonshotai/kimi-k3', name: 'kimi-k3 · nvidia' },
   ];
 
   function keyFor(provider) {
@@ -85,7 +103,7 @@
   }
 
   /* Base URL d'un provider : fixe (base) ou dynamique via baseKey
-     (proxy Worker pour tokenrouter — URL remplie dans keys.js). */
+     (proxy Worker pour tokenrouter / nvidia — URL remplie dans keys.js). */
   function baseFor(p) {
     if (p && p.base) return p.base;
     return p && p.baseKey ? keyFor(p.baseKey) : '';
@@ -318,8 +336,19 @@
     }, signal);
   }
 
-  function callModel(entry, messages, signal) {
-    /* entry.provider = label d'affichage (« tokenrouter · proxy CF ») ;
+  /* Garde-fou par appel : openrouter attend le reset de quota (~70 s) ;
+     nvidia kimi-k3 raisonne longtemps (effort « max », 16 384 tokens) →
+     5 min, la coupure interne se faisant sur l'inactivité (120 s/chunk). */
+  function bornePour(entry) {
+    if (entry.providerKey === 'openrouter') return 70000;
+    if (entry.providerKey === 'nvidia') return 300000;
+    return 60000;
+  }
+
+  /* onDelta (etape, message) : fourni par gererChat sur un flux NDJSON —
+     chaque tranche de raisonnement part alors EN DIRECT vers l'UI. */
+  function callModel(entry, messages, signal, onDelta) {
+    /* entry.provider = label d'affichage (« nvidia · proxy CF ») ;
        la clé PROVIDERS est dans entry.providerKey ( ajouté au catalogue ). */
     var pk = entry.providerKey || entry.provider;
     var p = PROVIDERS[pk];
@@ -327,7 +356,7 @@
     var key = keyFor(pk);
     if (!p.free && !key && !p.viaProxy) return Promise.reject(new Error(pk + ' : clé API manquante'));
     var base = baseFor(p);
-    if (!base) return Promise.reject(new Error(pk + ' : proxy non déployé (keys.js: tokenrouter_proxy)'));
+    if (!base) return Promise.reject(new Error(pk + ' : proxy non déployé (keys.js: ' + (p.baseKey || 'base') + ')'));
     var headers = { 'Content-Type': 'application/json' };
     if (key) headers['Authorization'] = 'Bearer ' + key;
     if (p.extra) {
@@ -337,62 +366,175 @@
     var orList = pk === 'openrouter' ? orModelsBody(entry.model) : null;
     var orBase = orList ? orList.slice() : null;
 
-    function corpsPour(liste) {
+    function corpsPour(liste, enFlux) {
       var c = {
         messages: messages,
         temperature: 0.6,
         max_tokens: 1200,
-        stream: false,
+        stream: !!enFlux,
       };
+      /* cadrage spécifique au provider : nvidia/kimi-k3 impose
+         temperature 1, seed 0, max_tokens 16384, reasoning_effort « max ». */
+      if (p.payload) {
+        var opts = p.payload();
+        Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
+      }
       if (liste) c.models = liste;
       else c.model = entry.model;
       return JSON.stringify(c);
     }
 
+    function erreurHttp(r, t) {
+      var d = null;
+      try { d = JSON.parse(t); } catch (e) { d = null; }
+      var m = (d && d.error && d.error.message) || t.slice(0, 180) || ('HTTP ' + r.status);
+      var err = new Error(entry.provider + ' ' + r.status + ' : ' + m);
+      err.status = r.status;
+      if (d && d.error && d.error.metadata) {
+        var md = d.error.metadata;
+        err.retryAfter = md.retry_after_seconds
+          || (md.headers && md.headers['Retry-After'])
+          || null;
+        err.limitSource = md.limit_source || null;
+        /* free-models-per-min : Reset = epoch ms de fin de fenêtre */
+        if (md.headers && md.headers['X-RateLimit-Reset']) {
+          err.resetAt = parseInt(md.headers['X-RateLimit-Reset'], 10) || null;
+        }
+      }
+      return err;
+    }
+
+    function texteDe(d) {
+      var ch = d && d.choices && d.choices[0];
+      var c = ch && ch.message;
+      var txt = c && c.content;
+      if (Array.isArray(txt)) {
+        txt = txt.map(function (x) { return (x && x.text) || ''; }).join('');
+      }
+      /* reasoning-only (modèles free type GLM/gemma/qwen) : si content
+         vide, on retient le raisonnement plutôt que d'échouer. */
+      if ((!txt || !String(txt).trim()) && c && typeof c.reasoning === 'string' && c.reasoning.trim()) {
+        txt = c.reasoning;
+      }
+      if (txt && typeof txt !== 'string') txt = JSON.stringify(txt);
+      if (d && d.model) {
+        try { entry._modeleReel = String(d.model); } catch (e) {}
+      }
+      return txt ? String(txt) : '';
+    }
+
+    /* ---- Flux SSE amont (nvidia) : data: {delta.reasoning_content|content}
+       accumulés puis rendus en texte complet ; si onDelta est branché, chaque
+       tranche part aussi en événement progress (panneau raisonnement live).
+       Inactivité bornée à 120 s par chunk : le raisonnement « max » est long
+       mais jamais silencieux. */
+    async function lireSSE(r) {
+      var reader = r.body.getReader();
+      var dec = new TextDecoder();
+      var tampon = '';
+      var contenu = '';
+      var pensee = '';
+      var emisPensee = 0;
+      var emisContenu = 0;
+      var dernierEnvoi = 0;
+      var fini = false;
+      var emis = false;
+
+      function tranche(txt, dep) {
+        var s = txt.slice(dep);
+        return s.length > 200 ? '…' + s.slice(-200) : s;
+      }
+      function diffuser() {
+        if (!onDelta) return;
+        var maintenant = Date.now();
+        var np = pensee.length - emisPensee;
+        var nc = contenu.length - emisContenu;
+        if (np <= 0 && nc <= 0) return;
+        var debutReponse = nc > 0 && emisContenu === 0;
+        /* rafraîchi au pire toutes les ~900 ms ou dès 120 nouveaux caractères
+           (le panneau ne garde que 40 étapes) ; le début de réponse n'attend
+           pas : il clôt le raisonnement. */
+        if (!debutReponse && np + nc < 120 && maintenant - dernierEnvoi < 900) return;
+        if (np > 0) {
+          onDelta('reasoning', tranche(pensee, emisPensee));
+          emisPensee = pensee.length;
+        }
+        if (debutReponse) {
+          onDelta('generation', 'Rédaction de la réponse…');
+          emisContenu = contenu.length;
+        } else if (nc > 0) {
+          onDelta('generation', tranche(contenu, emisContenu));
+          emisContenu = contenu.length;
+        }
+        dernierEnvoi = maintenant;
+        emis = true;
+      }
+
+      try {
+        while (!fini) {
+          var lu = await appelBorne(reader.read(), 120000);
+          if (lu.done) break;
+          tampon += dec.decode(lu.value, { stream: true });
+          var idx;
+          while ((idx = tampon.indexOf('\n')) >= 0) {
+            var ligne = tampon.slice(0, idx);
+            tampon = tampon.slice(idx + 1);
+            if (ligne.charAt(0) === '\r') ligne = ligne.slice(1);
+            if (ligne.indexOf('data:') !== 0) continue;
+            var donnees = ligne.slice(5).replace(/^ /, '');
+            if (donnees === '[DONE]') { fini = true; break; }
+            var d = null;
+            try { d = JSON.parse(donnees); } catch (e) { continue; }
+            if (d && d.error) {
+              var eFlux = new Error(entry.provider + ' : ' + ((d.error && d.error.message) || 'erreur de flux'));
+              eFlux.status = (d.error && d.error.status) || 500;
+              throw eFlux;
+            }
+            var ch = d && d.choices && d.choices[0];
+            var delta = (ch && ch.delta) || {};
+            if (typeof delta.reasoning_content === 'string') pensee += delta.reasoning_content;
+            else if (typeof delta.reasoning === 'string') pensee += delta.reasoning;
+            if (typeof delta.content === 'string') contenu += delta.content;
+            if (d && d.model) {
+              try { entry._modeleReel = String(d.model); } catch (e) {}
+            }
+            diffuser();
+          }
+        }
+      } catch (e) {
+        try { reader.cancel(); } catch (e2) {}
+        /* des étapes sont déjà parties : JAMAIS de re-POST (doublon UI). */
+        if (e && emis) e.partiel = true;
+        throw e;
+      }
+      var txt = contenu;
+      if (!String(txt).trim()) txt = pensee;
+      if (!String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
+      return String(txt);
+    }
+
     function uneTentative(liste) {
+      var enFlux = !!p.sse;
+      var enTetes = headers;
+      if (enFlux) {
+        enTetes = {};
+        Object.keys(headers).forEach(function (k) { enTetes[k] = headers[k]; });
+        enTetes.Accept = 'text/event-stream';
+      }
       return realFetch(base + '/chat/completions', {
         method: 'POST',
-        headers: headers,
+        headers: enTetes,
         signal: signal || undefined,
-        body: corpsPour(liste),
+        body: corpsPour(liste, enFlux),
       }).then(function (r) {
+        if (enFlux && r.ok && r.body) return lireSSE(r);
         return r.text().then(function (t) {
+          if (!r.ok) throw erreurHttp(r, t);
           var d = null;
           try { d = JSON.parse(t); } catch (e) { d = null; }
-          if (!r.ok) {
-            var m = (d && d.error && d.error.message) || t.slice(0, 180) || ('HTTP ' + r.status);
-            var err = new Error(entry.provider + ' ' + r.status + ' : ' + m);
-            err.status = r.status;
-            if (d && d.error && d.error.metadata) {
-              var md = d.error.metadata;
-              err.retryAfter = md.retry_after_seconds
-                || (md.headers && md.headers['Retry-After'])
-                || null;
-              err.limitSource = md.limit_source || null;
-              /* free-models-per-min : Reset = epoch ms de fin de fenêtre */
-              if (md.headers && md.headers['X-RateLimit-Reset']) {
-                err.resetAt = parseInt(md.headers['X-RateLimit-Reset'], 10) || null;
-              }
-            }
-            throw err;
-          }
-          var ch = d && d.choices && d.choices[0];
-          var c = ch && ch.message;
-          var txt = c && c.content;
-          if (Array.isArray(txt)) {
-            txt = txt.map(function (x) { return (x && x.text) || ''; }).join('');
-          }
-          /* reasoning-only (modèles free type GLM/gemma/qwen) : si content
-             vide, on retient le raisonnement plutôt que d'échouer. */
-          if ((!txt || !String(txt).trim()) && c && typeof c.reasoning === 'string' && c.reasoning.trim()) {
-            txt = c.reasoning;
-          }
-          if (txt && typeof txt !== 'string') txt = JSON.stringify(txt);
+          var txt = texteDe(d);
           if (!txt || !String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
-          if (d && d.model) {
-            try { entry._modeleReel = String(d.model); } catch (e) {}
-          }
-          return String(txt);
+          return txt;
         });
       });
     }
@@ -405,6 +547,8 @@
     function avecRetry(n, liste) {
       return uneTentative(liste).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
+        /* flux déjà diffusé en partie → re-POST interdit (étapes en double) */
+        if (err && err.partiel) throw err;
         var st = err && err.status;
         var retryable = st === 429 || st === 502 || st === 503;
         if (retryable && n < delaisRetry.length && !(signal && signal.aborted)) {
@@ -505,26 +649,22 @@
       return wantStream ? ndjson([{ type: 'erreur', erreur: e2 }], 503) : json({ erreur: e2 }, 503);
     }
 
-    var dernierErr = null;
-    for (var i = 0; i < plan.chaine.length; i++) {
-      var entry = plan.chaine[i];
-      try {
-        /* openrouter free : timeout plus large (attente reset quota ~40 s
-           + 1 requête) pour ne pas rendre la main à pollinations trop tôt. */
-        var borneMs = entry.providerKey === 'openrouter' ? 70000 : 60000;
-        var texte = await appelBorne(callModel(entry, messages, signal), borneMs);
-        var modeleReel = entry._modeleReel || entry.model || '';
-        var modeleDemande = typeof body.model_id === 'string' && body.model_id
-          ? body.model_id.split(':').slice(1).join(':')
-          : '';
-        var repli = modeleDemande && modeleReel && modeleReel !== modeleDemande;
-        var nomVoie = entry.name || entry.id;
-        /* n'afficher « (openrouter free) » que si CET entry est openrouter
-           (Pollinations renvoie aussi un d.model exotique : gpt-oss-20b). */
-        if (entry.providerKey === 'openrouter' && modeleReel && modeleReel !== entry.model) {
-          nomVoie = modeleReel + ' (openrouter free)';
-        }
-        var payload = {
+    /* aboutissement d'une tentative réussie — commun aux 2 chemins */
+    function assembler(entry, texte) {
+      var modeleReel = entry._modeleReel || entry.model || '';
+      var modeleDemande = typeof body.model_id === 'string' && body.model_id
+        ? body.model_id.split(':').slice(1).join(':')
+        : '';
+      var repli = !!(modeleDemande && modeleReel && modeleReel !== modeleDemande);
+      var nomVoie = entry.name || entry.id;
+      /* n'afficher « (openrouter free) » que si CET entry est openrouter
+         (Pollinations renvoie aussi un d.model exotique : gpt-oss-20b). */
+      if (entry.providerKey === 'openrouter' && modeleReel && modeleReel !== entry.model) {
+        nomVoie = modeleReel + ' (openrouter free)';
+      }
+      return {
+        nomVoie: nomVoie,
+        payload: {
           reponse: texte,
           outil: null,
           correction: false,
@@ -533,23 +673,83 @@
           tache: null,
           raisonnement: null,
           conversation_id: typeof body.conversation_id === 'string' ? body.conversation_id : null,
-        };
-        if (repli) payload.modele_repli = true;
-        if (wantStream) {
-          return ndjson([
-            { type: 'progress', etape: 'generation', message: 'Réponse générée via ' + nomVoie },
-            { type: 'final', reponse: payload.reponse, outil: null, correction: false, verification: null, rag: null, tache: null, conversation_id: payload.conversation_id, raisonnement: null, modele_repli: repli || undefined },
-          ]);
-        }
-        if (repli) payload.modele_repli = true;
-        return json(payload);
-      } catch (err) {
-        if (err && err.name === 'AbortError') throw err;
-        dernierErr = err;
-      }
+          modele_repli: repli || undefined,
+        },
+      };
     }
-    var msg = detailAffichable((dernierErr && dernierErr.message) || 'erreur inconnue');
-    return wantStream ? ndjson([{ type: 'erreur', erreur: msg }], 400) : json({ erreur: msg }, 400);
+
+    var dernierErr = null;
+
+    /* ---- Chemin JSON (sans flux) : tout arrive d'un coup ---- */
+    if (!wantStream) {
+      for (var i = 0; i < plan.chaine.length; i++) {
+        var entry = plan.chaine[i];
+        try {
+          var texte = await appelBorne(callModel(entry, messages, signal), bornePour(entry));
+          return json(assembler(entry, texte).payload);
+        } catch (err) {
+          if (err && err.name === 'AbortError') throw err;
+          dernierErr = err;
+        }
+      }
+      var msg = detailAffichable((dernierErr && dernierErr.message) || 'erreur inconnue');
+      return json({ erreur: msg }, 400);
+    }
+
+    /* ---- Chemin NDJSON : les étapes partent EN DIRECT ----
+       nvidia (SSE) : chaque tranche de raisonnement → une ligne
+       {type:'progress'} du panneau « raisonnement en direct », puis
+       {type:'final'} porte la réponse agrégée. Les autres providers
+       n'ont pas de flux amont : ils émettent appel → réponse d'un bloc. */
+    var enc = new TextEncoder();
+    var flux = new ReadableStream({
+      start: async function (ctrl) {
+        var emit = function (ev) {
+          try { ctrl.enqueue(enc.encode(JSON.stringify(ev) + '\n')); } catch (e) {}
+        };
+        var err = null;
+        for (var i = 0; i < plan.chaine.length; i++) {
+          var entry = plan.chaine[i];
+          var pk = entry.providerKey || entry.provider;
+          var p = PROVIDERS[pk];
+          emit({ type: 'progress', etape: 'appel', message: 'Appel · ' + (entry.name || entry.id) });
+          var onDelta = p && p.sse
+            ? function (etape, message) { emit({ type: 'progress', etape: etape, message: message }); }
+            : null;
+          try {
+            var texte = await appelBorne(callModel(entry, messages, signal, onDelta), bornePour(entry));
+            var fin = assembler(entry, texte);
+            emit({ type: 'progress', etape: 'generation', message: 'Réponse générée via ' + fin.nomVoie });
+            emit({
+              type: 'final',
+              reponse: fin.payload.reponse,
+              outil: null,
+              correction: false,
+              verification: null,
+              rag: null,
+              tache: null,
+              conversation_id: fin.payload.conversation_id,
+              raisonnement: null,
+              modele_repli: fin.payload.modele_repli,
+            });
+            try { ctrl.close(); } catch (e) {}
+            return;
+          } catch (e2) {
+            if (e2 && e2.name === 'AbortError') {
+              try { ctrl.error(e2); } catch (e3) {}
+              return;
+            }
+            err = e2;
+          }
+        }
+        emit({ type: 'erreur', erreur: detailAffichable((err && err.message) || 'erreur inconnue') });
+        try { ctrl.close(); } catch (e) {}
+      },
+    });
+    return new Response(flux, {
+      status: 200,
+      headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
   }
 
   async function handleApi(url, input, init) {

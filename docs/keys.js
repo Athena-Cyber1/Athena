@@ -35,4 +35,14 @@ window.ATHENA_KEYS = {
                    // proxy Cloudflare Worker (déployé) — contourne le 403
                    // navigateur de api.tokenrouter.com. Vide = modèles
                    // tokenrouter grisés "proxy non déployé".
+  nvidia: "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",
+                   // clé NVIDIA (integrate.api.nvidia.com) → kimi-k3.
+                   // UTILISÉE VIA le proxy Worker ci-dessous : l'amont ne
+                   // renvoie aucun en-tête CORS → fetch navigateur bloqué.
+  nvidia_proxy: "https://athena.amineelbekkai8.workers.dev/nvidia/v1",
+                   // même Worker, monture /nvidia → integrate.api.nvidia.com
+                   // (routage par préfixe : /v1 reste tokenrouter).
+                   // ⚠ RE-DÉPLOYER le worker après toute modification de
+                   // worker/index.js (cd worker && npx wrangler deploy) :
+                   // sinon /nvidia/v1/… renvoie 404 et kimi-k3 est grisé.
 };
