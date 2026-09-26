@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ad`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ae`
 
 ---
 
@@ -286,7 +286,7 @@ Endpoint : `https://text.pollinations.ai/openai/chat/completions`
 | zai | glm-4.5-air | |
 | cerebras / nebius / xai | llama-3.3-70b / grok-3-mini | |
 | tokenrouter | catalogue dyn (300+) via Worker CF | quota souvent 0 |
-| nvidia | `moonshotai/kimi-k3` — SSE + `reasoning_effort:max` via Worker CF `/nvidia/v1` | `nvapi-…` |
+| nvidia | 16 modèles gratuits (kimi-k3, glm-5.3, nemotron 3, gemma-4, muse-glimmer…), vérifiés SSE + `reasoning_effort:max` via Worker CF `/nvidia/v1` | `nvapi-…` (free tier 40 RPM, 0 €) |
 
 ### 4.4 Locaux (détection best-effort par le bridge)
 

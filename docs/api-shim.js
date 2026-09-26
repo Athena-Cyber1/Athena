@@ -40,7 +40,9 @@
        base = URL du proxy Worker (keys.js: nvidia_proxy, monture /nvidia/v1).
        sse: la réponse amont arrive en flux SSE (delta.reasoning_content
        puis delta.content) — agrégée ici, diffusée à l'UI en progress.
-       payload: cadrage imposé pour kimi-k3 (voir plus bas). */
+        payload: cadrage NVIDIA par défaut (temperature 1, seed 0,
+        max_tokens 16384, reasoning_effort « max ») — une entry MODELS
+        peut le surcharger via son propre `payload` (voir plus bas). */
     nvidia:       {
       baseKey: 'nvidia_proxy',
       label: 'nvidia · proxy CF',
@@ -90,9 +92,34 @@
     { provider: 'cerebras', model: 'llama-3.3-70b', name: 'llama-3.3-70b · cerebras' },
     { provider: 'nebius', model: 'meta-llama/Llama-3.3-70B-Instruct', name: 'llama-3.3-70b · nebius' },
     { provider: 'xai', model: 'grok-3-mini', name: 'grok-3-mini · xai' },
-    /* NVIDIA : kimi-k3 — raisonnement long (effort « max ») : placé en FIN
-       de cascade pour ne jamais précéder pollinations par défaut. */
+    /* NVIDIA — TOUTES les IA gratuites de build.nvidia.com UTILISABLES en
+       chat, vérifiées le 2026-09-26 : 82 modèles listés via GET /v1/models,
+       17 répondent sur /v1/chat/completions (65 → 404 « not found for
+       account », 500/503 ou timeout). FAQ officielle NVIDIA : free tier
+       40 RPM par modèle, AUCUN billing par token → 0 €.
+       kimi-k3 en tête (modèle de référence : effort « max », 16 384 tok).
+       Les entrées sans `payload` héritent du cadrage PROVIDERS.nvidia ;
+       `payload` local remplace le cadrage pour les modèles qui refusent
+       reasoning_effort ou plafonnent sous 16 384 tokens.
+       Exclu : nvidia/nemotron-parse-2.0 (répond en ~2 M d'événements SSE
+       sans texte lisible → inutilisable en discussion). */
     { provider: 'nvidia', model: 'moonshotai/kimi-k3', name: 'kimi-k3 · nvidia' },
+    { provider: 'nvidia', model: 'z-ai/glm-5.3', name: 'glm-5.3 · nvidia' },
+    { provider: 'nvidia', model: 'z-ai/glm-5.3-flash', name: 'glm-5.3-flash · nvidia' },
+    { provider: 'nvidia', model: 'google/gemma-4-31b-it', name: 'gemma-4-31b · nvidia' },
+    { provider: 'nvidia', model: 'google/diffusiongemma-26b-a4b-it', name: 'diffusiongemma-26b · nvidia' },
+    { provider: 'nvidia', model: 'meta/muse-glimmer-30b', name: 'muse-glimmer-30b · nvidia' },
+    { provider: 'nvidia', model: 'nvidia/nemotron-3-super-120b-a12b', name: 'nemotron-3-super 120b · nvidia' },
+    { provider: 'nvidia', model: 'nvidia/nemotron-3-ultra-550b-a55b', name: 'nemotron-3-ultra 550b · nvidia' },
+    { provider: 'nvidia', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', name: 'nemotron-3-nano omni · nvidia' },
+    { provider: 'nvidia', model: 'nvidia/nemotron-3.5-lightning-30b-a3b', name: 'nemotron-3.5-lightning · nvidia' },
+    { provider: 'nvidia', model: 'nvidia/ising-calibration-1.5-31b', name: 'ising-calibration-31b · nvidia' },
+    { provider: 'nvidia', model: 'meta/llama-3.2-11b-vision-instruct', name: 'llama-3.2-11b vision · nvidia', payload: { temperature: 1, max_tokens: 16384, seed: 0 } },
+    /* spécialisés : en ligne, mais réponses non conversationnelles */
+    { provider: 'nvidia', model: 'nvidia/riva-translate-4b-instruct-v1.1', name: 'riva-translate v1.1 · nvidia (trad.)', payload: { temperature: 1, max_tokens: 4096, seed: 0 } },
+    { provider: 'nvidia', model: 'nvidia/riva-translate-4b-instruct-v2', name: 'riva-translate v2 · nvidia (trad.)', payload: { temperature: 1, max_tokens: 2048, seed: 0 } },
+    { provider: 'nvidia', model: 'nvidia/llama-3.1-nemotron-safety-guard-8b-v3', name: 'nemotron-safety-guard · nvidia (garde)' },
+    { provider: 'nvidia', model: 'nvidia/nemotron-3.5-content-safety', name: 'nemotron-content-safety · nvidia (garde)', payload: { temperature: 1, max_tokens: 16384, seed: 0 } },
   ];
 
   function keyFor(provider) {
@@ -219,7 +246,7 @@
       if (!up && p && !p.free) {
         label = m.provider + ' · ' + (!aCle ? 'clé manquante' : 'proxy non déployé');
       }
-      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up };
+      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
@@ -373,10 +400,12 @@
         max_tokens: 1200,
         stream: !!enFlux,
       };
-      /* cadrage spécifique au provider : nvidia/kimi-k3 impose
-         temperature 1, seed 0, max_tokens 16384, reasoning_effort « max ». */
-      if (p.payload) {
-        var opts = p.payload();
+      /* cadrage spécifique : provider (nvidia → kimi-k3 : temperature 1,
+         seed 0, max_tokens 16384, reasoning_effort « max ») ; une entry
+         peut le surcharger (payload local) pour un modèle qui refuse
+         reasoning_effort ou plafonne sous 16 384 tokens. */
+      var opts = entry.payload || (p.payload ? p.payload() : null);
+      if (opts) {
         Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
       }
       if (liste) c.models = liste;
