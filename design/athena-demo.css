@@ -1319,6 +1319,13 @@ span.think:not(details .think) {
   color: var(--primaire-texte);
   transform: translateY(-1px);
 }
+/* v20260926c (affichage) : rangée des pastilles de l'accueil. */
+.examples-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
 
 /* Vue plein écran (Projets / Paramètres / Compte / Aide) */
 .workspace-view {
@@ -2268,8 +2275,11 @@ span.think:not(details .think) {
 }
 
 .hud-modeles {
+  /* v20260926c (affichage) : les boutons sont dans le composeur (bas d'écran)
+     → le panneau s'ouvre VERS LE HAUT, sinon il dépassait sous le viewport. */
   position: absolute;
-  top: calc(100% + 8px);
+  top: auto;
+  bottom: calc(100% + 8px);
   right: 0;
   width: 300px;
   max-width: calc(100vw - 32px);
@@ -2419,6 +2429,14 @@ span.think:not(details .think) {
   .hud-modeles {
     width: min(300px, calc(100vw - 24px));
     right: -6px;
+  }
+  /* v20260926c (affichage) : le toast ne doit jamais dépasser ni masquer
+     tout le composeur sur petit écran. */
+  .toast-notice {
+    right: 12px;
+    left: 12px;
+    max-width: none;
+    bottom: 150px;
   }
 }
 

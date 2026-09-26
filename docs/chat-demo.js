@@ -79,6 +79,9 @@ const SVG_ICOS = {
   pencil: '<path d="M4.5 19.5h4L19.8 8.2a2.1 2.1 0 0 0-3-3L5.5 16.5v3z"/><path d="m14.5 6.5 3 3"/>',
   download: '<path d="M12 4.5v10m0 0 3.5-3.5M12 14.5 8.5 11"/><path d="M5 19.5h14"/>',
   x: '<path d="m7.5 7.5 9 9m0-9-9 9"/>',
+  /* v20260926c (affichage) : la carte fichier utilisait icoSvg('file') qui
+     n'existait pas → repli sur la croix X (lu comme « fermer »). */
+  file: '<path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4"/>',
   pin: '<path d="M12 20.5v-6.5"/><path d="M8.8 4.5h6.4l-1 6 2.3 2.3H7.5l2.3-2.3z"/>',
   pinOff: '<path d="M12 20.5v-6.5"/><path d="M8.8 4.5h6.4l-1 6 2.3 2.3H7.5l2.3-2.3z"/><path d="m4.5 4.5 15 15"/>',
   copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
@@ -504,8 +507,18 @@ window.addEventListener('storage', (e) => {
   }
   try { notifier('Conversations mises à jour dans un autre onglet.'); } catch { /* toast pas prêt */ }
 });
+/* Les aperçus (titre sidebar + extrait) ne montrent jamais de Markdown brut
+   (ex. « ```athena-file… » affiché tel quel dans la liste). */
+function nettoyerApercu(texte) {
+  let t = String(texte || '');
+  t = t.replace(/```\s*athena-file\s+([^\n`]+)[\s\S]*?(?:```|$)/gi, '[fichier : $1]');
+  t = t.replace(/```\s*athena-exec\b[\s\S]*?(?:```|$)/gi, '[commande]');
+  t = t.replace(/```/g, '');
+  t = t.replace(/^\s*(#{1,6}\s+|>+\s*|[-*•]\s+|\d+[.)]\s+)/gm, '');
+  return t.replace(/\s+/g, ' ').trim();
+}
 function titreDepuis(texte) {
-  const premiereLigne = (texte || '').split('\n')[0].trim();
+  const premiereLigne = nettoyerApercu((texte || '').split('\n')[0]).trim();
   if (!premiereLigne) return 'Nouvelle discussion';
   return premiereLigne.length > 30 ? premiereLigne.slice(0, 30) + '…' : premiereLigne;
 }
@@ -513,7 +526,7 @@ function titreDepuis(texte) {
 function apercuConversation(c) {
   const dernier = [...(c.messages || [])].reverse().find((m) => m && m.content && String(m.content).trim());
   if (!dernier) return 'Conversation vide';
-  const t = String(dernier.content).replace(/\s+/g, ' ').trim();
+  const t = nettoyerApercu(dernier.content);
   return (dernier.role === 'user' ? 'Vous : ' : '') + (t.length > 72 ? t.slice(0, 72) + '…' : t);
 }
 function heureCourt(ts) {
@@ -3059,7 +3072,34 @@ function bulle(role, contenu, outil, meta) {
   msgsEl.appendChild(row);
   return b;
 }
-function exemplesInitiaux() {}
+/* Écran d'accueil : la fonction avait été vidée (centre vide à l'ouverture)
+   alors que le CSS (.examples/.chip) et le retrait à l'envoi existent toujours.
+   Les pastilles envoient directement leur suggestion (clic explicite). */
+function exemplesInitiaux() {
+  if (!msgsEl || msgsEl.querySelector('.examples')) return;
+  const accueil = document.createElement('div');
+  accueil.className = 'examples';
+  const titre = document.createElement('p');
+  titre.textContent = 'Que puis-je faire pour vous ?';
+  const rangee = document.createElement('div');
+  rangee.className = 'examples-chips';
+  const idees = [
+    'Explique-moi un concept',
+    'Écris un script pour moi',
+    'Exécute une commande sur mon PC',
+    'Crée un fichier sur mon PC',
+  ];
+  idees.forEach((texte) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip';
+    b.textContent = texte;
+    b.addEventListener('click', () => { envoyer(texte); });
+    rangee.appendChild(b);
+  });
+  accueil.append(titre, rangee);
+  msgsEl.appendChild(accueil);
+}
 
 /* ---------- Envoi, arrêt, historique de saisie ---------- */
 let controleurEnCours = null;
