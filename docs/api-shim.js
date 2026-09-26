@@ -39,9 +39,12 @@
   }
 
   var PROVIDERS = {
-    pollinations: { base: 'https://text.pollinations.ai/openai', free: true, label: 'pollinations · gratuit' },
+    /* v20260926b (direct) : pollinations et openrouter parlent SSE OpenAI
+       standard comme nvidia → sse:true pour la frappe EN DIRECT aussi sur
+       les chemins de repli (sinon l'UI joue le repli machine à écrire). */
+    pollinations: { base: 'https://text.pollinations.ai/openai', free: true, label: 'pollinations · gratuit', sse: true },
     groq:         { base: 'https://api.groq.com/openai/v1', label: 'groq · clé API' },
-    openrouter:   { base: 'https://openrouter.ai/api/v1', label: 'openrouter · clé API', extra: function () { return { 'HTTP-Referer': location.origin, 'X-Title': 'Athéna' }; } },
+    openrouter:   { base: 'https://openrouter.ai/api/v1', label: 'openrouter · clé API', sse: true, extra: function () { return { 'HTTP-Referer': location.origin, 'X-Title': 'Athéna' }; } },
     openai:       { base: 'https://api.openai.com/v1', label: 'openai · clé API' },
     deepseek:     { base: 'https://api.deepseek.com/v1', label: 'deepseek · clé API' },
     mistral:      { base: 'https://api.mistral.ai/v1', label: 'mistral · clé API' },
@@ -942,7 +945,13 @@
               }
             : null;
           try {
-            var texte = await appelBorne(callModel(entry, messages, signal, onDelta), bornePour(entry));
+            /* v20260926b (direct) : en flux, la borne porte sur la durée
+               TOTALE (l'inactivité est déjà bornée à 120 s/chunk dans
+               lireSSE) — 300 s minimum pour laisser les longues frappes
+               aboutir, comme nvidia. */
+            var borne = bornePour(entry);
+            if (p && p.sse && borne < 300000) borne = 300000;
+            var texte = await appelBorne(callModel(entry, messages, signal, onDelta), borne);
             var fin = assembler(entry, texte);
             emit({ type: 'progress', etape: 'generation', message: 'Réponse générée via ' + fin.nomVoie });
             emit({
