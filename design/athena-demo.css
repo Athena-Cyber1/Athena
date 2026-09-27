@@ -2409,7 +2409,8 @@ span.think:not(details .think) {
   --fond: #0f0f0f;
   --carte: #181818;
   --carte-doux: #242424;
-  --sidebar: #242424;
+  /* v20260926m : sidebar #292929 en sombre (demande UI). */
+  --sidebar: #292929;
   --texte: #f1f1f1;
   --texte-doux: #b0b0b0;
   --bord: #3d3d3d;
@@ -3707,7 +3708,8 @@ details.trace-cmd.echec .trace-cmd-status {
   padding: 8px 10px;
 }
 .file-enregistrer,
-.file-telecharger {
+.file-telecharger,
+.hudf-editer {
   font-size: 0.8rem;
   padding: 5px 12px;
   border-radius: 6px;
@@ -3770,9 +3772,12 @@ details.trace-cmd.echec .trace-cmd-status {
   outline: 2px solid var(--primaire-doux);
   border-color: var(--primaire);
 }
-/* v20260926k : en-tête TOUJOURS transparent (toutes largeurs). */
+/* v20260926m : PAS de ligne sous le header (demande UI) — ni bordure,
+   ni couleur de bordure résiduelle des surcharges. */
 header.chat-tete {
   background: transparent;
+  border-bottom: none;
+  border-bottom-color: transparent;
 }
 /* v20260926k (HUD fichier) : panneau latéral droit UNIFORME — ouvert au
    clic sur une carte, largeur réglable à la souris (persistée). */
@@ -4015,7 +4020,7 @@ html[data-theme="light"] {
   --fond: #ffffff;
   --carte: #ffffff;
   --carte-doux: #f4f4f4;
-  --sidebar: #f1f1f1;
+  --sidebar: #ffffff;
   --texte: #171717;
   --texte-doux: #616161;
   --bord: #e4e4e4;
@@ -4067,7 +4072,62 @@ html[data-theme="light"] .composeur-carte {
 html[data-theme="light"] .sidebar {
   border-right-color: var(--bord-fort);
 }
-/* v20260926l : marque Georgia crème, invisible sur sidebar claire. */
+/* v20260926m : audit blanc-sur-blanc — icônes et textes codés clairs en
+   dur, invisibles sur fond blanc. */
+html[data-theme="light"] .md pre {
+  color: #171717;
+}
+html[data-theme="light"] .code-lang,
+html[data-theme="light"] .row.bot .copier,
+html[data-theme="light"] .side-nav-item .ico {
+  color: #616161;
+}
+html[data-theme="light"] .code-copier,
+html[data-theme="light"] .exec-sortie,
+html[data-theme="light"] .exec-sortie.err {
+  color: #171717;
+}
+html[data-theme="light"] .exec-sortie.err {
+  border-left-color: #616161;
+}
+html[data-theme="light"] .btn-modele:hover,
+html[data-theme="light"] .bascule:hover,
+html[data-theme="light"] .btn-attacher:hover,
+html[data-theme="light"] .side-nav-item:hover,
+html[data-theme="light"] .filtre-discussions:hover,
+html[data-theme="light"] .side-utilitaires button:hover,
+html[data-theme="light"] .btn-partager:hover {
+  color: #111111;
+}
+html[data-theme="light"] .btn-modele,
+html[data-theme="light"] .btn-partager {
+  color: #333333;
+}
+/* v20260926m : navigation et bouton Partager lisibles sur fond clair. */
+html[data-theme="light"] .side-nav-item {
+  color: #333333;
+}
+html[data-theme="light"] .btn-partager {
+  background: #171717;
+  color: #ffffff;
+  border-color: #171717;
+}
+html[data-theme="light"] .convo-extrait {
+  color: #616161;
+}
+html[data-theme="light"] .chat-marque h1 {
+  color: #171717;
+}
+html[data-theme="light"] .nav-badge {
+  color: #0b5cad;
+}
+html[data-theme="light"] .statut-ligne.ok .ico {
+  color: #1c7a45;
+}
+html[data-theme="light"] .statut-ligne.doute .ico,
+html[data-theme="light"] details.raisonnement li.doute {
+  color: #8a6d1f;
+}
 html[data-theme="light"] .side-brand {
   color: #171717;
 }
@@ -4123,10 +4183,30 @@ html[data-theme="light"] .file-apercu .tok-com { color: #2f7a33; }
 html[data-theme="light"] .file-apercu .tok-ch { color: #a3542f; }
 html[data-theme="light"] .file-apercu .tok-mot { color: #0b5cad; }
 html[data-theme="light"] .file-apercu .tok-nb { color: #4d7c4d; }
-html[data-theme="light"] .file-telecharger {
+html[data-theme="light"] .file-telecharger,
+html[data-theme="light"] .hudf-editer {
   background: #ffffff;
   color: #171717;
   border-color: var(--bord-fort);
+}
+/* v20260926m : zone d'édition du HUD (texte brut, pleine hauteur). */
+.hudf-edition {
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.5;
+  tab-size: 2;
+  padding: 8px 10px;
+  white-space: pre;
+  overflow-wrap: normal;
 }
 html[data-theme="light"] .md-table thead th {
   background: #ececec;

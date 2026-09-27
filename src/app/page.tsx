@@ -98,27 +98,7 @@ export default function Accueil() {
           </div>
 
           <div className="side-pied">
-            <div className="side-actions">
-              <button id="ouvrir-projets" type="button" className="side-onglet">
-                <span className="onglet-ico" aria-hidden="true">
-                  <svg className="ico" viewBox="0 0 24 24"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5H18A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z" /></svg>
-                </span>
-                <span className="onglet-lib">Projets</span>
-              </button>
-              <button id="ouvrir-parametres" type="button" className="side-onglet">
-                <span className="onglet-ico" aria-hidden="true">
-                  <svg className="ico" viewBox="0 0 24 24"><path d="M4 7.5h8M17.5 7.5H20M4 16.5h3.5M13 16.5H20" /><circle cx="14.5" cy="7.5" r="2.2" /><circle cx="10" cy="16.5" r="2.2" /></svg>
-                </span>
-                <span className="onglet-lib">Paramètres</span>
-              </button>
-              <button id="btn-theme" type="button" className="side-onglet">
-                <span className="onglet-ico" aria-hidden="true">
-                  <svg className="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none" /></svg>
-                </span>
-                <span className="onglet-lib">Thème…</span>
-              </button>
-            </div>
-
+            {/* v20260926m : tuiles retirées (demande UI) — cf. docs/index.html. */}
             <div className="compte-wrap">
               <button
                 id="ouvrir-compte"
@@ -253,9 +233,9 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925av" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925aw" strategy="beforeInteractive" />
       <Script src="/vendor/twemoji.min.js" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925av" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925aw" strategy="beforeInteractive" />
     </div>
   );
 }

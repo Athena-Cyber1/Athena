@@ -2116,7 +2116,7 @@ function creerBlocFichier(params, contenu) {
   const ouvrir = () => {
     document.querySelectorAll('.file-bloc.ouvert').forEach((c) => { if (c !== carte) c.classList.remove('ouvert'); });
     carte.classList.add('ouvert');
-    ouvrirHudFichier(chemin, texte);
+    ouvrirHudFichier(chemin, texte, carte);
     if (document.getElementById('hud-fichier')?.hidden) carte.classList.remove('ouvert');
   };
   tete.addEventListener('click', ouvrir);
@@ -2181,6 +2181,11 @@ function hudFichierRacine() {
   corps.tabIndex = 0;
   const actions = document.createElement('div');
   actions.className = 'hudf-actions';
+  const btnEdit = document.createElement('button');
+  btnEdit.type = 'button';
+  btnEdit.className = 'hudf-editer';
+  btnEdit.textContent = 'Modifier';
+  btnEdit.title = 'Modifier le fichier dans l’aperçu';
   const btnDl = document.createElement('button');
   btnDl.type = 'button';
   btnDl.className = 'file-telecharger';
@@ -2188,7 +2193,7 @@ function hudFichierRacine() {
   const statut = document.createElement('span');
   statut.className = 'file-statut';
   statut.textContent = 'prêt';
-  actions.append(btnDl, statut);
+  actions.append(btnEdit, btnDl, statut);
   hud.append(poignee, tete, corps, actions);
   document.body.appendChild(hud);
   /* Redimensionnement au pointeur (souris + tactile), persisté. */
@@ -2222,12 +2227,47 @@ function hudFichierRacine() {
       if (e.key !== 'Escape') return;
       const pile = window.__modalesAthena || [];
       if (pile.length) return; /* les modales d'abord */
+      const hud = document.getElementById('hud-fichier');
+      /* v20260926m : en pleine édition, Échap annule l'édition (pas le HUD). */
+      if (hud && !hud.hidden && hud._enEdition && typeof hud._annulerEdition === 'function') {
+        hud._annulerEdition();
+        e.stopPropagation();
+        return;
+      }
       fermerHudFichier();
     });
   }
   return hud;
 }
-function ouvrirHudFichier(chemin, contenu) {
+/* v20260926m : répercute un contenu édité dans le message d'origine (bloc
+   ```athena-file correspondant) pour que la persistance suive. */
+function mettreAJourFichierConversation(chemin, nouveau) {
+  const convo = (typeof conversationOuverte === 'function') ? conversationOuverte() : null;
+  if (!convo || !Array.isArray(convo.messages)) return false;
+  let touche = false;
+  for (const m of convo.messages) {
+    if (!m || m.role !== 'assistant' || typeof m.content !== 'string') continue;
+    const lignes = m.content.split('\n');
+    const sortie = [];
+    let i = 0;
+    let change = false;
+    while (i < lignes.length) {
+      const ouv = /^\s*```\s*athena-file\s*(.*)$/.exec(lignes[i]);
+      if (ouv && analyserCheminFichier(ouv[1] || '') === String(chemin || '')) {
+        sortie.push(lignes[i]);
+        i++;
+        while (i < lignes.length && !/^\s*```\s*$/.test(lignes[i])) i++;
+        sortie.push(String(nouveau == null ? '' : nouveau).replace(/\n$/, ''));
+        if (i < lignes.length) { sortie.push(lignes[i]); i++; }
+        else sortie.push('```');
+        change = true;
+      } else { sortie.push(lignes[i]); i++; }
+    }
+    if (change) { m.content = sortie.join('\n'); touche = true; }
+  }
+  return touche;
+}
+function ouvrirHudFichier(chemin, contenu, carte) {
   const hud = hudFichierRacine();
   /* Re-clic sur le même fichier = refermer (bascule). */
   if (!hud.hidden && hud.dataset.chemin === String(chemin || '')) {
@@ -2235,22 +2275,84 @@ function ouvrirHudFichier(chemin, contenu) {
     return;
   }
   hud.dataset.chemin = String(chemin || '');
+  hud._carte = carte || null;
+  const texte = contenu == null ? '' : String(contenu);
+  hud._texte = texte;
+  hud._enEdition = false;
+  hud._annulerEdition = () => { afficherHudLecture(); };
   hud.querySelector('.hudf-nom').textContent = nomBaseFichier(chemin);
   hud.querySelector('.hudf-nom').title = String(chemin || '');
-  const texte = contenu == null ? '' : String(contenu);
   try {
     hud.querySelector('.hudf-taille').textContent = tailleFichier(new Blob([texte]).size);
   } catch { hud.querySelector('.hudf-taille').textContent = texte.length + ' car.'; }
   const corps = hud.querySelector('.hudf-corps');
-  corps.replaceChildren(surlignerCode(texte, chemin));
+  afficherHudLecture();
   corps.scrollTop = 0;
   const statut = hud.querySelector('.file-statut');
   if (statut) { statut.textContent = 'prêt'; statut.title = ''; }
   const btnDl = hud.querySelector('.file-telecharger');
-  btnDl.onclick = () => telechargerFichier(chemin, texte, btnDl);
+  btnDl.onclick = () => telechargerFichier(chemin, hud._texte, btnDl);
+  const btnEdit = hud.querySelector('.hudf-editer');
+  btnEdit.textContent = 'Modifier';
+  btnEdit.onclick = () => basculerEditionHud();
   if (!hud.style.width) hud.style.width = largeurHudFichier() + 'px';
   hud.hidden = false;
   document.querySelectorAll('.file-bloc.ouvert').forEach((c) => c.classList.remove('ouvert'));
+  if (carte) carte.classList.add('ouvert');
+}
+/* v20260926m : édition DIRECTE dans le HUD — lecture colorée <-> zone de
+   texte. Valider met à jour la carte, la conversation persistée, le
+   téléchargement, et relance l'auto-save éventuel. */
+function afficherHudLecture() {
+  const hud = document.getElementById('hud-fichier');
+  if (!hud) return;
+  hud._enEdition = false;
+  const corps = hud.querySelector('.hudf-corps');
+  corps.replaceChildren(surlignerCode(hud._texte, hud.dataset.chemin));
+  const btnEdit = hud.querySelector('.hudf-editer');
+  if (btnEdit) btnEdit.textContent = 'Modifier';
+}
+function basculerEditionHud() {
+  const hud = document.getElementById('hud-fichier');
+  if (!hud || hud.hidden) return;
+  if (hud._enEdition) {
+    /* Valider. */
+    const ta = hud.querySelector('.hudf-edition');
+    const nouveau = ta ? ta.value : hud._texte;
+    hud._texte = String(nouveau);
+    hud._enEdition = false;
+    afficherHudLecture();
+    try {
+      hud.querySelector('.hudf-taille').textContent = tailleFichier(new Blob([hud._texte]).size);
+    } catch {}
+    if (hud._carte) hud._carte._contenuComplet = hud._texte;
+    if (mettreAJourFichierConversation(hud.dataset.chemin, hud._texte)) {
+      try {
+        sauverConversations();
+        rendreConversations();
+      } catch {}
+    }
+    const statut = hud.querySelector('.file-statut');
+    if (statut) statut.textContent = 'modifié';
+    if (preferences.executionAuto !== false && hud._carte) {
+      delete hud._carte.dataset.fileAuto;
+      enregistrerFichierLocal(hud.dataset.chemin || '', hud._texte, null, hud._carte, { auto: true });
+    }
+    try { notifier('Fichier mis à jour.'); } catch {}
+    return;
+  }
+  /* Passer en édition. */
+  const corps = hud.querySelector('.hudf-corps');
+  const ta = document.createElement('textarea');
+  ta.className = 'hudf-edition';
+  ta.value = hud._texte;
+  ta.setAttribute('aria-label', 'Modifier le contenu du fichier');
+  ta.spellcheck = false;
+  corps.replaceChildren(ta);
+  hud._enEdition = true;
+  const btnEdit = hud.querySelector('.hudf-editer');
+  if (btnEdit) btnEdit.textContent = 'Valider';
+  ta.focus();
 }
 function fermerHudFichier() {
   const hud = document.getElementById('hud-fichier');
@@ -4049,8 +4151,9 @@ fichiersEl.addEventListener('change', () => {
   ajouterFichiers(fichiers);
 });
 nouvelleDiscussionEl.addEventListener('click', () => nouvelleDiscussion());
-ouvrirProjetsEl.addEventListener('click', () => afficherProjets());
-ouvrirParametresEl.addEventListener('click', () => afficherParametres());
+/* v20260926m : tuiles retirées du DOM — gardes nulles (pas de crash). */
+ouvrirProjetsEl?.addEventListener('click', () => afficherProjets());
+ouvrirParametresEl?.addEventListener('click', () => afficherParametres());
 navProjetsEl?.addEventListener('click', () => afficherProjets());
 navArtefactsEl?.addEventListener('click', () => afficherVue('Artefacts', 'Les artefacts générés apparaîtront ici.'));
 navCodeEl?.addEventListener('click', () => afficherVue('Code', 'Les extraits et commandes exécutables apparaîtront ici.'));
