@@ -3914,7 +3914,7 @@ header.chat-tete {
    424 px avec scroll interne. Miroir aligné au pixel près. */
 .saisie,
 .saisie-mirror {
-  font-size: 1rem;
+  font-size: 20px;
   line-height: 24px;
   /* v20260926i : 10 px haut + 0 bas + ligne 24 = 34 de champ ; +8 de carte
      +2 de bordure = 44 px pile au départ, +24/ligne ensuite. */
@@ -4064,7 +4064,6 @@ html[data-theme="light"] .btn-modele,
 html[data-theme="light"] .btn-partager {
   color: #333333;
 }
-/* v20260926m : navigation et bouton Partager lisibles sur fond clair. */
 html[data-theme="light"] .side-nav-item {
   color: #333333;
 }
@@ -4072,6 +4071,56 @@ html[data-theme="light"] .btn-partager {
   background: #171717;
   color: #ffffff;
   border-color: #171717;
+}
+/* v20260926m : audit survols — chaque hover à fond sombre impose aussi son
+   texte clair, sinon blanc-sur-blanc en thème clair. */
+html[data-theme="light"] .btn-nouvelle:hover,
+html[data-theme="light"] .side-nav-item:hover,
+html[data-theme="light"] #filtre-discussions:hover,
+html[data-theme="light"] #bascule-sidebar:hover,
+html[data-theme="light"] .plier:hover,
+html[data-theme="light"] .btn-plus:hover,
+html[data-theme="light"] .message-actions button:hover,
+html[data-theme="light"] .code-copier:hover,
+html[data-theme="light"] .side-utilitaires > button:hover,
+html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
+  background: #e2e2e2;
+  color: #111111;
+  border-color: transparent;
+}
+html[data-theme="light"] .code-copier {
+  color: #333333;
+}
+html[data-theme="light"] .code-copier.copie-ok {
+  background: rgba(0, 0, 0, 0.08);
+}
+html[data-theme="light"] .side-bloc-titre,
+html[data-theme="light"] .activity-count,
+html[data-theme="light"] .message-actions button,
+html[data-theme="light"] .btn-effort .effort-ico .ico {
+  color: #616161;
+}
+/* v20260926m : le champ de saisie affichait #eeeeee en thème clair
+   (blanc sur blanc) — le miroir étant masqué, c'est lui qu'on lit. */
+html[data-theme="light"] .saisie {
+  color: #171717;
+}
+/* v20260926m : #btn-reset-theme (créé par l'import de design) n'avait plus
+   aucun style depuis la purge des tuiles. */
+#btn-reset-theme {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--bord-fort);
+  background: transparent;
+  color: var(--texte-doux);
+  cursor: pointer;
+}
+#btn-reset-theme:hover {
+  color: var(--texte);
+  border-color: var(--primaire);
 }
 html[data-theme="light"] .convo-extrait {
   color: #616161;
