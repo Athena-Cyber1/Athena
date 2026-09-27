@@ -3914,8 +3914,10 @@ header.chat-tete {
    424 px avec scroll interne. Miroir aligné au pixel près. */
 .saisie,
 .saisie-mirror {
-  font-size: 20px;
-  line-height: 24px;
+  /* v20260926n-2 : 16 px / 20 px pile (demande UI) — la croissance suit la
+     ligne (scrollHeight), pas une constante. */
+  font-size: 16px;
+  line-height: 20px;
   /* v20260926i : 10 px haut + 0 bas + ligne 24 = 34 de champ ; +8 de carte
      +2 de bordure = 44 px pile au départ, +24/ligne ensuite. */
   padding: 10px 4px 0;
@@ -4090,6 +4092,15 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 }
 html[data-theme="light"] .code-copier {
   color: #333333;
+}
+/* v20260926n-2 : pastille + des boutons et icône du groupe d'activité —
+   disque sombre et icône claire invisibles sur fond blanc. */
+html[data-theme="light"] .btn-nouvelle > .ico {
+  background: #e2e2e2;
+  color: #111111;
+}
+html[data-theme="light"] .activity-group > summary .ico {
+  color: #616161;
 }
 html[data-theme="light"] .code-copier.copie-ok {
   background: rgba(0, 0, 0, 0.08);
