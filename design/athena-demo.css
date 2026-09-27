@@ -3780,13 +3780,27 @@ details.trace-cmd.echec .trace-cmd-status {
   margin: 0 0.05em;
 }
 @media (min-width: 721px) {
+  /* v20260926j (cadrage) : colonne messages 768 px — 736 de contenu +
+     16 px de chaque côté, bords bien droits des deux côtés. */
+  .row,
+  .row.bot,
   .row.user {
-    max-width: 736px;
+    max-width: 768px;
+    padding: 4px 16px 0;
+    box-sizing: border-box;
+  }
+  /* v20260926j : les deux rangées partagent EXACTEMENT la même géométrie
+     (la rangée bot avait un décalage gauche de +64 px intégré, la user
+     était collée à droite) — colonnes superposées au pixel près. */
+  .row.bot,
+  .row.user {
+    margin-left: auto;
+    margin-right: auto;
   }
   .row.bot .bubble,
   .row.user .bubble,
   .bubble {
-    max-width: 736px;
+    max-width: 100%;
   }
   .composeur-carte {
     max-width: 744px;

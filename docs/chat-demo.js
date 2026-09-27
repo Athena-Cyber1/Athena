@@ -2720,9 +2720,11 @@ function markdownVersFragment(texte) {
    (v9.4 : retourne un fragment DOM riche ; les bulles utilisateur continuent
    d'utiliser du texte brut — un message tapé n'est pas du Markdown.) */
 function formater(texte) {
+  /* v20260926j : le deux-points est désormais EXIGÉ — avant, « Réponse de
+     test… » en début de message était avalé avec l'étiquette. */
   const sansEtiquette = String(texte || '')
-    .replace(/(^|\n)\s*Résultat\s*:?\s*/g, '$1')
-    .replace(/(^|\n)\s*Réponse\s*:?\s*/g, '$1')
+    .replace(/(^|\n)\s*Résultat\s*:\s*/g, '$1')
+    .replace(/(^|\n)\s*Réponse\s*:\s*/g, '$1')
     .replace(/\s+$/, '');
   return markdownVersFragment(sansEtiquette);
 }
