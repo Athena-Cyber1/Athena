@@ -1378,7 +1378,7 @@ publierHooks('__atelierProjets', {
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
 
-const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true, dossierTravail: '' };
+const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true, dossierTravail: '', theme: 'dark' };
 let preferences = { ...preferencesParDefaut };
 try {
   preferences = { ...preferencesParDefaut, ...JSON.parse(localStorage.getItem('chat-preferences') || '{}') };
@@ -1388,6 +1388,10 @@ function appliquerPreferences() {
   document.documentElement.classList.toggle('reduce-animation', preferences.animationsReduites);
   document.documentElement.classList.toggle('compact-density', preferences.densiteCompacte);
   document.getElementById('app').classList.toggle('sidebar-fermee', preferences.sidebarVisible === false);
+  /* v20260926l : thème clair/sombre sur toute la page (défaut : sombre). */
+  try {
+    document.documentElement.dataset.theme = preferences.theme === 'light' ? 'light' : 'dark';
+  } catch {}
   majBasculeSidebar();
 }
 function enregistrerPreference(cle, valeur) {
@@ -1406,6 +1410,30 @@ function creerLigneOption(titre, description, controle) {
   detail.textContent = description;
   copy.append(nom, detail);
   ligne.append(copy, controle);
+  return ligne;
+}
+/* v20260926l : choix du thème Sombre/Clair (toute la page). */
+function creerChoixTheme() {
+  const groupe = document.createElement('div');
+  groupe.className = 'theme-choix';
+  groupe.setAttribute('role', 'group');
+  groupe.setAttribute('aria-label', 'Thème de l’interface');
+  const boutons = {};
+  const rafraichir = () => {
+    const clair = preferences.theme === 'light';
+    boutons.sombre.setAttribute('aria-pressed', String(!clair));
+    boutons.clair.setAttribute('aria-pressed', String(clair));
+  };
+  [['sombre', 'Sombre', 'dark'], ['clair', 'Clair', 'light']].forEach(([cle, libelle, valeur]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = libelle;
+    b.addEventListener('click', () => { enregistrerPreference('theme', valeur); rafraichir(); });
+    groupe.appendChild(b);
+    boutons[cle] = b;
+  });
+  rafraichir();
+  const ligne = creerLigneOption('Thème', 'Sombre ou clair, sur toute la page.', groupe);
   return ligne;
 }
 function creerInterrupteur(cle, titre, description) {
@@ -1459,6 +1487,7 @@ function afficherParametres(ongletActif = 'Apparence') {
     if (nom === 'Apparence') {
       description.textContent = 'Réglez la densité et les mouvements de l’interface.';
       contenu.append(
+        creerChoixTheme(),
         creerInterrupteur('animationsReduites', 'Réduire les animations', 'Désactive les mouvements décoratifs.'),
         creerInterrupteur('densiteCompacte', 'Affichage compact', 'Réduit l’espace vertical autour des messages.'),
       );
@@ -2096,18 +2125,14 @@ function creerBlocFichier(params, contenu) {
   });
   const actions = document.createElement('div');
   actions.className = 'file-actions';
-  const btnPc = document.createElement('button');
-  btnPc.type = 'button';
-  btnPc.className = 'file-enregistrer';
-  btnPc.textContent = 'Enregistrer sur ce PC';
-  btnPc.title = 'Écrit via l’agent local (127.0.0.1:3020)';
+  /* v20260926l : bouton « Enregistrer sur ce PC » retiré de l'UI (demande) —
+     l'enregistrement passe par l'auto (carte + statut conservés). */
   const btnDl = document.createElement('button');
   btnDl.type = 'button';
   btnDl.className = 'file-telecharger';
   btnDl.textContent = 'Télécharger';
   btnDl.addEventListener('click', () => telechargerFichier(chemin, texte, btnDl));
-  btnPc.addEventListener('click', () => enregistrerFichierLocal(chemin, texte, btnPc, carte, { auto: false }));
-  actions.append(btnPc, btnDl);
+  actions.append(btnDl);
   carte.append(tete, actions);
   return carte;
 }
@@ -2156,10 +2181,6 @@ function hudFichierRacine() {
   corps.tabIndex = 0;
   const actions = document.createElement('div');
   actions.className = 'hudf-actions';
-  const btnPc = document.createElement('button');
-  btnPc.type = 'button';
-  btnPc.className = 'file-enregistrer';
-  btnPc.textContent = 'Enregistrer sur ce PC';
   const btnDl = document.createElement('button');
   btnDl.type = 'button';
   btnDl.className = 'file-telecharger';
@@ -2167,7 +2188,7 @@ function hudFichierRacine() {
   const statut = document.createElement('span');
   statut.className = 'file-statut';
   statut.textContent = 'prêt';
-  actions.append(btnPc, btnDl, statut);
+  actions.append(btnDl, statut);
   hud.append(poignee, tete, corps, actions);
   document.body.appendChild(hud);
   /* Redimensionnement au pointeur (souris + tactile), persisté. */
@@ -2225,9 +2246,7 @@ function ouvrirHudFichier(chemin, contenu) {
   corps.scrollTop = 0;
   const statut = hud.querySelector('.file-statut');
   if (statut) { statut.textContent = 'prêt'; statut.title = ''; }
-  const btnPc = hud.querySelector('.file-enregistrer');
   const btnDl = hud.querySelector('.file-telecharger');
-  btnPc.onclick = () => enregistrerFichierLocal(chemin, texte, btnPc, hud, { auto: false });
   btnDl.onclick = () => telechargerFichier(chemin, texte, btnDl);
   if (!hud.style.width) hud.style.width = largeurHudFichier() + 'px';
   hud.hidden = false;
@@ -2551,7 +2570,11 @@ function autoExecBlocs(bulleEl) {
    Sans agent : statut d'échec honnête, le bouton Télécharger reste disponible. */
 async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
   const auto = Boolean(opts && opts.auto);
-  if (!bouton || bouton.disabled) return null;
+  /* v20260926l : le bouton « Enregistrer sur ce PC » n'existe plus dans
+     l'UI — l'enregistrement passe par l'auto (executionAuto) ; `bouton`
+     est donc optionnel (null en auto). */
+  if (bouton && bouton.disabled) return null;
+  if (!auto && !bouton) return null;
   const brutChemin = String(chemin || '').trim();
   const texte = contenu == null ? '' : String(contenu);
   const statutEl = carte ? carte.querySelector('.file-statut') : null;
@@ -2562,9 +2585,9 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
     }
   };
   if (!brutChemin) { statut('chemin vide'); return null; }
-  bouton.disabled = true;
-  const libelle = bouton.textContent;
-  bouton.textContent = '…';
+  const libelle = bouton ? bouton.textContent : '';
+  const occuper = (on) => { if (bouton) { bouton.disabled = on; bouton.textContent = on ? '…' : libelle; } };
+  occuper(true);
   statut('envoi…');
   try {
     let existe = false;
@@ -2580,8 +2603,7 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
       const dj = await probe.json().catch(() => ({}));
       if (!probe.ok && probe.status !== 428) {
         statut('échec', (dj && dj.erreur) || ('HTTP ' + probe.status));
-        bouton.textContent = libelle;
-        bouton.disabled = false;
+        occuper(false);
         return null;
       }
       existe = Boolean(dj && dj.existe);
@@ -2597,8 +2619,7 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
       });
       if (!ok) {
         statut('annulé');
-        bouton.textContent = libelle;
-        bouton.disabled = false;
+        occuper(false);
         return null;
       }
     }
@@ -2611,19 +2632,16 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) {
       statut('échec', (d && d.erreur) || ('HTTP ' + r.status));
-      bouton.textContent = libelle;
-      bouton.disabled = false;
+      occuper(false);
       return null;
     }
     statut('enregistré' + (d.ecrase ? ' (remplacé)' : ''), String(d.chemin || ''));
     if (auto && carte) carte.dataset.fileAuto = '1';
-    bouton.textContent = libelle;
-    bouton.disabled = false;
+    occuper(false);
     return d;
   } catch (e) {
     statut('échec', String((e && e.message) || e).slice(0, 200));
-    bouton.textContent = libelle;
-    bouton.disabled = false;
+    occuper(false);
     return null;
   }
 }
@@ -2634,11 +2652,10 @@ function autoFileBlocs(bulleEl) {
   if (!cartes.length) return;
   (async () => {
     for (const carte of cartes) {
-      const bouton = carte.querySelector('.file-enregistrer');
-      if (!bouton || carte.dataset.fileAuto === '1') continue;
+      if (carte.dataset.fileAuto === '1') continue;
       const contenu = carte._contenuComplet != null ? carte._contenuComplet : '';
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
-      await enregistrerFichierLocal(carte.dataset.chemin || '', contenu, bouton, carte, { auto: true });
+      await enregistrerFichierLocal(carte.dataset.chemin || '', contenu, null, carte, { auto: true });
     }
   })();
 }
@@ -3972,7 +3989,9 @@ function ajusterSaisie() {
   const h = Math.min(404, Math.max(24, saisieEl.scrollHeight - 10));
   saisieEl.style.height = h + 'px';
   saisieEl.style.overflowY = saisieEl.scrollHeight > h + 1 ? 'auto' : 'hidden';
-  if (saisieMirrorEl) saisieMirrorEl.scrollTop = 0;
+  /* v20260926l : le miroir suit le scroll du champ (au-delà de 424 px le
+     champ défile sous un miroir figé — caret détaché du texte). */
+  if (saisieMirrorEl) saisieMirrorEl.scrollTop = saisieEl.scrollTop;
 }
 const MAX_SAISIE = 4000;
 saisieEl.maxLength = MAX_SAISIE;
