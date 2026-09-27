@@ -3765,6 +3765,130 @@ details.trace-cmd.echec .trace-cmd-status {
   outline: 2px solid var(--primaire-doux);
   border-color: var(--primaire);
 }
+/* v20260926k : en-tête TOUJOURS transparent (toutes largeurs). */
+header.chat-tete {
+  background: transparent;
+}
+/* v20260926k (HUD fichier) : panneau latéral droit UNIFORME — ouvert au
+   clic sur une carte, largeur réglable à la souris (persistée). */
+.hud-fichier {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 480px;
+  max-width: calc(100vw - 40px);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: #101010;
+  border-left: 1px solid var(--bord-fort);
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.45);
+}
+.hud-fichier[hidden] {
+  display: none;
+}
+.hudf-poignee {
+  position: absolute;
+  left: -6px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.hudf-tete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--bord);
+  flex: 0 0 auto;
+}
+.hudf-tete .ico {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+.hudf-nom {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hudf-taille {
+  font-size: 0.75rem;
+  color: #a9a9a9;
+  flex: 0 0 auto;
+}
+.hudf-fermer {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--texte-doux);
+  cursor: pointer;
+}
+.hudf-fermer:hover {
+  border-color: var(--bord-fort);
+  color: var(--texte);
+}
+.hudf-fermer .ico {
+  width: 13px;
+  height: 13px;
+}
+.hudf-corps {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  max-height: none;
+}
+.hudf-corps:focus {
+  outline: 2px solid var(--primaire-doux);
+  outline-offset: -2px;
+}
+.hudf-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--bord);
+  flex: 0 0 auto;
+}
+.hudf-actions .file-statut {
+  margin-left: auto;
+}
+/* Carte : en-tête cliquable + état ouvert. */
+.file-tete.file-ouvre {
+  cursor: pointer;
+}
+.file-tete.file-ouvre:hover .file-nom {
+  text-decoration: underline;
+}
+.file-bloc.ouvert {
+  border-color: var(--primaire);
+}
+@media (max-width: 720px) {
+  /* Sur mobile : le HUD prend tout l'écran (pas de redimensionnement). */
+  .hud-fichier {
+    left: 0;
+    width: auto;
+    max-width: none;
+    border-left: none;
+  }
+  .hudf-poignee {
+    display: none;
+  }
+}
 
 /* ============ v20260926i (UI) : métriques demandées ============ */
 /* Inter dans TOUTE l'UI, y compris le markdown (fini le serif). */

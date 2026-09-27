@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925at`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925au`
 
 ---
 
@@ -362,6 +362,11 @@ intégral + coloration maison (commentaires/chaînes/mots-clés/nombres) ;
 panneau de réflexion scrollable ; bloc ```athena-exec masqué en affichage
 (exécution + trace inchangées) ; machine à écrire et flush coalescés sur
 rAF ; saisie à 16 px (zoom iOS).
+
+**UI v20260926k :** aperçu fichier UNIQUEMENT au clic, dans un HUD latéral
+droit uniforme (`#hud-fichier`, instance unique) — code coloré intégral +
+Enregistrer/Télécharger, largeur réglable à la souris (persistée),
+`Escape` pour fermer ; `header.chat-tete` transparent partout.
 
 Erreur : `{"type":"erreur","erreur":"Échec des modèles : …"}`
 

@@ -2078,10 +2078,22 @@ function creerBlocFichier(params, contenu) {
   statut.className = 'file-statut';
   statut.textContent = 'prêt';
   tete.append(nom, taille, statut);
-  const apercu = document.createElement('pre');
-  apercu.className = 'file-apercu';
-  /* v20260926h : contenu INTÉGRAL + coloration (fini les 40 lignes). */
-  apercu.appendChild(surlignerCode(texte, chemin));
+  /* v20260926k : l'aperçu ne s'affiche QU'AU CLIC — dans le HUD latéral.
+     La carte reste compacte (en-tête cliquable + actions). */
+  tete.classList.add('file-ouvre');
+  tete.tabIndex = 0;
+  tete.setAttribute('role', 'button');
+  tete.title = 'Ouvrir l’aperçu : ' + chemin;
+  const ouvrir = () => {
+    document.querySelectorAll('.file-bloc.ouvert').forEach((c) => { if (c !== carte) c.classList.remove('ouvert'); });
+    carte.classList.add('ouvert');
+    ouvrirHudFichier(chemin, texte);
+    if (document.getElementById('hud-fichier')?.hidden) carte.classList.remove('ouvert');
+  };
+  tete.addEventListener('click', ouvrir);
+  tete.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ouvrir(); }
+  });
   const actions = document.createElement('div');
   actions.className = 'file-actions';
   const btnPc = document.createElement('button');
@@ -2096,8 +2108,135 @@ function creerBlocFichier(params, contenu) {
   btnDl.addEventListener('click', () => telechargerFichier(chemin, texte, btnDl));
   btnPc.addEventListener('click', () => enregistrerFichierLocal(chemin, texte, btnPc, carte, { auto: false }));
   actions.append(btnPc, btnDl);
-  carte.append(tete, apercu, actions);
+  carte.append(tete, actions);
   return carte;
+}
+/* v20260926k (HUD fichier) : l'aperçu ne s'affiche QU'AU CLIC — dans un
+   panneau latéral droit UNIFORME (une seule instance réutilisée), largeur
+   réglable à la souris et persistée. */
+const CLE_LARGEUR_HUD = 'athena_hud_fichier_largeur';
+const LARGUEUR_HUD_DEFAUT = 480;
+function largeurHudFichier() {
+  try {
+    const n = parseInt(localStorage.getItem(CLE_LARGEUR_HUD) || '', 10);
+    if (Number.isFinite(n)) return Math.min(960, Math.max(300, n));
+  } catch {}
+  return LARGUEUR_HUD_DEFAUT;
+}
+function hudFichierRacine() {
+  let hud = document.getElementById('hud-fichier');
+  if (hud) return hud;
+  hud = document.createElement('aside');
+  hud.id = 'hud-fichier';
+  hud.className = 'hud-fichier';
+  hud.hidden = true;
+  hud.setAttribute('aria-label', 'Aperçu du fichier');
+  const poignee = document.createElement('div');
+  poignee.className = 'hudf-poignee';
+  poignee.title = 'Glisser pour régler la largeur (double-clic = réinitialiser)';
+  const tete = document.createElement('div');
+  tete.className = 'hudf-tete';
+  const icone = document.createElement('span');
+  icone.className = 'hudf-icone';
+  icone.appendChild(icoSvg('file'));
+  const nom = document.createElement('span');
+  nom.className = 'hudf-nom';
+  const taille = document.createElement('span');
+  taille.className = 'hudf-taille';
+  const fermer = document.createElement('button');
+  fermer.type = 'button';
+  fermer.className = 'hudf-fermer';
+  fermer.title = 'Fermer l’aperçu';
+  fermer.setAttribute('aria-label', 'Fermer l’aperçu du fichier');
+  fermer.appendChild(icoSvg('x'));
+  fermer.addEventListener('click', () => fermerHudFichier());
+  tete.append(icone, nom, taille, fermer);
+  const corps = document.createElement('pre');
+  corps.className = 'hudf-corps file-apercu';
+  corps.tabIndex = 0;
+  const actions = document.createElement('div');
+  actions.className = 'hudf-actions';
+  const btnPc = document.createElement('button');
+  btnPc.type = 'button';
+  btnPc.className = 'file-enregistrer';
+  btnPc.textContent = 'Enregistrer sur ce PC';
+  const btnDl = document.createElement('button');
+  btnDl.type = 'button';
+  btnDl.className = 'file-telecharger';
+  btnDl.textContent = 'Télécharger';
+  const statut = document.createElement('span');
+  statut.className = 'file-statut';
+  statut.textContent = 'prêt';
+  actions.append(btnPc, btnDl, statut);
+  hud.append(poignee, tete, corps, actions);
+  document.body.appendChild(hud);
+  /* Redimensionnement au pointeur (souris + tactile), persisté. */
+  let enCours = false;
+  const deplacer = (e) => {
+    if (!enCours) return;
+    const w = Math.min(960, Math.max(300, window.innerWidth - e.clientX));
+    hud.style.width = w + 'px';
+  };
+  const finir = () => {
+    if (!enCours) return;
+    enCours = false;
+    try { localStorage.setItem(CLE_LARGEUR_HUD, String(parseInt(hud.style.width, 10) || LARGUEUR_HUD_DEFAUT)); } catch {}
+    try { poignee.releasePointerCapture && poignee.releasePointerCapture(1); } catch {}
+  };
+  poignee.addEventListener('pointerdown', (e) => {
+    enCours = true;
+    try { poignee.setPointerCapture(e.pointerId); } catch {}
+    e.preventDefault();
+  });
+  poignee.addEventListener('pointermove', deplacer);
+  poignee.addEventListener('pointerup', finir);
+  poignee.addEventListener('pointercancel', finir);
+  poignee.addEventListener('dblclick', () => {
+    hud.style.width = LARGUEUR_HUD_DEFAUT + 'px';
+    try { localStorage.removeItem(CLE_LARGEUR_HUD); } catch {}
+  });
+  if (!window.__hudFichierEchap) {
+    window.__hudFichierEchap = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      const pile = window.__modalesAthena || [];
+      if (pile.length) return; /* les modales d'abord */
+      fermerHudFichier();
+    });
+  }
+  return hud;
+}
+function ouvrirHudFichier(chemin, contenu) {
+  const hud = hudFichierRacine();
+  /* Re-clic sur le même fichier = refermer (bascule). */
+  if (!hud.hidden && hud.dataset.chemin === String(chemin || '')) {
+    fermerHudFichier();
+    return;
+  }
+  hud.dataset.chemin = String(chemin || '');
+  hud.querySelector('.hudf-nom').textContent = nomBaseFichier(chemin);
+  hud.querySelector('.hudf-nom').title = String(chemin || '');
+  const texte = contenu == null ? '' : String(contenu);
+  try {
+    hud.querySelector('.hudf-taille').textContent = tailleFichier(new Blob([texte]).size);
+  } catch { hud.querySelector('.hudf-taille').textContent = texte.length + ' car.'; }
+  const corps = hud.querySelector('.hudf-corps');
+  corps.replaceChildren(surlignerCode(texte, chemin));
+  corps.scrollTop = 0;
+  const statut = hud.querySelector('.file-statut');
+  if (statut) { statut.textContent = 'prêt'; statut.title = ''; }
+  const btnPc = hud.querySelector('.file-enregistrer');
+  const btnDl = hud.querySelector('.file-telecharger');
+  btnPc.onclick = () => enregistrerFichierLocal(chemin, texte, btnPc, hud, { auto: false });
+  btnDl.onclick = () => telechargerFichier(chemin, texte, btnDl);
+  if (!hud.style.width) hud.style.width = largeurHudFichier() + 'px';
+  hud.hidden = false;
+  document.querySelectorAll('.file-bloc.ouvert').forEach((c) => c.classList.remove('ouvert'));
+}
+function fermerHudFichier() {
+  const hud = document.getElementById('hud-fichier');
+  if (hud) hud.hidden = true;
+  document.querySelectorAll('.file-bloc.ouvert').forEach((c) => c.classList.remove('ouvert'));
 }
 function telechargerFichier(chemin, texte, bouton) {
   try {
