@@ -1981,6 +1981,80 @@ function nomBaseFichier(chemin) {
   const n = String(chemin || '').replace(/\\/g, '/').split('/');
   return n[n.length - 1] || String(chemin || '');
 }
+/* v20260926h : coloration syntaxique légère (façon VSCode sombre) pour
+   l'aperçu des fichiers — sans librairie, sans réseau. Tokenizer par regex
+   sur texte brut, sortie 100 % textContent (aucun HTML injecté → pas de XSS).
+   Au-delà de 200 Ko : texte brut (l'affichage reste intégral, seule la
+   couleur est désactivée pour ne pas janker). */
+const COLORATION_MAX = 200000;
+function langageFichier(chemin) {
+  const ext = String(chemin || '').split('.').pop().toLowerCase();
+  if (['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'java', 'c', 'h', 'cpp', 'hpp', 'cs', 'go', 'rs', 'php', 'swift', 'kt', 'scala'].includes(ext)) return 'c';
+  if (['py', 'pyw', 'sh', 'bash', 'zsh', 'ps1', 'pl', 'rb', 'lua', 'r'].includes(ext)) return 'script';
+  if (['html', 'htm', 'xml', 'svg', 'vue', 'svelte'].includes(ext)) return 'html';
+  if (['css', 'scss', 'less'].includes(ext)) return 'css';
+  if (['sql'].includes(ext)) return 'sql';
+  if (['json', 'jsonc'].includes(ext)) return 'json';
+  if (['yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env'].includes(ext)) return 'conf';
+  if (['md', 'markdown', 'txt', 'log'].includes(ext)) return 'prose';
+  return 'defaut';
+}
+const MOTS_CLES = {
+  c: ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'break', 'continue', 'return', 'function', 'class', 'const', 'let', 'var', 'new', 'delete', 'typeof', 'import', 'export', 'from', 'default', 'try', 'catch', 'finally', 'throw', 'async', 'await', 'this', 'true', 'false', 'null', 'undefined', 'struct', 'enum', 'impl', 'fn', 'pub', 'mut', 'package', 'func', 'var', 'nil', 'interface', 'extends', 'implements', 'static', 'public', 'private', 'void', 'int', 'string', 'bool'],
+  script: ['if', 'else', 'elif', 'for', 'while', 'def', 'class', 'return', 'import', 'from', 'as', 'try', 'except', 'finally', 'raise', 'with', 'lambda', 'pass', 'break', 'continue', 'in', 'is', 'not', 'and', 'or', 'None', 'True', 'False', 'function', 'do', 'done', 'then', 'fi', 'case', 'esac', 'echo', 'exit', 'local', 'readonly', 'end', 'self', 'nil'],
+  sql: ['select', 'from', 'where', 'join', 'left', 'right', 'inner', 'outer', 'on', 'group', 'order', 'by', 'having', 'insert', 'into', 'values', 'update', 'set', 'delete', 'create', 'table', 'alter', 'drop', 'and', 'or', 'not', 'null', 'as', 'distinct', 'limit', 'offset'],
+  json: ['true', 'false', 'null'],
+  defaut: ['if', 'else', 'for', 'while', 'return', 'function', 'class', 'const', 'let', 'var', 'import', 'export', 'true', 'false', 'null'],
+};
+function reglesColoration(lang) {
+  const com = [];
+  const ch = [];
+  if (lang === 'c' || lang === 'css' || lang === 'sql' || lang === 'defaut') {
+    com.push(/\/\/[^\n]*/, /\/\*[\s\S]*?(?:\*\/|$)/);
+  }
+  if (lang === 'script' || lang === 'conf' || lang === 'sql' || lang === 'defaut') {
+    com.push(/#[^\n]*/, /'''[\s\S]*?(?:'''|$)/, /"""[\s\S]*?(?:"""|$)/);
+  }
+  if (lang === 'html') com.push(/<!--[\s\S]*?(?:-->|$)/);
+  if (lang === 'sql') com.push(/--[^\n]*/);
+  ch.push(/'(?:[^'\\\n]|\\.)*'?/, /"(?:[^"\\\n]|\\.)*"?/);
+  if (lang === 'c' || lang === 'script') ch.push(/`(?:[^`\\]|\\.)*`?/);
+  return { com, ch };
+}
+function surlignerCode(texte, chemin) {
+  const frag = document.createDocumentFragment();
+  const src = String(texte == null ? '' : texte);
+  const lang = langageFichier(chemin);
+  if (lang === 'prose' || !src || src.length > COLORATION_MAX) {
+    frag.appendChild(document.createTextNode(src));
+    return frag;
+  }
+  const mots = MOTS_CLES[lang] || MOTS_CLES.defaut;
+  const { com, ch } = reglesColoration(lang);
+  const parties = [];
+  com.forEach((r) => parties.push({ re: r, cls: 'tok-com' }));
+  ch.forEach((r) => parties.push({ re: r, cls: 'tok-ch' }));
+  parties.push({ re: /\b\d+(?:\.\d+)?\b/, cls: 'tok-nb' });
+  parties.push({ re: new RegExp('\\b(?:' + mots.join('|') + ')\\b'), cls: 'tok-mot' });
+  const union = new RegExp(parties.map((p) => '(' + p.re.source + ')').join('|'), 'g');
+  let pos = 0;
+  let m;
+  while ((m = union.exec(src)) !== null) {
+    if (m.index > pos) frag.appendChild(document.createTextNode(src.slice(pos, m.index)));
+    let idx = -1;
+    for (let g = 1; g < m.length; g++) {
+      if (m[g] !== undefined) { idx = g - 1; break; }
+    }
+    const span = document.createElement('span');
+    span.className = idx >= 0 ? parties[idx].cls : '';
+    span.textContent = m[0];
+    frag.appendChild(span);
+    pos = m.index + m[0].length;
+    if (m[0].length === 0) union.lastIndex++;
+  }
+  if (pos < src.length) frag.appendChild(document.createTextNode(src.slice(pos)));
+  return frag;
+}
 function creerBlocFichier(params, contenu) {
   const chemin = analyserCheminFichier(params);
   const texte = contenu == null ? '' : String(contenu);
@@ -2006,9 +2080,8 @@ function creerBlocFichier(params, contenu) {
   tete.append(nom, taille, statut);
   const apercu = document.createElement('pre');
   apercu.className = 'file-apercu';
-  const lignes = texte.split('\n');
-  apercu.textContent = lignes.slice(0, 40).join('\n').slice(0, 3000)
-    + ((lignes.length > 40 || texte.length > 3000) ? '\n[…]' : '');
+  /* v20260926h : contenu INTÉGRAL + coloration (fini les 40 lignes). */
+  apercu.appendChild(surlignerCode(texte, chemin));
   const actions = document.createElement('div');
   actions.className = 'file-actions';
   const btnPc = document.createElement('button');
@@ -2871,9 +2944,11 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       defilerSiBas();
     }
   };
+  /* v20260926h : flush coalescé sur rAF (une image = un rendu) au lieu
+     d'un timer 80 ms — la frappe suit le rafraîchissement écran. */
   const planifierFlush = () => {
     if (flushTimer) return;
-    flushTimer = setTimeout(flusher, 80);
+    flushTimer = requestAnimationFrame(() => { flushTimer = 0; flusher(); });
   };
   function ingerer(ev) {
     if (!ev || ev.type !== 'jeton' || typeof ev.texte !== 'string' || !ev.texte) return;
@@ -2894,17 +2969,28 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
     recu = true;
     /* v20260926d (kimi) : un flush différé pouvait écraser la frappe
        progressive avec l'ancien acumulé. */
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+    if (flushTimer) {
+      if (typeof cancelAnimationFrame === 'function') {
+        try { cancelAnimationFrame(flushTimer); } catch {}
+      } else clearTimeout(flushTimer);
+      flushTimer = null;
+    }
     zone.hidden = false;
+    /* v20260926h : machine à écrire cadencée sur rAF (~48 car./image) —
+       fluide au lieu de sauts de 140 caractères. */
+    const pasImage = () => new Promise((res) => {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => res());
+      else setTimeout(res, 16);
+    });
     let i = 0;
     while (i < cible.length) {
       if ((gardeVue && !gardeVue()) || !zone.isConnected) return;
-      i = Math.min(cible.length, i + 140);
+      i = Math.min(cible.length, i + 48);
       reponse = cible.slice(0, i);
       txtEl.textContent = reponse;
       afficheReponse = reponse;
       defilerSiBas();
-      await new Promise((res) => setTimeout(res, 45));
+      await pasImage();
     }
   }
   return { ingerer, reveler, aRecu: () => recu, texte: () => reponse, pensee: () => pensee };

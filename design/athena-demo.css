@@ -97,6 +97,11 @@ body {
   padding: 0;
 }
 
+/* v20260926h : Inter auto-hébergée — les @font-face sont dans le <head>
+   (docs/index.html + src/app/page.tsx) car le bundler Next ne résout pas
+   les url() relatives du CSS partagé. Inter = plus proche équivalent libre
+   de Styrene, la police de Claude (commerciale, non embarquable). */
+
 [hidden] {
   display: none !important;
 }
@@ -109,7 +114,9 @@ body {
   overflow: hidden;
   background: var(--fond);
   color: var(--texte);
-  font-family: var(--font-geist-sans, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif);
+  font-family: "Inter", var(--font-geist-sans, system-ui), -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 html.reduce-animation *,
@@ -3545,8 +3552,7 @@ details.trace-cmd.echec .trace-cmd-status {
   50% { opacity: 0; }
 }
 .pensee-vive {
-  /* v20260926g : même rendu que .raisonnement-texte — le direct et le
-     replié montrent le même composant. */
+  /* v20260926h : scrollable (demande UI) — fini le fondu qui tronquait. */
   color: var(--texte-doux);
   font-size: 0.85rem;
   line-height: 1.6;
@@ -3554,10 +3560,16 @@ details.trace-cmd.echec .trace-cmd-status {
   word-break: break-word;
   margin: 4px 0 10px;
   opacity: 0.92;
-  max-height: 9em;
-  overflow: hidden;
-  mask-image: linear-gradient(#000 70%, transparent);
-  -webkit-mask-image: linear-gradient(#000 70%, transparent);
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bord-fort) transparent;
+}
+/* v20260926h : le bloc ```athena-exec n'est plus affiché (demande UI) —
+   l'exécution (auto) et le compte-rendu (trace) sont inchangés : le marqueur
+   reste dans le DOM pour autoExecBlocs. */
+.exec-bloc {
+  display: none;
 }
 /* v20260926e (kimi) : indicateur « le modèle réfléchit » — trois points
    pulsants, CSS pur, monochrome. Désactivé par .reduce-animation (global)
@@ -3664,13 +3676,22 @@ details.trace-cmd.echec .trace-cmd-status {
   padding: 8px 10px;
   font-family: var(--mono);
   font-size: 0.76rem;
-  max-height: 200px;
+  line-height: 1.5;
+  tab-size: 2;
+  /* v20260926h : contenu INTÉGRAL (scroll interne), plus de troncature. */
+  max-height: 420px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+  word-break: normal;
+  overflow-x: auto;
   background: #0e0e0e;
   color: #d8d8d8;
 }
+/* v20260926h : coloration syntaxique façon VSCode (thème sombre). */
+.file-apercu .tok-com { color: #6a9955; }
+.file-apercu .tok-ch { color: #ce9178; }
+.file-apercu .tok-mot { color: #569cd6; }
+.file-apercu .tok-nb { color: #b5cea8; }
 .file-actions {
   display: flex;
   gap: 8px;

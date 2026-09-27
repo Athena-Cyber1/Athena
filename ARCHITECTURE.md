@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925aq`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ar`
 
 ---
 
@@ -355,6 +355,13 @@ jamais des étapes — le shim n'émet que des transitions sémantiques
 (`appel`, `Rédaction…`) + des `jeton` (texte exact) ; le panneau est un
 composant unique (en-tête compact + texte continu atténué + statut),
 persisté en `etape:'texte'`, exporté/importé en paragraphes.
+
+**UI v20260926h :** Inter auto-hébergée (`docs/fonts`, copiée vers
+`public/fonts` — plus proche libre de Styrene/Claude) ; `.file-apercu`
+intégral + coloration maison (commentaires/chaînes/mots-clés/nombres) ;
+panneau de réflexion scrollable ; bloc ```athena-exec masqué en affichage
+(exécution + trace inchangées) ; machine à écrire et flush coalescés sur
+rAF ; saisie à 16 px (zoom iOS).
 
 Erreur : `{"type":"erreur","erreur":"Échec des modèles : …"}`
 

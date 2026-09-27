@@ -7,7 +7,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925aq" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925ar" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -15,6 +15,31 @@
     :root {
       --font-geist-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
       --font-geist-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+  </style>
+  <style>
+    /* v20260926h : Inter auto-hébergée (./fonts) — plus proche équivalent
+       libre de Styrene (police de Claude). woff2 latin, swap, zéro CDN. */
+    @font-face {
+      font-family: "Inter";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("./fonts/inter-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Inter";
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+      src: url("./fonts/inter-500.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Inter";
+      font-style: normal;
+      font-weight: 700;
+      font-display: swap;
+      src: url("./fonts/inter-700.woff2") format("woff2");
     }
   </style>
 </head>
@@ -230,9 +255,9 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260925aq"></script>
-    <script src="./api-shim.js?v=20260925aq"></script>
-    <script src="./chat-demo.js?v=20260925aq"></script>
+    <script src="./keys.js?v=20260925ar"></script>
+    <script src="./api-shim.js?v=20260925ar"></script>
+    <script src="./chat-demo.js?v=20260925ar"></script>
   </div>
 </body>
 </html>

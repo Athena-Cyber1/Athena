@@ -8,6 +8,8 @@ import "../../design/athena-demo.css";
 export default function Accueil() {
   return (
     <div className="page-demo">
+      {/* v20260926h : Inter auto-hébergée (/fonts) — cf. docs/index.html */}
+      <style>{`@font-face{font-family:"Inter";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/inter-400.woff2") format("woff2");}@font-face{font-family:"Inter";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/inter-500.woff2") format("woff2");}@font-face{font-family:"Inter";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/inter-700.woff2") format("woff2");}`}</style>
       <div id="app">
         <aside id="sidebar" className="sidebar" aria-label="Barre latérale">
           <div className="side-corps">
@@ -251,8 +253,8 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925aq" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925aq" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925ar" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925ar" strategy="beforeInteractive" />
     </div>
   );
 }

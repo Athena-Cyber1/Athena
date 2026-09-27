@@ -23,4 +23,8 @@ run("gen-pages-index.js");
 copy("docs/chat-demo.js", "public/chat-demo.js");
 copy("docs/api-shim.js", "public/api-shim.js");
 copy("docs/index.html", "public/_index.html");
+/* v20260926h : police Inter auto-hébergée (zéro dépendance réseau). */
+copy("docs/fonts/inter-400.woff2", "public/fonts/inter-400.woff2");
+copy("docs/fonts/inter-500.woff2", "public/fonts/inter-500.woff2");
+copy("docs/fonts/inter-700.woff2", "public/fonts/inter-700.woff2");
 console.log("prepared generated assets");
