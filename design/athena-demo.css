@@ -554,49 +554,8 @@ a:hover {
   gap: 10px;
 }
 
-/* Tuiles d'action égales : Projets · Paramètres · Thème — fond neutre,
-   sans cadre (allègement) : l'aperçu au survol porte l'affordance. */
-.side-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-.side-onglet {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  width: 100%;
-  text-align: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 6px 3px;
-  font-size: 0.7rem;
-  color: var(--texte-doux);
-  cursor: pointer;
-  min-height: 42px;
-  transition: background 0.13s, color 0.13s;
-}
-.side-onglet .onglet-ico {
-  display: grid;
-  place-items: center;
-  line-height: 1;
-  color: var(--texte);
-}
-.side-onglet .onglet-ico .ico {
-  width: 17px;
-  height: 17px;
-}
-.side-onglet:hover {
-  background: var(--gris-fond);
-  color: var(--texte);
-}
-.side-onglet:hover .onglet-ico {
-  color: var(--primaire);
-}
-
+/* v20260926n (audit) : tuiles .side-actions/.side-onglet supprimées du DOM
+   avec leurs boutons — règles purgées. */
 .compte-wrap {
   position: relative;
   margin-top: 4px;
@@ -2554,14 +2513,7 @@ span.think:not(details .think) {
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
 }
 
-.side-onglet {
-  min-height: 46px;
-  color: #b0b0b0;
-}
-
-.side-onglet:hover {
-  background: #3a3a3a;
-}
+/* v20260926n (audit) : règles des tuiles supprimées (voir plus haut). */
 
 .compte-bouton {
   min-height: 42px;
@@ -3000,7 +2952,7 @@ details.raisonnement summary {
   margin-top: 1px;
 }
 
-.side-utilitaires button {
+.side-utilitaires > button {
   display: grid;
   place-items: center;
   width: 29px;
@@ -3013,12 +2965,12 @@ details.raisonnement summary {
   cursor: pointer;
 }
 
-.side-utilitaires button:hover {
+.side-utilitaires > button:hover {
   background: #3a3a3a;
   color: #ededed;
 }
 
-.side-utilitaires .ico {
+.side-utilitaires > button .ico {
   width: 15px;
   height: 15px;
 }
@@ -3610,11 +3562,20 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 @media (prefers-reduced-motion: reduce) {
   .thinking i,
-  .diffusion-curseur {
+  .diffusion-curseur,
+  details.raisonnement.vivant .think::before {
     animation: none;
   }
   .thinking i {
     opacity: 0.6;
+  }
+  /* v20260926n (audit) : les transitions décoratives aussi. */
+  .bubble,
+  .voile-modale .modale,
+  .toast-notice,
+  .hud-fichier,
+  .menu-compte {
+    animation: none;
   }
 }
 .exec-terminal {
@@ -4282,4 +4243,88 @@ html[data-theme="light"] .code-lang {
   background: var(--texte);
   color: var(--fond);
   font-weight: 600;
+}
+
+/* ============ v20260926n : compte en icône utilitaire ============
+   #ouvrir-compte vit dans .side-utilitaires : avatar seul (nom masqué),
+   même gabarit que les icônes voisines ; le menu s'ancre à droite. */
+.side-utilitaires {
+  align-items: center;
+}
+.side-utilitaires .compte-wrap {
+  position: relative;
+  margin-top: 0;
+}
+.side-utilitaires .compte-bouton {
+  width: 29px;
+  height: 27px;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  gap: 0;
+  color: #999;
+  cursor: pointer;
+}
+.side-utilitaires .compte-bouton:hover {
+  background: #3a3a3a;
+  color: #ededed;
+}
+.side-utilitaires .compte-infos {
+  display: none;
+}
+.side-utilitaires .avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 0.62rem;
+}
+.side-utilitaires .menu-compte {
+  left: auto;
+  right: 0;
+  min-width: 210px;
+}
+html[data-theme="light"] .side-utilitaires button,
+html[data-theme="light"] .side-utilitaires .compte-bouton {
+  color: #666666;
+}
+html[data-theme="light"] .side-utilitaires > button:hover,
+html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
+  background: #e2e2e2;
+  color: #111111;
+}
+
+/* ============ v20260926n : sidebar compacte et uniforme ============
+   L'espace libre vit dans la liste des discussions (flex:1) — le reste
+   est resserré : marque, bouton, nav, section projets et pied. */
+.side-corps {
+  gap: 6px;
+  padding: 10px 10px 2px;
+}
+.side-brand {
+  min-height: 28px;
+  padding: 0 8px 4px;
+}
+.btn-nouvelle {
+  min-height: 32px;
+}
+.side-nav {
+  gap: 1px;
+  margin: 0;
+}
+.side-item {
+  min-height: 44px;
+  padding: 6px 10px;
+}
+.side-section {
+  padding-top: 6px;
+}
+.project-empty {
+  margin: 2px 4px;
+}
+.side-pied {
+  gap: 6px;
+  padding-top: 6px;
 }

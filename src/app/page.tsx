@@ -98,34 +98,7 @@ export default function Accueil() {
           </div>
 
           <div className="side-pied">
-            {/* v20260926m : tuiles retirées (demande UI) — cf. docs/index.html. */}
-            <div className="compte-wrap">
-              <button
-                id="ouvrir-compte"
-                type="button"
-                className="compte-bouton"
-                aria-haspopup="menu"
-                aria-expanded="false"
-                aria-controls="menu-compte"
-              >
-                <span className="avatar" aria-hidden="true">N</span>
-                <span className="compte-infos">
-                  <span className="compte-nom">Neyzoxx</span>
-                  <small>Free</small>
-                </span>
-              </button>
-              <div id="menu-compte" className="menu-compte" hidden role="menu" aria-label="Menu du compte">
-                <button id="gerer-compte" type="button" role="menuitem">
-                  <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5" /><path d="M5.5 19.5c1.4-3 3.8-4.5 6.5-4.5s5.1 1.5 6.5 4.5" /></svg> Gérer le compte
-                </button>
-                <button id="preferences-compte" type="button" role="menuitem">
-                  <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h8M17.5 7.5H20M4 16.5h3.5M13 16.5H20" /><circle cx="14.5" cy="7.5" r="2.2" /><circle cx="10" cy="16.5" r="2.2" /></svg> Préférences
-                </button>
-                <button id="aide-compte" type="button" role="menuitem">
-                  <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M9.7 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .9-1 1.6v.3" /><path d="M12 16.8h.01" /></svg> Aide et assistance
-                </button>
-              </div>
-            </div>
+            {/* v20260926n : le compte est la 3e icône des utilitaires. */}
             <div className="side-utilitaires">
               <button id="telecharger-conversations" type="button" title="Télécharger les conversations" aria-label="Télécharger les conversations">
                 <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10m0 0 3.5-3.5M12 14.5 8.5 11M5 19.5h14" /></svg>
@@ -133,6 +106,34 @@ export default function Accueil() {
               <button id="rechercher-conversations" type="button" title="Rechercher une discussion" aria-label="Rechercher une discussion">
                 <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
               </button>
+              <div className="compte-wrap">
+                <button
+                  id="ouvrir-compte"
+                  type="button"
+                  className="compte-bouton"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                  aria-controls="menu-compte"
+                  title="Compte"
+                >
+                  <span className="avatar" aria-hidden="true">N</span>
+                  <span className="compte-infos">
+                    <span className="compte-nom">Neyzoxx</span>
+                    <small>Free</small>
+                  </span>
+                </button>
+                <div id="menu-compte" className="menu-compte" hidden role="menu" aria-label="Menu du compte">
+                  <button id="gerer-compte" type="button" role="menuitem">
+                    <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5" /><path d="M5.5 19.5c1.4-3 3.8-4.5 6.5-4.5s5.1 1.5 6.5 4.5" /></svg> Gérer le compte
+                  </button>
+                  <button id="preferences-compte" type="button" role="menuitem">
+                    <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5h8M17.5 7.5H20M4 16.5h3.5M13 16.5H20" /><circle cx="14.5" cy="7.5" r="2.2" /><circle cx="10" cy="16.5" r="2.2" /></svg> Préférences
+                  </button>
+                  <button id="aide-compte" type="button" role="menuitem">
+                    <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M9.7 9.6a2.4 2.4 0 1 1 3.3 2.2c-.7.3-1 .9-1 1.6v.3" /><path d="M12 16.8h.01" /></svg> Aide et assistance
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </aside>
@@ -233,9 +234,9 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925aw" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925ax" strategy="beforeInteractive" />
       <Script src="/vendor/twemoji.min.js" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925aw" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925ax" strategy="beforeInteractive" />
     </div>
   );
 }
