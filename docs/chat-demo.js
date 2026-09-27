@@ -2096,9 +2096,12 @@ function creerTerminalExec(codeEl, commande) {
   term.append(tete, corps);
   pre.appendChild(term);
   let total = 0;
+  let rafTerm = 0;
   function ajouter(canal, texte) {
     const t = String(texte || '');
     if (!t) return;
+    /* v20260926f (kimi, lags) : on ne suit que si déjà en bas. */
+    const presBas = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
     const span = document.createElement('span');
     if (canal === 'stderr') span.className = 'term-err';
     span.textContent = t.slice(0, 8000);
@@ -2108,7 +2111,12 @@ function creerTerminalExec(codeEl, commande) {
       total -= (corps.firstChild.textContent || '').length;
       corps.removeChild(corps.firstChild);
     }
-    term.scrollTop = term.scrollHeight;
+    if (presBas && !rafTerm) {
+      rafTerm = requestAnimationFrame(() => {
+        rafTerm = 0;
+        try { term.scrollTop = term.scrollHeight; } catch {}
+      });
+    }
   }
   return { el: term, ajouter, texte: () => corps.textContent || '' };
 }
@@ -2650,7 +2658,7 @@ function detailsRaisonnementDepuisEtapes(etapes) {
   det.className = 'raisonnement';
   const sum = document.createElement('summary');
   const titre = document.createElement('span');
-  titre.textContent = 'Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '');
+  titre.textContent = '✦ Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '');
   const chev = document.createElement('span');
   chev.className = 'chev';
   chev.appendChild(icoSvg('chevron'));
@@ -2670,10 +2678,11 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
      avant, il n'existait pas et le titre écrasait le chevron */
   const titre = document.createElement('span');
   titre.className = 'raisonnement-titre';
-  titre.textContent = 'Raisonnement';
+  /* v20260926f : en-tête façon Claude — ✦ + statut, bilan « Terminé · N s ». */
+  titre.textContent = '✦ Raisonnement';
   const spin = document.createElement('span');
   spin.className = 'think';
-  spin.textContent = 'réfléchit…';
+  spin.textContent = 'Réflexion en cours…';
   const dernier = document.createElement('span');
   dernier.className = 'raisonnement-dernier';
   dernier.textContent = 'Démarrage du pipeline…';
@@ -2695,7 +2704,7 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
      compteur s'auto-nettoie si le panneau est retiré du DOM (arrêt). */
   const minuteur = setInterval(() => {
     if (!det.isConnected) { clearInterval(minuteur); return; }
-    spin.textContent = 'réfléchit… ' + Math.floor((performance.now() - t0) / 1000) + ' s';
+    spin.textContent = 'Réflexion en cours… ' + Math.floor((performance.now() - t0) / 1000) + ' s';
   }, 1000);
   function ajouter(ev) {
     if (!ev || !ev.etape) return;
@@ -2718,7 +2727,7 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
     ol.appendChild(li);
     while (ol.children.length > 40) ol.removeChild(ol.firstChild);
     dernier.textContent = texteEtape(ev).length > 72 ? texteEtape(ev).slice(0, 72) + '…' : texteEtape(ev);
-    if (preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
+    defilerSiBas();
   }
   function finaliser() {
     det.classList.remove('vivant');
@@ -2730,7 +2739,7 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
     spin.remove();
     dernier.remove();
     let titreAct = sum.querySelector('.raisonnement-titre');
-    if (titreAct) titreAct.textContent = 'Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '') + ' · ' + secondes + ' s';
+    if (titreAct) titreAct.textContent = '✦ Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '') + ' · Terminé · ' + secondes + ' s';
     /* v20260926e (kimi) : coche discrète devant le bilan (le spinner animé
        a disparu avec `spin`). */
     const coche = document.createElement('span');
@@ -2772,12 +2781,30 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   let pensee = '';
   let recu = false;
   let flushTimer = null;
+  /* v20260926f (kimi, lags) : ce qui est DÉJÀ dans le DOM — on n'ajoute que
+     le delta (appendData), jamais de réécriture complète du nœud qui grossit. */
+  let afficheReponse = '';
+  let affichePensee = '';
+  const FENETRE_DIFFUSION = 12000;
+  const FENETRE_PENSEE = 6000;
   const flusher = () => {
     flushTimer = null;
     if (!gardeVue || gardeVue()) {
-      txtEl.textContent = reponse.slice(-12000);
-      if (penseeEl) penseeEl.textContent = pensee.slice(-6000);
-      if (preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
+      const cibleR = reponse.length > FENETRE_DIFFUSION ? reponse.slice(-FENETRE_DIFFUSION) : reponse;
+      if (cibleR !== afficheReponse) {
+        if (cibleR.startsWith(afficheReponse)) txtEl.appendData(cibleR.slice(afficheReponse.length));
+        else txtEl.textContent = cibleR;
+        afficheReponse = cibleR;
+      }
+      if (penseeEl) {
+        const cibleP = pensee.length > FENETRE_PENSEE ? pensee.slice(-FENETRE_PENSEE) : pensee;
+        if (cibleP !== affichePensee) {
+          if (cibleP.startsWith(affichePensee)) penseeEl.appendData(cibleP.slice(affichePensee.length));
+          else penseeEl.textContent = cibleP;
+          affichePensee = cibleP;
+        }
+      }
+      defilerSiBas();
     }
   };
   const planifierFlush = () => {
@@ -2811,7 +2838,8 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       i = Math.min(cible.length, i + 140);
       reponse = cible.slice(0, i);
       txtEl.textContent = reponse;
-      if (preferences.defilementAuto && (!gardeVue || gardeVue())) msgsEl.scrollTop = msgsEl.scrollHeight;
+      afficheReponse = reponse;
+      defilerSiBas();
       await new Promise((res) => setTimeout(res, 45));
     }
   }
@@ -2909,11 +2937,12 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
   let cause = 'inconnue';
   for (let essai = 0; essai < 3; essai++) {
     if (essai > 0) {
-      /* v20260926d (kimi) : l'attente de 8 s était sourde au Stop — l'UI
-         restait « occupée » jusqu'au bout. Race avec le signal d'abort. */
+      /* v20260926d : attente interruptible (Stop) ; v20260926f (lags) : 3 s
+         au lieu de 8 — un bilan de santé suit juste après, et l'échec
+         affiche quoi faire au lieu de faire poireauter. */
       await new Promise((res) => {
         if (signal && signal.aborted) { res(); return; }
-        const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', annuler); res(); }, 8000);
+        const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', annuler); res(); }, 3000);
         const annuler = () => { clearTimeout(t); res(); };
         if (signal) signal.addEventListener('abort', annuler, { once: true });
       });
@@ -3099,6 +3128,20 @@ pastilleReponseEl.setAttribute('aria-label', 'Aller à la nouvelle réponse');
 let nbHorsVue = 0;
 function presDuBas() {
   return msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
+}
+/* v20260926f (kimi, lags) : scroll en rAF, seulement si déjà en bas — fini
+   les layouts synchrones (lecture scrollHeight + écriture) à chaque flush.
+   Si l'utilisateur a remonté, on ne le ramène pas de force (la pastille
+   « Nouvelle réponse » prend le relais via l'observateur). */
+let defilRaf = 0;
+function defilerSiBas() {
+  if (defilRaf || !preferences.defilementAuto) return;
+  defilRaf = requestAnimationFrame(() => {
+    defilRaf = 0;
+    try {
+      if (presDuBas()) msgsEl.scrollTop = msgsEl.scrollHeight;
+    } catch {}
+  });
 }
 function majPastilleReponse() {
   const enBas = presDuBas();

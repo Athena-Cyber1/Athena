@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ao`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ap`
 
 ---
 
@@ -342,6 +342,13 @@ pages en cache).
 `jeton` (canal `reponse`|`raisonnement`) : frappe et réflexion EN DIRECT —
 émis au fil du SSE amont (Pages). Chemins tamponnés (stack locale) : aucun
 jeton, l'UI révèle le texte final en machine à écrire plutôt que d'un bloc.
+
+**Anti-lags (v20260926f) :** watchdog d'en-têtes 12 s (une réponse qui ne
+démarre pas est abandonnée), TTFB 10 s + inactivité 40 s/chunk en SSE,
+saut de provider après 2 timeouts, abandon de cascade après 3 providers
+distincts en timeout, retries courts (500/1500 ms, reset ≤ 8 s), sleep de
+reprise 3 s. L'UI scrolle en rAF uniquement si déjà en bas et n'ajoute que
+les deltas DOM.
 
 Erreur : `{"type":"erreur","erreur":"Échec des modèles : …"}`
 

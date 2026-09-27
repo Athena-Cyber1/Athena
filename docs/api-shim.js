@@ -528,7 +528,7 @@
 
   /* Garde-fou par appel : openrouter attend le reset de quota (~70 s) ;
      nvidia kimi-k3 raisonne longtemps (effort « max », 16 384 tokens) →
-     5 min, la coupure interne se faisant sur l'inactivité (120 s/chunk). */
+       5 min, la coupure interne se faisant sur l'inactivité (40 s/chunk). */
   function bornePour(entry) {
     if (entry.providerKey === 'openrouter') return 70000;
     if (entry.providerKey === 'nvidia') return 300000;
@@ -618,8 +618,8 @@
     /* ---- Flux SSE amont (nvidia) : data: {delta.reasoning_content|content}
        accumulés puis rendus en texte complet ; si onDelta est branché, chaque
        tranche part aussi en événement progress (panneau raisonnement live).
-       Inactivité bornée à 120 s par chunk : le raisonnement « max » est long
-       mais jamais silencieux. */
+       Inactivité bornée à 40 s par chunk (v20260926f, lags) : le raisonnement
+       « max » est long mais jamais silencieux. */
     async function lireSSE(r) {
       var reader = r.body.getReader();
       var dec = new TextDecoder();
@@ -631,6 +631,7 @@
       var dernierEnvoi = 0;
       var fini = false;
       var emis = false;
+      var premierOctet = false;
       /* v20260926d (kimi) : sans [DONE] ni finish_reason, une fin de flux
          propre reste une COUPURE — le partiel ne passe pas pour du complet. */
       var vuFin = false;
@@ -696,7 +697,12 @@
 
       try {
         while (!fini) {
-          var lu = await appelBorne(reader.read(), 120000);
+          /* v20260926f (kimi, lags) : TTFB 10 s pour le premier octet, puis
+             40 s d'inactivité max entre chunks (avant : 120 s de silence).
+             Un provider sain répond en < 3 s : on tourne vite au lieu
+             d'attendre la borne totale. */
+          var lu = await appelBorne(reader.read(), premierOctet ? 40000 : 10000);
+          premierOctet = true;
           if (lu.done) break;
           tampon += dec.decode(lu.value, { stream: true });
           var idx;
@@ -757,12 +763,33 @@
         Object.keys(headers).forEach(function (k) { enTetes[k] = headers[k]; });
         enTetes.Accept = 'text/event-stream';
       }
+      /* v20260926f (lags) : watchdog d'EN-TÊTES — si la réponse ne DÉMARRE
+         pas sous 12 s (connexion trou noir, proxy bloqué), on abandonne ce
+         modèle au lieu d'attendre la borne totale. Le TTFB interne ne couvre
+         que le corps SSE une fois les en-têtes reçus. */
+      var ctrlTete = null;
+      var courseTete = null;
+      var teteExpiree = false;
+      var signalEnvoi = signal || undefined;
+      if (typeof AbortController !== 'undefined') {
+        ctrlTete = new AbortController();
+        if (signal) {
+          if (signal.aborted) { try { ctrlTete.abort(); } catch (_) {} }
+          else signal.addEventListener('abort', function () { try { ctrlTete.abort(); } catch (_) {} }, { once: true });
+        }
+        courseTete = setTimeout(function () {
+          teteExpiree = true;
+          try { ctrlTete.abort(); } catch (_) {}
+        }, 12000);
+        signalEnvoi = ctrlTete.signal;
+      }
       return realFetch(base + '/chat/completions', {
         method: 'POST',
         headers: enTetes,
-        signal: signal || undefined,
+        signal: signalEnvoi,
         body: corpsPour(liste, enFlux),
       }).then(function (r) {
+        if (courseTete) clearTimeout(courseTete);
         if (enFlux && r.ok && r.body) return lireSSE(r);
         return r.text().then(function (t) {
           if (!r.ok) throw erreurHttp(r, t);
@@ -772,14 +799,23 @@
           if (!txt || !String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
           return txt;
         });
+      }, function (eErr) {
+        if (courseTete) clearTimeout(courseTete);
+        /* En-têtes jamais arrivées et pas un abort utilisateur : timeout
+           compté pour le saut de provider (sinon on attendrait la borne). */
+        if (teteExpiree && (!signal || !signal.aborted)) {
+          throw new Error('timeout 12000 ms (en-têtes jamais reçus)');
+        }
+        throw eErr;
       });
     }
 
     /* Retry sur 429/502/503 : 2 retries max (quota free = 20 req/min,
        chaque POST compte). Rotation du free prioritaire à chaque essai.
-       Quota free-models-per-min : on attend le vrai reset (borné pour
-       rester sous appelBorne). */
-    var delaisRetry = [700, 1800];
+       v20260926f (kimi, lags) : attentes COURTES (500/1500 ms) + reset
+       plafonné à 8 s — au-delà on bascule au provider suivant au lieu de
+       faire poireauter l'utilisateur une minute. */
+    var delaisRetry = [500, 1500];
     function avecRetry(n, liste) {
       return uneTentative(liste).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
@@ -794,14 +830,14 @@
             prochaine = liste.slice(1).concat(liste.slice(0, 1));
           }
           var attente = delaisRetry[n];
-          /* quota OpenRouter free/min : Reset = timestamp ms.
-             On attend jusqu'à ~64 s si compatible avec borneMs OR (70 s),
-             sinon fail-fast → pollinations répond tout de suite. */
+          /* quota OpenRouter free/min : on attend le reset SEULEMENT s'il est
+             proche (≤ 8 s), sinon fail-fast → le provider suivant répond
+             tout de suite (v20260926f, lags). */
           if (err.resetAt) {
             var reste = err.resetAt - Date.now();
-            if (reste > 0 && reste < 64000) {
-              attente = Math.min(reste + 250, 64000);
-            } else if (reste >= 64000) {
+            if (reste > 0 && reste < 8000) {
+              attente = Math.min(reste + 250, 8000);
+            } else if (reste >= 8000) {
               throw err;
             }
           } else if (err.retryAfter) {
@@ -975,9 +1011,24 @@
           try { ctrl.enqueue(enc.encode(JSON.stringify(ev) + '\n')); } catch (e) {}
         };
         var err = null;
+        /* v20260926f (lags) : un provider qui timeout 2 fois de suite est
+           écarté pour le reste de la passe — sinon 16 modèles × 10 s de
+           TTFB = plusieurs minutes de vide. Seuls les timeouts comptent
+           (un 429 sur un modèle ne condamne pas ses voisins). */
+        var timeoutsParProvider = {};
+        var sauterProvider = {};
+        var providersSautes = 0;
         for (var i = 0; i < plan.chaine.length; i++) {
           var entry = plan.chaine[i];
           var pk = entry.providerKey || entry.provider;
+          if (sauterProvider[pk]) {
+            /* v20260926f : 3 providers distincts qui timeoutent = panne
+               large, pas un hoquet — on rend la main au lieu de mouliner
+               toute la cascade (les échecs rapides 401/403 passent, eux). */
+            if (!sauterProvider[pk + ':compte']) { sauterProvider[pk + ':compte'] = true; providersSautes++; }
+            if (providersSautes >= 3) break;
+            continue;
+          }
           var p = PROVIDERS[pk];
           emit({ type: 'progress', etape: 'appel', message: 'Appel · ' + (entry.name || entry.id) });
           var onDelta = p && p.sse
@@ -993,7 +1044,7 @@
             : null;
           try {
             /* v20260926b (direct) : en flux, la borne porte sur la durée
-               TOTALE (l'inactivité est déjà bornée à 120 s/chunk dans
+               TOTALE (l'inactivité est déjà bornée à 40 s/chunk dans
                lireSSE) — 600 s pour laisser les très longs raisonnements
                (kimi-k3 « max ») aboutir, comme nvidia. */
             var borne = bornePour(entry);
@@ -1029,6 +1080,10 @@
                 conversation_id: null, raisonnement: null, modele_repli: false });
               try { ctrl.close(); } catch (e4) {}
               return;
+            }
+            if (/timeout \d+ ms/.test(String((e2 && e2.message) || ''))) {
+              timeoutsParProvider[pk] = (timeoutsParProvider[pk] || 0) + 1;
+              if (timeoutsParProvider[pk] >= 2) sauterProvider[pk] = true;
             }
             err = e2;
           }
