@@ -1143,16 +1143,18 @@ details.trace-cmd pre.trace-cmd-err {
    En direct : déplié, spinner + dernière étape, frise des étapes.
    À la réponse : replié, « Raisonnement · N étapes · Xs » (clic = détail). */
 details.raisonnement {
+  /* v20260926g (Claude) : bloc conversationnel sobre — fond transparent,
+     pas d'encadré, texte secondaire atténué, air vertical. */
   margin: 0 0 10px;
-  background: var(--carte-doux);
-  border: 1px solid var(--bord);
-  border-radius: 12px;
-  font-size: 0.84rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 0.85rem;
   overflow: hidden;
 }
 .row.user details.raisonnement {
-  background: color-mix(in srgb, var(--sur-primaire) 12%, transparent);
-  border-color: color-mix(in srgb, var(--sur-primaire) 30%, transparent);
+  background: transparent;
+  border: none;
 }
 details.raisonnement summary {
   cursor: pointer;
@@ -1172,7 +1174,7 @@ details.raisonnement summary::-webkit-details-marker {
 details.raisonnement summary:hover {
   color: var(--texte);
 }
-details.raisonnement summary > span:first-child {
+details.raisonnement summary > .raisonnement-titre {
   color: var(--texte);
   font-weight: 600;
   font-size: 0.8rem;
@@ -1193,72 +1195,8 @@ details.raisonnement summary > span:first-child {
 details[open] .chev {
   transform: rotate(90deg);
 }
-details.raisonnement ol {
-  margin: 0;
-  padding: 4px 14px 12px 27px;
-  list-style: none;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  max-height: 300px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--bord-fort) transparent;
-}
-details.raisonnement ol::before {
-  content: "";
-  position: absolute;
-  left: 15.5px;
-  top: 6px;
-  bottom: 14px;
-  width: 1px;
-  background: var(--bord-fort);
-}
-details.raisonnement li {
-  position: relative;
-  display: flex;
-  gap: 12px;
-  align-items: baseline;
-  color: var(--texte-doux);
-  padding: 5px 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-details.raisonnement li::before {
-  content: "";
-  position: absolute;
-  left: -15.5px;
-  top: 11px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--bord-fort);
-  box-shadow: 0 0 0 2.5px var(--carte-doux);
-  box-sizing: border-box;
-}
-.row.user details.raisonnement li::before {
-  box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--sur-primaire) 12%, transparent);
-}
-details.raisonnement li.doute {
-  color: var(--ambre-texte);
-  font-weight: 500;
-}
-details.raisonnement li.doute::before {
-  background: var(--texte-doux);
-  transform: scale(1.2);
-}
-/* v20260926f (look Claude) : les étapes sont séparées d'un filet discret. */
-details.raisonnement ol li + li {
-  border-top: 1px solid var(--bord);
-}
-.etape-t {
-  font-size: 0.68rem;
-  opacity: 0.65;
-  margin-left: auto;
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-}
+/* v20260926g-revue : frise d'événements supprimée (console de logs) —
+   le panneau agrégé n'utilise plus ni ol, ni pastilles, ni durées. */
 .think {
   color: var(--primaire);
   font-weight: 500;
@@ -2750,14 +2688,14 @@ span.think:not(details .think) {
 
 .md {
   font-size: 0.96rem;
-  line-height: 1.62;
+  line-height: 1.55;
 }
 
 details.raisonnement {
   margin: 0 0 20px;
-  border-color: #4a4a4a;
-  border-radius: 14px;
-  background: #292929;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
 }
 
 details.raisonnement summary {
@@ -3126,8 +3064,8 @@ details.raisonnement summary {
 }
 
 details.raisonnement {
-  border-color: #454545;
-  background: #282828;
+  border-color: transparent;
+  background: transparent;
 }
 
 details.raisonnement li.doute {
@@ -3570,6 +3508,22 @@ details.trace-cmd.echec .trace-cmd-status {
   width: 268px;
 }
 
+/* v20260926g : texte de réflexion regroupé + phases — jamais de frise. */
+.raisonnement-texte {
+  color: var(--texte-doux);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 4px 0 10px;
+  opacity: 0.92;
+}
+.raisonnement-phases {
+  font-size: 0.75rem;
+  color: var(--texte-doux);
+  opacity: 0.75;
+  margin: 0 0 6px;
+}
 /* v20260926b (direct) : diffusion en direct, terminal live, cartes fichier. */
 .diffusion {
   margin: 6px 0 2px;
@@ -3591,15 +3545,15 @@ details.trace-cmd.echec .trace-cmd-status {
   50% { opacity: 0; }
 }
 .pensee-vive {
+  /* v20260926g : même rendu que .raisonnement-texte — le direct et le
+     replié montrent le même composant. */
+  color: var(--texte-doux);
+  font-size: 0.85rem;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: var(--texte-doux);
-  margin: 6px 0;
-  /* v20260926e (kimi) : dégradé de sortie au lieu d'une scrollbar — le fondu
-     signale la troncature sans agresser la mise en page. */
+  margin: 4px 0 10px;
+  opacity: 0.92;
   max-height: 9em;
   overflow: hidden;
   mask-image: linear-gradient(#000 70%, transparent);

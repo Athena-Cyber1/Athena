@@ -1010,10 +1010,19 @@ function conversationVersMarkdown(c) {
     notes.forEach((note) => lignes.push('> ' + note));
     if (notes.length) lignes.push('');
     if (Array.isArray(m.raisonnement) && m.raisonnement.length) {
-      lignes.push('<details><summary>Raisonnement — ' + m.raisonnement.length + ' étape' + (m.raisonnement.length > 1 ? 's' : '') + '</summary>');
+      /* v20260926g : export AGRÉGÉ (texte continu + phases), jamais la
+         frise de tranches. */
+      const agg = agregerRaisonnement(m.raisonnement);
+      lignes.push('<details><summary>Raisonnement</summary>');
       lignes.push('');
-      m.raisonnement.forEach((et) => lignes.push('- ' + (et.message || et.etape || '')));
-      lignes.push('');
+      if (agg.transitions.length) {
+        agg.transitions.forEach((t) => lignes.push('- ' + t));
+        lignes.push('');
+      }
+      if (agg.texte) {
+        lignes.push(agg.texte);
+        lignes.push('');
+      }
       lignes.push('</details>');
       lignes.push('');
     }
@@ -1090,7 +1099,24 @@ function importerConversationsDepuisTexte(texte) {
       if (/^<\/details>/i.test(t)) { dansDetails = false; continue; }
       if (dansDetails) {
         const puce = /^- (.+)$/.exec(t);
-        if (puce) { if (!raisonnement) raisonnement = []; raisonnement.push({ etape: 'import', message: puce[1] }); }
+        if (puce) {
+          if (!raisonnement) raisonnement = [];
+          raisonnement.push({ etape: 'import', message: puce[1] });
+        } else if (!/^<summary/i.test(t)) {
+          /* v20260926g : le format d'export agrégé met le texte en
+             paragraphes (plus en puces) — on le récupère tel quel.
+             v20260926g-revue : les lignes vides séparent les paragraphes
+             (sans elles tout fusionne en un bloc). */
+          if (!raisonnement) raisonnement = [];
+          if (!t) {
+            const prec0 = raisonnement[raisonnement.length - 1];
+            if (prec0 && prec0.etape === 'texte' && !prec0.message.endsWith('\n\n')) prec0.message += '\n\n';
+          } else {
+            const prec = raisonnement[raisonnement.length - 1];
+            if (prec && prec.etape === 'texte') prec.message += (prec.message.endsWith('\n\n') ? '' : '\n') + t;
+            else raisonnement.push({ etape: 'texte', message: t });
+          }
+        }
         continue;
       }
       if (role && t.startsWith('>')) continue; /* notes d'affichage de l'export */
@@ -2633,39 +2659,79 @@ function formater(texte) {
    déplié (spinner + dernière étape), puis il SE REPLIE à la réponse avec
    « Raisonnement · N étapes · Xs » — un clic pour revoir le détail.
    Les étapes sont une frise (point + trait) plutôt qu'une liste à puces. */
+/* ---------- v20260926g (Claude) : RAISONNEMENT AGRÉGÉ ----------
+   Les chunks du stream ne sont jamais des étapes : le panneau est UN SEUL
+   composant conversationnel (en-tête compact + texte continu + statut).
+   agregerRaisonnement() regroupe un tableau brut [{etape, message}] en
+   { texte, transitions } — utilisé au rendu, à l'export et au rejeu, pour
+   les sauvegardes neuves comme pour les anciennes (tranches historiques). */
+function agregerRaisonnement(etapes) {
+  const morceaux = [];
+  const transitions = [];
+  for (const et of etapes || []) {
+    const etape = et && et.etape;
+    const msg = String((et && et.message) || '').trim();
+    if (!msg) continue;
+    /* Masquage technique : jamais de noms de provider dans l'UI. */
+    if (/^Appel · /.test(msg)) { transitions.push('Appel au modèle…'); continue; }
+    if (/^Réponse générée via /.test(msg)) continue;
+    if (etape === 'texte') { morceaux.push(msg); continue; }
+    /* v20260926g-revue (kimi) : les imports et les longs messages sont du
+       TEXTE, pas des transitions — sinon le raisonnement historique est
+       perdu à l'affichage. */
+    if (etape === 'import' || msg.length > 140) { morceaux.push(msg); continue; }
+    if (etape === 'reasoning') { morceaux.push(msg.replace(/^…/, '')); continue; }
+    if (etape === 'generation') {
+      if (msg === 'Rédaction de la réponse…') { transitions.push(msg); continue; }
+      morceaux.push(msg.replace(/^…/, ''));
+      continue;
+    }
+    if (msg.length <= 140) transitions.push(msg);
+  }
+  /* v20260926g-revue : '\n' entre morceaux (les tranches historiques
+     s'affichaient en lignes séparées) ; les blocs multi-\n sont réduits. */
+  const texte = morceaux.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { texte, transitions };
+}
 function texteEtape(et) {
   /* le pipeline préfixe parfois « ⚠ » : gardé pour la classe .doute,
      retiré du texte affiché (marque visuelle gérée par le style). */
   return String((et && et.message) || '').replace(/^\s*⚠\s*/, '');
 }
-function estEtapeDoute(et) {
-  return !!(et && (String(et.message || '').startsWith('⚠') || et.etape === 'erreur'));
-}
-function construireListeEtapes(etapes) {
-  const ol = document.createElement('ol');
-  for (const et of etapes) {
-    const li = document.createElement('li');
-    if (estEtapeDoute(et)) li.className = 'doute';
-    const m = document.createElement('span');
-    m.textContent = texteEtape(et);
-    li.appendChild(m);
-    ol.appendChild(li);
-  }
-  return ol;
-}
+/* v20260926g : construireListeEtapes/estEtapeDoute supprimées — la frise
+   d'événements (console de logs) est remplacée par le composant agrégé. */
 function detailsRaisonnementDepuisEtapes(etapes) {
+  /* v20260926g-revue : agrégat vide = pas de composant (panneau
+     summary-seul = zone morte cliquable). */
+  const agg0 = agregerRaisonnement(etapes);
+  if (!agg0.texte && !agg0.transitions.length) return null;
   const det = document.createElement('details');
   det.className = 'raisonnement';
   const sum = document.createElement('summary');
   const titre = document.createElement('span');
-  titre.textContent = '✦ Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '');
+  titre.className = 'raisonnement-titre';
+  titre.textContent = '✦ Raisonnement';
   const chev = document.createElement('span');
   chev.className = 'chev';
   chev.appendChild(icoSvg('chevron'));
   sum.appendChild(titre);
   sum.appendChild(chev);
   det.appendChild(sum);
-  det.appendChild(construireListeEtapes(etapes));
+  /* v20260926g : restitue le composant agrégé (statut + texte continu),
+     y compris depuis les sauvegardes historiques en tranches. */
+  const agg = agregerRaisonnement(etapes);
+  if (agg.transitions.length) {
+    const statut = document.createElement('div');
+    statut.className = 'raisonnement-phases';
+    statut.textContent = agg.transitions.join(' · ');
+    det.appendChild(statut);
+  }
+  if (agg.texte) {
+    const p = document.createElement('div');
+    p.className = 'raisonnement-texte';
+    p.textContent = agg.texte;
+    det.appendChild(p);
+  }
   return det;
 }
 function creerPanneauRaisonnement(conteneur, gardeVue = null) {
@@ -2693,10 +2759,10 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
   sum.appendChild(spin);
   sum.appendChild(dernier);
   sum.appendChild(chev);
-  const ol = document.createElement('ol');
   det.appendChild(sum);
-  det.appendChild(ol);
   conteneur.appendChild(det);
+  /* v20260926g : mémoire des transitions SÉMANTIQUES uniquement (appel,
+     recherche, rédaction…) — jamais de tranches, jamais de frise. */
   const etapes = [];
   const t0 = performance.now();
   /* v7.2.2 : compteur de temps VIVANT — pendant une génération de 60 s+ le
@@ -2708,25 +2774,21 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
   }, 1000);
   function ajouter(ev) {
     if (!ev || !ev.etape) return;
-    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+    /* v20260926g : les tranches de contenu ('reasoning') ne sont JAMAIS des
+       étapes — le texte continu arrive par les jetons (pensee-vive). Ici :
+       transitions sémantiques seulement (statut + mémoire, bornée). */
+    if (ev.etape === 'reasoning') return;
     /* la collecte a LIEU MÊME si la vue a changé (le raisonnement doit être
        persisté avec la réponse) ; seule la mise en forme DOM est suspendue
        — v20260922j (bug 3) : jamais de scroll ni d'écriture dans une vue
        qui n'est plus celle de la génération. */
     etapes.push({ etape: ev.etape, message: ev.message });
+    /* v20260926g-revue : borne qui protège la PREMIÈRE transition (la plus
+       significative : 'Appel…') — on élague au milieu, pas en tête. */
+    if (etapes.length > 24) etapes.splice(1, etapes.length - 24);
     if (gardeVue && !gardeVue()) return;
-    const li = document.createElement('li');
-    if (estEtapeDoute(ev)) li.className = 'doute';
-    const t = document.createElement('span');
-    t.className = 'etape-t';
-    t.textContent = '+' + dt + ' s';
-    const m = document.createElement('span');
-    m.textContent = texteEtape(ev);
-    li.appendChild(m);
-    li.appendChild(t);
-    ol.appendChild(li);
-    while (ol.children.length > 40) ol.removeChild(ol.firstChild);
-    dernier.textContent = texteEtape(ev).length > 72 ? texteEtape(ev).slice(0, 72) + '…' : texteEtape(ev);
+    const txt = texteEtape(ev);
+    dernier.textContent = txt.length > 72 ? txt.slice(0, 72) + '…' : txt;
     defilerSiBas();
   }
   function finaliser() {
@@ -2792,14 +2854,16 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
     if (!gardeVue || gardeVue()) {
       const cibleR = reponse.length > FENETRE_DIFFUSION ? reponse.slice(-FENETRE_DIFFUSION) : reponse;
       if (cibleR !== afficheReponse) {
-        if (cibleR.startsWith(afficheReponse)) txtEl.appendData(cibleR.slice(afficheReponse.length));
+        /* v20260926g : appendData n'existe que sur les Text — pour un
+           élément, on ajoute un nœud texte (pas de réécriture complète). */
+        if (cibleR.startsWith(afficheReponse)) txtEl.append(document.createTextNode(cibleR.slice(afficheReponse.length)));
         else txtEl.textContent = cibleR;
         afficheReponse = cibleR;
       }
       if (penseeEl) {
         const cibleP = pensee.length > FENETRE_PENSEE ? pensee.slice(-FENETRE_PENSEE) : pensee;
         if (cibleP !== affichePensee) {
-          if (cibleP.startsWith(affichePensee)) penseeEl.appendData(cibleP.slice(affichePensee.length));
+          if (cibleP.startsWith(affichePensee)) penseeEl.append(document.createTextNode(cibleP.slice(affichePensee.length)));
           else penseeEl.textContent = cibleP;
           affichePensee = cibleP;
         }
@@ -2843,7 +2907,7 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       await new Promise((res) => setTimeout(res, 45));
     }
   }
-  return { ingerer, reveler, aRecu: () => recu, texte: () => reponse };
+  return { ingerer, reveler, aRecu: () => recu, texte: () => reponse, pensee: () => pensee };
 }
 
 /* ---------- v7.4.1 : fenêtre d'historique envoyée à l'API ---------- */
@@ -3300,7 +3364,8 @@ function bulle(role, contenu, outil, meta, options) {
     }
     /* v7.1 : raisonnement conservé (replié) au-dessus de la réponse */
     if (meta.raisonnement && meta.raisonnement.length) {
-      b.insertBefore(detailsRaisonnementDepuisEtapes(meta.raisonnement), b.firstChild);
+      const det = detailsRaisonnementDepuisEtapes(meta.raisonnement);
+      if (det) b.insertBefore(det, b.firstChild);
     }
   }
   row.appendChild(b);
@@ -3545,6 +3610,15 @@ async function genererReponse(convo) {
      étapes, on les utilise quand même */
   const etapesRaisonnement = (panneau && panneau.etapes.length) ? panneau.etapes.slice()
     : (r && r.raisonnement) || [];
+  /* v20260926g : le texte CONTINU (jetons) est persisté tel quel sous
+     etape:'texte' — jamais de tranches. */
+  const penseeVive = diffusion && diffusion.pensee ? diffusion.pensee() : '';
+  /* v20260926g-revue : pas de doublon si le texte existe déjà (rejeu,
+     provider non-SSE qui le renvoie). */
+  if (penseeVive && penseeVive.trim()
+    && !etapesRaisonnement.some((e) => e && (e.etape === 'texte' || String(e.message || '').includes(penseeVive.slice(0, 80))))) {
+    etapesRaisonnement.push({ etape: 'texte', message: penseeVive.slice(0, 4000) });
+  }
   try {
     if (panneau) panneau.finaliser();
     /* v20260922m (F3) : si l'utilisateur a changé de conversation ou ouvert

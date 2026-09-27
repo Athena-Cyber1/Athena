@@ -615,9 +615,10 @@
       return txt ? String(txt) : '';
     }
 
-    /* ---- Flux SSE amont (nvidia) : data: {delta.reasoning_content|content}
-       accumulés puis rendus en texte complet ; si onDelta est branché, chaque
-       tranche part aussi en événement progress (panneau raisonnement live).
+    /* ---- Flux SSE amont : data: {delta.reasoning_content|content} accumulés
+       en texte complet ; si onDelta est branché, le texte NOUVEAU part en
+       événements jeton (panneau + frappe live, jamais en tranches progress —
+       v20260926g : les chunks ne sont pas des étapes).
        Inactivité bornée à 40 s par chunk (v20260926f, lags) : le raisonnement
        « max » est long mais jamais silencieux. */
     async function lireSSE(r) {
@@ -626,9 +627,6 @@
       var tampon = '';
       var contenu = '';
       var pensee = '';
-      var emisPensee = 0;
-      var emisContenu = 0;
-      var dernierEnvoi = 0;
       var fini = false;
       var emis = false;
       var premierOctet = false;
@@ -645,34 +643,23 @@
          caractère (ni le bloquer sous le seuil). */
       var dernierJetonPensee = 0;
       var dernierJetonContenu = 0;
+      var reponseAnnoncee = false;
 
-      function tranche(txt, dep) {
-        var s = txt.slice(dep);
-        return s.length > 200 ? '…' + s.slice(-200) : s;
-      }
+      /* v20260926g (Claude) : les TRANCHES de contenu ne partent plus en
+         progress — c'était la console de logs (un chunk = une « étape »).
+         Le texte vit dans les jetons ; ici, une seule transition annonce
+         la rédaction. */
       function diffuser() {
         if (!onDelta) return;
-        var maintenant = Date.now();
-        var np = pensee.length - emisPensee;
-        var nc = contenu.length - emisContenu;
-        if (np <= 0 && nc <= 0) return;
-        var debutReponse = nc > 0 && emisContenu === 0;
-        /* rafraîchi au pire toutes les ~900 ms ou dès 120 nouveaux caractères
-           (le panneau ne garde que 40 étapes) ; le début de réponse n'attend
-           pas : il clôt le raisonnement. */
-        if (!debutReponse && np + nc < 120 && maintenant - dernierEnvoi < 900) return;
-        if (np > 0) {
-          onDelta('reasoning', tranche(pensee, emisPensee));
-          emisPensee = pensee.length;
+        var debutReponse = contenu.length > 0 && !reponseAnnoncee;
+        if (!debutReponse) {
+          /* v20260926g-revue : emis=true SEULEMENT à émission effective —
+             sinon une erreur précoce (rien montré) partirait en partiel au
+             lieu de cascader vers le modèle suivant. */
+          return;
         }
-        if (debutReponse) {
-          onDelta('generation', 'Rédaction de la réponse…');
-          emisContenu = contenu.length;
-        } else if (nc > 0) {
-          onDelta('generation', tranche(contenu, emisContenu));
-          emisContenu = contenu.length;
-        }
-        dernierEnvoi = maintenant;
+        reponseAnnoncee = true;
+        onDelta('generation', 'Rédaction de la réponse…');
         emis = true;
       }
       /* v20260926b (direct) : pousse le texte NOUVEAU en événements jeton
@@ -687,11 +674,13 @@
           onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
           emisJetonPensee = pensee.length;
           dernierJetonPensee = maintenant;
+          emis = true;
         }
         if (nc > 0 && (nc >= 24 || maintenant - dernierJetonContenu > 150)) {
           onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
           emisJetonContenu = contenu.length;
           dernierJetonContenu = maintenant;
+          emis = true;
         }
       }
 
@@ -1030,7 +1019,7 @@
             continue;
           }
           var p = PROVIDERS[pk];
-          emit({ type: 'progress', etape: 'appel', message: 'Appel · ' + (entry.name || entry.id) });
+          emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…' });
           var onDelta = p && p.sse
             ? function (etape, message) {
                 /* v20260926b (direct) : les jetons partent en {type:'jeton'}
@@ -1051,7 +1040,8 @@
             if (p && p.sse && borne < 600000) borne = 600000;
             var texte = await appelBorne(callModel(entry, messages, signal, onDelta), borne);
             var fin = assembler(entry, texte);
-            emit({ type: 'progress', etape: 'generation', message: 'Réponse générée via ' + fin.nomVoie });
+            /* v20260926g : pas de progress « Réponse générée via X » — nom
+               technique masqué, le final suffit. */
             emit({
               type: 'final',
               reponse: fin.payload.reponse,

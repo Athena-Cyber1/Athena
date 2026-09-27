@@ -1,6 +1,6 @@
 # Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925ap`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925aq`
 
 ---
 
@@ -349,6 +349,12 @@ saut de provider après 2 timeouts, abandon de cascade après 3 providers
 distincts en timeout, retries courts (500/1500 ms, reset ≤ 8 s), sleep de
 reprise 3 s. L'UI scrolle en rAF uniquement si déjà en bas et n'ajoute que
 les deltas DOM.
+
+**Raisonnement agrégé (v20260926g, look Claude) :** les chunks ne sont
+jamais des étapes — le shim n'émet que des transitions sémantiques
+(`appel`, `Rédaction…`) + des `jeton` (texte exact) ; le panneau est un
+composant unique (en-tête compact + texte continu atténué + statut),
+persisté en `etape:'texte'`, exporté/importé en paragraphes.
 
 Erreur : `{"type":"erreur","erreur":"Échec des modèles : …"}`
 
