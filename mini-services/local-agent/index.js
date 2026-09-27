@@ -396,7 +396,31 @@ const serveur = http.createServer(async (req, res) => {
         json(res, 413, { erreur: 'contenu trop volumineux (limite 2 Mo utiles)' }, origin, req);
         return;
       }
-      const abs = path.resolve(process.cwd(), cheminDemande);
+      /* v20260926e : dossier de travail choisi dans les réglages — les chemins
+         relatifs s'y résolvent, avec confinement strict (../ ne peut pas en
+         sortir). Sans dossier : comportement historique (cwd + DENY_WRITE). */
+      let base = process.cwd();
+      let confine = false;
+      const dossierDemande = typeof corpsw.dossier === 'string' ? corpsw.dossier.trim() : '';
+      if (dossierDemande) {
+        base = path.resolve(process.cwd(), dossierDemande);
+        confine = true;
+        if (ALLOW_DIR && !(base === ALLOW_DIR || base.startsWith(ALLOW_DIR + path.sep))) {
+          json(res, 403, { erreur: 'dossier hors zone autorisée (--allow)', dossier: base }, origin, req);
+          return;
+        }
+        try {
+          fs.mkdirSync(base, { recursive: true });
+        } catch (e) {
+          json(res, 400, { erreur: 'dossier inutilisable : ' + String((e && e.message) || e).slice(0, 120) }, origin, req);
+          return;
+        }
+      }
+      const abs = path.resolve(base, cheminDemande);
+      if (confine && !(abs === base || abs.startsWith(base + path.sep))) {
+        json(res, 403, { erreur: 'chemin hors du dossier de travail (../ interdit)', chemin: abs }, origin, req);
+        return;
+      }
       if (DENY_WRITE.some((re) => re.test(abs))) {
         json(res, 403, { erreur: 'écriture bloquée : dossier système', chemin: abs }, origin, req);
         return;
@@ -409,6 +433,7 @@ const serveur = http.createServer(async (req, res) => {
           erreur: 'confirmation requise',
           chemin: abs,
           existe,
+          dossier: base,
           octets: octetsContenu,
           hint: 'Renvoyez avec confirme:true après validation utilisateur (ecraser:true si le fichier existe)',
         }, origin, req);

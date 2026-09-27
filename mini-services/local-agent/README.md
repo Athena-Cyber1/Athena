@@ -20,7 +20,7 @@ node index.js --allow "C:\Users\moi\Documents"   # restreint un dossier
 | `/sante` | GET | santé + version |
 | `/journal` | GET | 50 dernières exécutions |
 | `/exec` | POST | `{commande, confirme?, cwd?, timeout_ms?, flux?}` — `flux:true` = NDJSON en direct (`sortie`* puis `fin`) |
-| `/write` | POST | `{chemin, contenu, confirme?, ecraser?}` — écrit un fichier (2 Mo max, dossiers système interdits) |
+| `/write` | POST | `{chemin, contenu, confirme?, ecraser?, dossier?}` — écrit un fichier (2 Mo max, dossiers système interdits) |
 
 Sans `confirme: true` → HTTP **428** (l'UI demande d'abord à l'utilisateur).
 
@@ -33,6 +33,8 @@ Sans `confirme: true` → HTTP **428** (l'UI demande d'abord à l'utilisateur).
 - `cwd` inexistant → 400 (jamais de repli silencieux), corps surdimensionné → 413
 - `/write` : dossiers système interdits (`C:\Windows`, `Program Files`, …), 409 si
   le fichier existe sans `ecraser:true`, `mkdir -p` automatique
+- `/write` + `dossier` (réglage « Dossier de travail ») : les chemins relatifs
+  s'y résolvent, confinement strict (`../` interdit d'en sortir)
 - Journal local en mémoire
 
 ## Intégration UI

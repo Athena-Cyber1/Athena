@@ -718,6 +718,9 @@ if (rechercheConversationsEl) {
 publierHooks('__atelierRecherche', { filtrer: filtrerConversations, extrait: extraitConversation }); /* hook QA — non utilisé par l'interface */
 function ouvrirConversation(id) {
   idConversation = id;
+  /* v20260926e (kimi) : la voix ne continue pas sur une conversation
+     détruite/reaffichée. */
+  try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch {}
   const c = conversationOuverte();
   messages = c.messages;
   /* v20260922l (21) : un re-rendu complet de vue n'est pas une « nouvelle
@@ -1349,7 +1352,7 @@ publierHooks('__atelierProjets', {
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
 
-const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true };
+const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true, dossierTravail: '' };
 let preferences = { ...preferencesParDefaut };
 try {
   preferences = { ...preferencesParDefaut, ...JSON.parse(localStorage.getItem('chat-preferences') || '{}') };
@@ -1385,6 +1388,18 @@ function creerInterrupteur(cle, titre, description) {
   check.checked = Boolean(preferences[cle]);
   check.addEventListener('change', () => enregistrerPreference(cle, check.checked));
   return creerLigneOption(titre, description, check);
+}
+/* v20260926e : ligne de réglage avec champ texte (ex. dossier de travail). */
+function creerLigneChamp(cle, titre, description, placeholder) {
+  const champ = document.createElement('input');
+  champ.type = 'text';
+  champ.className = 'setting-champ';
+  champ.value = typeof preferences[cle] === 'string' ? preferences[cle] : '';
+  champ.placeholder = placeholder || '';
+  champ.setAttribute('aria-label', titre);
+  champ.spellcheck = false;
+  champ.addEventListener('change', () => enregistrerPreference(cle, champ.value.trim()));
+  return creerLigneOption(titre, description, champ);
 }
 
 function afficherParametres(ongletActif = 'Apparence') {
@@ -1429,6 +1444,8 @@ function afficherParametres(ongletActif = 'Apparence') {
         creerInterrupteur('outilsWeb', 'Outils web', 'Recherche internet, curl et lecture de pages quand la question le demande.'),
         creerInterrupteur('raisonnementVisible', 'Raisonnement visible', 'Affiche en direct les étapes : routage, recherche, mémoire, vérification.'),
         creerInterrupteur('executionAuto', 'Exécution automatique des commandes', 'Les blocs athena-exec partent seuls sur l’agent local (127.0.0.1:3020) — sans modale « Exécuter sur ce PC ? ». Décocher pour reprendre la confirmation manuelle.'),
+        creerLigneChamp('dossierTravail', 'Dossier de travail (fichiers créés)', 'Dossier du PC où le modèle enregistre les fichiers (chemins relatifs). Vide = dossier de l’agent. Ex. C:\\Users\\moi\\Documents\\Athena',
+          'C:\\Users\\moi\\Documents\\Athena'),
       );
     } else if (nom === 'Confidentialité') {
       description.textContent = 'Les données de cette démo restent sur cet appareil.';
@@ -2310,7 +2327,9 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
       const probe = await fetch('/api/write', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: false }),
+        /* v20260926e : dossier de travail choisi dans les réglages. */
+        body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: false,
+          ...(preferences.dossierTravail ? { dossier: preferences.dossierTravail } : {}) }),
       });
       const dj = await probe.json().catch(() => ({}));
       if (!probe.ok && probe.status !== 428) {
@@ -2340,7 +2359,8 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
     const r = await fetch('/api/write', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: true, ecraser: true }),
+      body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: true, ecraser: true,
+        ...(preferences.dossierTravail ? { dossier: preferences.dossierTravail } : {}) }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) {
@@ -2645,9 +2665,11 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
   det.className = 'raisonnement vivant';
   det.open = true;
   const sum = document.createElement('summary');
-  /* v7.1.1 : le TITRE est le 1er span (finaliser() le retrouve via :first-child) —
+  /* v7.1.1 : le TITRE porte sa classe (finaliser() le retrouve via
+     .raisonnement-titre, insensible à la coche ajoutée devant) —
      avant, il n'existait pas et le titre écrasait le chevron */
   const titre = document.createElement('span');
+  titre.className = 'raisonnement-titre';
   titre.textContent = 'Raisonnement';
   const spin = document.createElement('span');
   spin.className = 'think';
@@ -2707,8 +2729,14 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
     det.open = false;
     spin.remove();
     dernier.remove();
-    let titreAct = sum.querySelector('span:first-child');
+    let titreAct = sum.querySelector('.raisonnement-titre');
     if (titreAct) titreAct.textContent = 'Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '') + ' · ' + secondes + ' s';
+    /* v20260926e (kimi) : coche discrète devant le bilan (le spinner animé
+       a disparu avec `spin`). */
+    const coche = document.createElement('span');
+    coche.className = 'raisonnement-fini';
+    coche.appendChild(icoSvg('check'));
+    sum.insertBefore(coche, sum.firstChild);
   }
   return { el: det, ajouter, finaliser, etapes };
 }
@@ -3118,28 +3146,56 @@ function actionMessage(contenu, role) {
   };
   ajouter('copy', 'Copier le message', (event) => copierTexte(contenu, event.currentTarget));
   if (role === 'assistant') {
-    ajouter('volume', 'Lire le message', (event) => {
+    /* v20260926e (kimi) : lecture = bascule (clic = arrêter), état synchronisé
+       pour les lecteurs d'écran, jamais de bouton coincé sur « actif ». */
+    const lire = ajouter('volume', 'Lire le message', (event) => {
       const bouton = event.currentTarget;
+      const arreter = () => { bouton.classList.remove('actif'); bouton.setAttribute('aria-pressed', 'false'); };
+      if (bouton.classList.contains('actif')) {
+        try { window.speechSynthesis.cancel(); } catch {}
+        arreter();
+        return;
+      }
       if (!('speechSynthesis' in window)) {
         notifier('La lecture vocale n’est pas disponible dans ce navigateur.');
         return;
       }
-      window.speechSynthesis.cancel();
+      bouton.setAttribute('aria-pressed', 'true');
+      try { window.speechSynthesis.cancel(); } catch {}
       const lecture = new SpeechSynthesisUtterance(contenu);
       lecture.lang = 'fr-FR';
       bouton.classList.add('actif');
-      lecture.onend = () => bouton.classList.remove('actif');
-      window.speechSynthesis.speak(lecture);
+      lecture.onend = arreter;
+      lecture.onerror = arreter;
+      try { window.speechSynthesis.speak(lecture); }
+      catch { arreter(); }
     });
-    const like = ajouter('thumbUp', 'Réponse utile', () => like.classList.toggle('actif'));
-    ajouter('thumbDown', 'Réponse à améliorer', () => like.classList.remove('actif'));
+    lire.setAttribute('aria-pressed', 'false');
+    /* v20260926e (kimi) : avis EXCLUSIF — un seul des deux actif à la fois. */
+    const utile = ajouter('thumbUp', 'Réponse utile', null);
+    const bof = ajouter('thumbDown', 'Réponse à améliorer', null);
+    utile.setAttribute('aria-pressed', 'false');
+    bof.setAttribute('aria-pressed', 'false');
+    const basculeAvis = (positif) => {
+      const cible = positif ? utile : bof;
+      const autre = positif ? bof : utile;
+      const nouvelEtat = !cible.classList.contains('actif');
+      cible.classList.toggle('actif', nouvelEtat);
+      cible.setAttribute('aria-pressed', String(nouvelEtat));
+      autre.classList.remove('actif');
+      autre.setAttribute('aria-pressed', 'false');
+    };
+    utile.addEventListener('click', () => basculeAvis(true));
+    bof.addEventListener('click', () => basculeAvis(false));
     ajouter('refresh', 'Régénérer la réponse', () => regenererDerniereReponse());
   }
   return actions;
 }
 
 /* ---------- Rendu des messages ---------- */
-function bulle(role, contenu, outil, meta) {
+/* v20260926e : options.actions === false → pas de .message-actions (bulle de
+   réflexion : les actions n'apparaissent qu'une fois la réponse FINIE). */
+function bulle(role, contenu, outil, meta, options) {
   const row = document.createElement('div');
   row.className = 'row ' + (role === 'user' ? 'user' : 'bot');
   /* v20260922m (F18) : chaque rangée est ÉTIQUETÉE avec sa conversation —
@@ -3166,9 +3222,11 @@ function bulle(role, contenu, outil, meta) {
   if (meta && meta.attachments && meta.attachments.length) {
     const ligne = document.createElement('div');
     ligne.className = 'fichier-joint';
+    /* v20260926e : séparateur ' ; ' — les noms contenant des virgules
+       restaient ambigus avec ', '. */
     ligne.textContent = 'Fichier' + (meta.attachments.length > 1 ? 's' : '') + ' analysé'
       + (meta.attachments.length > 1 ? 's' : '') + ' : '
-      + meta.attachments.map((a) => a.name).join(', ');
+      + meta.attachments.map((a) => a.name).join(' ; ');
     b.appendChild(ligne);
   }
   if (outil && outil.nom) {
@@ -3203,7 +3261,7 @@ function bulle(role, contenu, outil, meta) {
     }
   }
   row.appendChild(b);
-  row.appendChild(actionMessage(contenu, role));
+  if (!options || options.actions !== false) row.appendChild(actionMessage(contenu, role));
   msgsEl.appendChild(row);
   return b;
 }
@@ -3378,7 +3436,15 @@ async function genererReponse(convo) {
      (convo.messages) reste correcte ; seule la mise en forme DOM est
      conditionnée à vueOuverte(), et un toast sobre propose « Ouvrir ». */
   const vueOuverte = () => idConversation === convo.id && !msgsEl.querySelector('.workspace-view');
-  const think = bulle('assistant', '');
+  const think = bulle('assistant', '', null, null, { actions: false });
+  /* v20260926e (kimi) : indicateur animé « le modèle réfléchit » — visible
+     même panneau replié/désactivé ; retiré avec la rangée au rendu final. */
+  const indicateur = document.createElement('span');
+  indicateur.className = 'thinking';
+  indicateur.setAttribute('role', 'status');
+  indicateur.setAttribute('aria-label', 'Le modèle réfléchit');
+  indicateur.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
+  think.appendChild(indicateur);
   /* v7.1 : panneau « raisonnement en direct » (canal de progression NDJSON) */
   const panneau = preferences.raisonnementVisible !== false
     ? creerPanneauRaisonnement(think, vueOuverte) : null;
@@ -3707,7 +3773,14 @@ function regenererPossible() {
   return !derniere.dataset.convo || derniere.dataset.convo === String(idConversation || '');
 }
 async function regenererDerniereReponse() {
-  if (!regenererPossible()) return;
+  if (!regenererPossible()) {
+    /* v20260926e (kimi) : retour silencieux = l'utilisateur croit le
+       raccourci mort ; on le dit. */
+    notifier('Rien à régénérer pour l’instant.');
+    return;
+  }
+  /* v20260926e : on ne régénère pas par-dessus une lecture en cours. */
+  try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch {}
   const convo = conversationOuverte();
   /* v20260922m (F18) : seules les rangées de LA conversation affichée sont
      candidates au retrait (étiquette dataset.convo). */

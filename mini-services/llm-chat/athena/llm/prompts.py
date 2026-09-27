@@ -75,7 +75,8 @@ OUTILS_POSTE = (
     "exécution automatique, commandes destructrices refusées par l'agent.\n"
     "- Créer un fichier sur le PC : bloc fenced de langage exact athena-file dont la "
     "première ligne est le chemin, ex : ```athena-file notes/idees.md\ncontenu…\n``` — "
-    "chemin relatif (dossier de travail de l'agent) ou absolu, dossiers système refusés, "
+    "chemin relatif (dossier de travail choisi dans les réglages, par défaut celui "
+    "de l'agent) ou absolu, dossiers système refusés, "
     "enregistrement automatique + fichier téléchargeable dans la conversation.\n"
     "Ne t'en sers que quand l'action le demande vraiment ; contenu légitime et sans danger uniquement."
 )

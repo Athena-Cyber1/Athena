@@ -50,7 +50,7 @@
   --pos-sidebar-largeur: 300px;
   --pos-sidebar-cachee: translateX(-104%);
   --pos-sidebar-ouverte: translateX(0);
-  --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -109,7 +109,7 @@ body {
   overflow: hidden;
   background: var(--fond);
   color: var(--texte);
-  font-family: var(--font-geist-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+  font-family: var(--font-geist-sans, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif);
 }
 
 html.reduce-animation *,
@@ -791,6 +791,7 @@ button.dot:focus-visible,
   max-width: min(80%, 720px);
   padding: calc(11px * var(--dens)) 16px;
   border-radius: 14px;
+  font-size: 0.9375rem;
   line-height: 1.55;
   background: var(--carte);
   border: 1px solid var(--bord);
@@ -947,6 +948,7 @@ button.dot:focus-visible,
   font-size: 0.84rem;
   line-height: 1.5;
   font-family: var(--mono);
+  tab-size: 2;
 }
 .code-lang {
   position: absolute;
@@ -1767,7 +1769,7 @@ span.think:not(details .think) {
   outline: none;
   background: transparent;
   color: var(--texte);
-  font-size: 0.92rem;
+  font-size: 1rem;
   min-height: 20px;
   padding: 1px 4px;
 }
@@ -3171,7 +3173,8 @@ details.raisonnement li.doute {
   background: transparent;
   color: inherit;
   font-family: inherit;
-  font-size: 0.85rem;
+  /* v20260926e (kimi) : 16 px minimum — en dessous, iOS zoome au focus. */
+  font-size: 1rem;
   line-height: 1.2;
   resize: none;
   field-sizing: content; /* Fait varier la hauteur selon le nombre de lignes */
@@ -3590,10 +3593,51 @@ details.trace-cmd.echec .trace-cmd-status {
   word-break: break-word;
   font-family: var(--mono);
   font-size: 0.78rem;
-  opacity: 0.85;
+  line-height: 1.45;
+  color: var(--texte-doux);
   margin: 6px 0;
-  max-height: 220px;
-  overflow: auto;
+  /* v20260926e (kimi) : dégradé de sortie au lieu d'une scrollbar — le fondu
+     signale la troncature sans agresser la mise en page. */
+  max-height: 9em;
+  overflow: hidden;
+  mask-image: linear-gradient(#000 70%, transparent);
+  -webkit-mask-image: linear-gradient(#000 70%, transparent);
+}
+/* v20260926e (kimi) : indicateur « le modèle réfléchit » — trois points
+   pulsants, CSS pur, monochrome. Désactivé par .reduce-animation (global)
+   et prefers-reduced-motion (ci-dessous). */
+.thinking {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 2px 0;
+}
+.thinking i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+  animation: think-pulse 1.2s ease-in-out infinite;
+}
+.thinking i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.thinking i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes think-pulse {
+  0%, 60%, 100% { opacity: 0.25; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking i,
+  .diffusion-curseur {
+    animation: none;
+  }
+  .thinking i {
+    opacity: 0.6;
+  }
 }
 .exec-terminal {
   margin-top: 6px;
@@ -3713,4 +3757,30 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 .md-table tbody tr:nth-child(even) td {
   background: #101010;
+}
+/* v20260926e : coche de bilan du raisonnement + champ des réglages. */
+.raisonnement-fini {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--texte-doux);
+}
+.raisonnement-fini .ico {
+  width: 12px;
+  height: 12px;
+}
+.setting-champ {
+  width: 100%;
+  max-width: 340px;
+  border: 1px solid var(--bord-fort);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-family: var(--mono);
+  background: var(--carte-doux);
+  color: var(--texte);
+}
+.setting-champ:focus {
+  outline: 2px solid var(--primaire-doux);
+  border-color: var(--primaire);
 }

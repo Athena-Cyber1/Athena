@@ -375,7 +375,8 @@
     'Pour créer un fichier sur le PC de l\'utilisateur, réponds avec un bloc de code fenced ' +
     'de langage exact athena-file dont la première ligne donne le chemin, par exemple:\n' +
     '```athena-file notes/idees.md\ncontenu du fichier…\n```\n' +
-    'Le chemin peut être relatif (dossier de travail de l\'agent) ou absolu ; les dossiers ' +
+    'Le chemin peut être relatif (dossier de travail choisi dans les réglages ' +
+    '— par défaut celui de l\'agent) ou absolu ; les dossiers ' +
     'système sont refusés. Le fichier est enregistré AUTOMATIQUEMENT sur le poste (comme les ' +
     'commandes) et reste téléchargeable dans la conversation. N\'y mets que du contenu ' +
     'légitime et sans danger ; si l\'agent est injoignable, dis-le simplement.';
@@ -520,6 +521,8 @@
       contenu: contenu,
       confirme: body.confirme === true,
       ecraser: body.ecraser === true,
+      /* v20260926e : dossier de travail choisi dans les réglages. */
+      dossier: typeof body.dossier === 'string' ? body.dossier : undefined,
     }, signal);
   }
 
