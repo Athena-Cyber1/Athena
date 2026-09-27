@@ -3413,11 +3413,9 @@ details.trace-cmd.echec .trace-cmd-status {
   color: #eeeeee;
   box-shadow: none;
 }
-
-.row.bot details.raisonnement,
-.row.user details.raisonnement {
-  display: none !important;
-}
+/* v20260926e : règle héritée de de4eada (« simplify ») SUPPRIMÉE — elle
+   masquait TOUS les panneaux de raisonnement dans le fil, rendant la
+   préférence « Raisonnement visible » sans effet. */
 
 .composeur-carte {
   box-sizing: border-box;
