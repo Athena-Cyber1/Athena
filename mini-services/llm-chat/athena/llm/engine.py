@@ -63,7 +63,9 @@ class MoteurLLM:
             with urllib.request.urlopen(f"{self.base}/sante", timeout=3) as r:
                 data = json.loads(r.read().decode())
                 ok = (r.status == 200)
-                llm_dispo = bool(data.get("llm_disponible", ok))
+                # v20260926d (kimi) : champ absent = on ne sait pas — défaut
+                # False (avant : True via `ok`, un /sante 200 menteur).
+                llm_dispo = bool(data.get("llm_disponible", False))
         except Exception:
             ok = False
         self._sante = ok
@@ -86,7 +88,11 @@ class MoteurLLM:
         corps_envoye: dict[str, Any] = {"messages": messages, "temperature": temperature,
                                         "max_tokens": max_tokens}
         if model_id and model_id.strip() and model_id.strip().lower() != "auto":
-            corps_envoye["model"] = model_id.strip()[:120]
+            # v20260926d (kimi) : format validé — un id arbitraire ne part
+            # pas tel quel au pont.
+            mid = model_id.strip()[:120]
+            if mid and all(c.isalnum() or c in ":./-_" for c in mid):
+                corps_envoye["model"] = mid
         corps = json.dumps(corps_envoye).encode()
         debut = time.time()
         dernier: dict[str, Any] | None = None
@@ -113,11 +119,21 @@ class MoteurLLM:
                            "duree_ms": int((time.time() - debut) * 1000)}
                 if code in ("RATE_LIMITED", "CIRCUIT_OUVERT", "QUEUE_SATUREE"):
                     break  # quota/circuit : une reprise immédiate ne sert à rien
-            except Exception as e:
-                # réseau pur (pont joignable ?) : une reprise peut suffire
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+                # v20260926d (kimi) : réseau pur UNIQUEMENT — une reprise peut
+                # suffire (HTTPError est déjà traité ci-dessus, pas ici).
+                # OSError générique inclus (ex. connection refused des tests),
+                # mais PAS les erreurs de contenu (JSON invalide → ci-dessous).
                 dernier = {"erreur": LIBELLE_INDISPONIBLE, "code": "PONT_INJOIGNABLE",
                            "detail_interne": f"{type(e).__name__}",
                            "duree_ms": int((time.time() - debut) * 1000)}
+            except Exception as e:
+                # v20260926d : réponse illisible (JSON corrompu…) — rejouer la
+                # requête n'y changerait rien : pas de reprise.
+                dernier = {"erreur": LIBELLE_INDISPONIBLE, "code": "REPONSE_ILLISIBLE",
+                           "detail_interne": f"{type(e).__name__}",
+                           "duree_ms": int((time.time() - debut) * 1000)}
+                break
         return dernier
 
     # ------------------------------------------------------------- recherche
@@ -161,14 +177,19 @@ class MoteurLLM:
         try:
             with urllib.request.urlopen(req, timeout=14 if rafraichir else 6) as r:
                 data = json.loads(r.read().decode())
-            sortie = {"dispo": True,
-                      "modeles": [m for m in data.get("models", [])
-                                  if isinstance(m, dict) and m.get("id")]}
+            self._modeles = {"dispo": True,
+                             "modeles": [m for m in data.get("models", [])
+                                         if isinstance(m, dict) and m.get("id")]}
+            self._modeles_ts = time.time()
+            return self._modeles
         except Exception:
-            sortie = {"dispo": False, "modeles": []}
-        self._modeles = sortie
-        self._modeles_ts = time.time()
-        return sortie
+            pass
+        # v20260926d (kimi) : un échec transitoire ne doit pas effacer une
+        # liste valide déjà en cache — on la ressert telle quelle.
+        if self._modeles is None:
+            self._modeles = {"dispo": False, "modeles": []}
+            self._modeles_ts = time.time()
+        return self._modeles
 
 
 MOTEUR = MoteurLLM()

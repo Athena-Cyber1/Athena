@@ -227,7 +227,10 @@ class AgentState:
             raisons.append("un budget d'exécution plus large")
         for v in self.verification:
             if v.get("statut") == "CONTRADICTED":
-                raisons.append(f"la résolution d'une contradiction non tranchée ({v.get('resume', 'détails dans la trace')})")
+                # v20260926d (kimi) : résumé borné — un contenu utilisateur long
+                # ne doit pas inonder la réponse (d).
+                resume = str(v.get("resume", "détails dans la trace"))[:120]
+                raisons.append(f"la résolution d'une contradiction non tranchée ({resume})")
         for e in self.erreurs:
             if e.get("type") == "outil_indisponible":
                 # v10.9.1 : libellé HONNÊTE mais sans l'interdit canari

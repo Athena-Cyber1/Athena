@@ -64,6 +64,10 @@ const DENY = [
   /\bdel\s+\/s\s+\/q\s+[a-z]:/i,
   /\brd\s+\/s\s+\/q\s+[a-z]:/i,
   /\bRemove-Item\s+.*-Recurse.*-Force.*[\\\/]\s*$/i,
+  /* v20260926d (kimi) : l'expression ci-dessus exigeait un slash final et ne
+     matchait quasiment jamais (ex. `Remove-Item C:\Data -Recurse -Force`
+     passait). Celle-ci vise la racine de lecteur, avec ou sans slash. */
+  /\bRemove-Item\s+["']?[A-Z]:[\\\/]?(["']?(\s|$|;))/i,
   /:\(\)\s*\{.*\|.*&.*\};/i,
   /\bcurl\b.*\|\s*(ba)?sh\b/i,
   /\bwget\b.*\|\s*(ba)?sh\b/i,
@@ -91,12 +95,10 @@ function cors(origin, req) {
     'Cache-Control': 'no-store',
   };
   /* Chrome Private Network Access : une page HTTPS publique appelle
-     127.0.0.1 — le preflight exige cet en-tête sinon fetch échoue. */
-  if (req && req.headers && (req.headers['access-control-request-private-network'] || req.headers['access-control-request-private-network'] === 'true')) {
-    h['Access-Control-Allow-Private-Network'] = 'true';
-  } else {
-    h['Access-Control-Allow-Private-Network'] = 'true';
-  }
+     127.0.0.1 — le preflight exige cet en-tête sinon fetch échoue.
+     v20260926d (kimi) : émis UNIQUEMENT aux origines autorisées (avant :
+     dans les deux branches, y compris refusées). */
+  if (ok) h['Access-Control-Allow-Private-Network'] = 'true';
   return h;
 }
 
@@ -121,13 +123,29 @@ function lireCorps(req, max) {
     req.on('data', (c) => {
       t += c;
       if (t.length > limite) {
-        reject(new Error('corps trop volumineux'));
+        /* v20260926d (kimi) : 413 explicite (avant : 500 générique). */
+        const e = new Error('corps trop volumineux');
+        e.code = 413;
+        reject(e);
         req.destroy();
       }
     });
     req.on('end', () => resolve(t));
     req.on('error', reject);
   });
+}
+
+/* v20260926d (kimi) : sur Windows, kill() ne tue que le shell, pas ses
+   enfants (zombies après timeout) — taskkill /T/F sur l'arbre complet. */
+function tuerArbre(enfant) {
+  try {
+    if (process.platform === 'win32' && enfant && enfant.pid) {
+      const t = spawn('taskkill', ['/pid', String(enfant.pid), '/T', '/F'], { windowsHide: true });
+      t.on('error', () => { try { enfant.kill('SIGKILL'); } catch (_) {} });
+      return;
+    }
+  } catch (_) {}
+  try { enfant.kill('SIGKILL'); } catch (_) {}
 }
 
 function refus(cmd) {
@@ -143,8 +161,9 @@ function dansAllowDir(cwd) {
 
 /* v1.1 (direct) : surDonnees(canal, texte) optionnel — appelé à chaque
    paquet stdout/stderr pour la diffusion EN DIRECT (NDJSON) ; sans lui,
-   comportement historique (attente de la fin). */
-function executer(commande, cwd, timeoutMs, surDonnees) {
+   comportement historique (attente de la fin). capsule (optionnel) reçoit
+   {tuer} pour interrompre l'arbre de process (déconnexion client en flux). */
+function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
   return new Promise((resolve) => {
     const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
     const args = process.platform === 'win32'
@@ -161,11 +180,21 @@ function executer(commande, cwd, timeoutMs, surDonnees) {
       env: { ...process.env, ATHENA_LOCAL_AGENT: '1' },
       windowsHide: true,
     });
+    /* v20260926d (kimi) : la déconnexion client en plein flux tue l'arbre
+       (sinon le process orphelin tourne jusqu'au timeout). */
+    if (capsule) {
+      capsule.tuer = () => {
+        if (termine) return;
+        termine = true;
+        clearTimeout(coupe);
+        tuerArbre(enfant);
+      };
+    }
 
     const coupe = setTimeout(() => {
       if (termine) return;
       termine = true;
-      try { enfant.kill('SIGKILL'); } catch (_) {}
+      tuerArbre(enfant);
       resolve({
         ok: false,
         code: null,
@@ -250,7 +279,13 @@ const serveur = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && chemin === '/exec') {
-      const brut = await lireCorps(req);
+      let brut;
+      try {
+        brut = await lireCorps(req);
+      } catch (e) {
+        json(res, (e && e.code) || 400, { erreur: (e && e.message) || 'corps illisible' }, origin, req);
+        return;
+      }
       let corps = {};
       try { corps = JSON.parse(brut || '{}'); } catch (_) {}
       const commande = String(corps.commande || corps.command || '').trim();
@@ -273,7 +308,14 @@ const serveur = http.createServer(async (req, res) => {
         }, origin, req);
         return;
       }
-      const cwd = typeof corps.cwd === 'string' && corps.cwd ? corps.cwd : process.cwd();
+      const cwdDemande = typeof corps.cwd === 'string' && corps.cwd ? corps.cwd : process.cwd();
+      /* v20260926d (kimi) : cwd inexistant = 400 explicite (avant : repli
+         silencieux sur le cwd de l'agent — la commande tournait ailleurs). */
+      if (typeof corps.cwd === 'string' && corps.cwd && !fs.existsSync(corps.cwd)) {
+        json(res, 400, { erreur: 'répertoire inexistant', cwd: String(corps.cwd).slice(0, 200) }, origin, req);
+        return;
+      }
+      const cwd = cwdDemande;
       if (!dansAllowDir(cwd)) {
         json(res, 403, { erreur: 'répertoire hors zone autorisée (--allow)' }, origin, req);
         return;
@@ -289,9 +331,13 @@ const serveur = http.createServer(async (req, res) => {
         res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
         res.writeHead(200);
         const ligne = (o) => { try { res.write(JSON.stringify(o) + '\n'); } catch (_) {} };
+        const capsule = {};
+        let reponseFinie = false;
+        /* v20260926d : client parti en cours de stream → on tue l'arbre. */
+        req.on('close', () => { if (!reponseFinie && capsule.tuer) { try { capsule.tuer(); } catch (_) {} } });
         const rf = await executer(commande, cwd, t, (canal, texte) => {
           ligne({ type: 'sortie', canal, texte });
-        });
+        }, capsule);
         const entreef = {
           ts: Date.now(),
           commande: commande.slice(0, 200),
@@ -303,6 +349,7 @@ const serveur = http.createServer(async (req, res) => {
         if (journal.length > 200) journal.shift();
         console.log(`[local-agent] ${rf.ok ? 'OK' : 'ERR'} code=${rf.code} ${rf.duree_ms}ms :: ${entreef.commande}`);
         ligne({ type: 'fin', ...rf, commande });
+        reponseFinie = true;
         res.end();
         return;
       }
@@ -327,7 +374,13 @@ const serveur = http.createServer(async (req, res) => {
        Garde-fous : origine (plus haut), DENY_WRITE (dossiers système),
        taille bornée, journal. */
     if (req.method === 'POST' && chemin === '/write') {
-      const brutw = await lireCorps(req, 3 * 1024 * 1024);
+      let brutw;
+      try {
+        brutw = await lireCorps(req, 3 * 1024 * 1024);
+      } catch (e) {
+        json(res, (e && e.code) || 400, { erreur: (e && e.message) || 'corps illisible' }, origin, req);
+        return;
+      }
       let corpsw = {};
       try { corpsw = JSON.parse(brutw || '{}'); } catch (_) {}
       const cheminDemande = String(corpsw.chemin || corpsw.path || '').trim();
@@ -336,8 +389,11 @@ const serveur = http.createServer(async (req, res) => {
         json(res, 400, { erreur: 'chemin (≤500 car.) et contenu requis' }, origin, req);
         return;
       }
-      if (contenu.length > MAX_WRITE) {
-        json(res, 413, { erreur: 'contenu trop volumineux (limite 2 Mo)' }, origin, req);
+      /* v20260926d (kimi) : la borne et les compteurs portent sur les OCTETS
+         utf-8, pas les unités UTF-16. */
+      const octetsContenu = Buffer.byteLength(contenu, 'utf8');
+      if (octetsContenu > MAX_WRITE) {
+        json(res, 413, { erreur: 'contenu trop volumineux (limite 2 Mo utiles)' }, origin, req);
         return;
       }
       const abs = path.resolve(process.cwd(), cheminDemande);
@@ -353,7 +409,7 @@ const serveur = http.createServer(async (req, res) => {
           erreur: 'confirmation requise',
           chemin: abs,
           existe,
-          octets: contenu.length,
+          octets: octetsContenu,
           hint: 'Renvoyez avec confirme:true après validation utilisateur (ecraser:true si le fichier existe)',
         }, origin, req);
         return;
@@ -369,11 +425,11 @@ const serveur = http.createServer(async (req, res) => {
         json(res, 500, { erreur: 'écriture impossible : ' + String((e && e.message) || e).slice(0, 160) }, origin, req);
         return;
       }
-      const entreew = { ts: Date.now(), ecriture: abs.slice(0, 300), octets: contenu.length, ecrase: existe };
+      const entreew = { ts: Date.now(), ecriture: abs.slice(0, 300), octets: octetsContenu, ecrase: existe };
       journal.push(entreew);
       if (journal.length > 200) journal.shift();
-      console.log(`[local-agent] WRITE ${contenu.length}o ${existe ? '(écrasé)' : ''} :: ${entreew.ecriture}`);
-      json(res, 200, { ok: true, chemin: abs, octets: contenu.length, ecrase: existe }, origin, req);
+      console.log(`[local-agent] WRITE ${octetsContenu}o ${existe ? '(écrasé)' : ''} :: ${entreew.ecriture}`);
+      json(res, 200, { ok: true, chemin: abs, octets: octetsContenu, ecrase: existe }, origin, req);
       return;
     }
 

@@ -29,7 +29,8 @@ Sans `confirme: true` → HTTP **428** (l'UI demande d'abord à l'utilisateur).
 - Bind `127.0.0.1` uniquement
 - CORS : Pages Athéna + localhost
 - Liste de refus : `rm -rf /`, `format`, `del /s /q C:`, pipes `curl|sh`, `IEX`, etc.
-- Timeout 20 s, sortie bornée à 64 Ko
+- Timeout 20 s (arbre de process tué : `taskkill /T /F` sur Windows), sortie bornée à 64 Ko
+- `cwd` inexistant → 400 (jamais de repli silencieux), corps surdimensionné → 413
 - `/write` : dossiers système interdits (`C:\Windows`, `Program Files`, …), 409 si
   le fichier existe sans `ecraser:true`, `mkdir -p` automatique
 - Journal local en mémoire

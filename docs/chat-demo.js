@@ -414,16 +414,32 @@ function sauverConversations() {
     /* v20260922l (18) : QuotaExceeded n'est plus un silence total — on
        réessaie en sacrifiant les plus vieilles conversations NON épinglées
        (l'ouverte est toujours conservée) ; en dernier recours, une alerte
-       UNIQUE prévient que la persistance est saturée. */
+       UNIQUE prévient que la persistance est saturée.
+       v20260926d (kimi) : les victimes sont AUSSI retirées de `conversations`
+       (pas seulement de la copie `garde`) — sinon elles revenaient à la
+       sauvegarde suivante (échec en boucle) puis disparaissaient au
+       rechargement. */
+    const victimes = [];
+    let ecritOk = false;
     while (garde.length > 1) {
       const victime = garde
         .map((c, i) => ({ c, i }))
         .filter((x) => !x.c.epingle && x.c.id !== idConversation)
         .sort((a, b) => a.c.maj - b.c.maj)[0];
       if (!victime) break;
+      victimes.push(victime.c.id);
       garde.splice(victime.i, 1);
-      try { ecrire(garde); quotaAverti = false; return; } catch { /* on continue d'élaguer */ }
+      try { ecrire(garde); quotaAverti = false; ecritOk = true; break; } catch { /* on continue d'élaguer */ }
     }
+    if (victimes.length) {
+      conversations = conversations.filter((c) => !victimes.includes(c.id));
+      try { rendreConversations(); } catch { /* DOM pas prêt (sauvegarde précoce) */ }
+    }
+    if (ecritOk) return;
+    /* v20260926d : le bandeau masqué à la main réapparaît à l'échec suivant
+       (son titre le promettait déjà). */
+    const bandeauExistant = document.getElementById('bandeau-stockage');
+    if (bandeauExistant) bandeauExistant.hidden = false;
     if (!quotaAverti) {
       quotaAverti = true;
       try {
@@ -530,7 +546,11 @@ function apercuConversation(c) {
   return (dernier.role === 'user' ? 'Vous : ' : '') + (t.length > 72 ? t.slice(0, 72) + '…' : t);
 }
 function heureCourt(ts) {
-  try { return new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+  /* v20260926d (kimi) : Date invalide ne lève pas — toLocaleTimeString
+     rendrait la chaîne "Invalid Date" dans la sidebar. */
+  const n = Number(ts);
+  if (!Number.isFinite(n)) return '';
+  try { return new Date(n).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 /* Ordre d'affichage des conversations : épinglées d'abord (tête de liste),
    activité récente au sein de chaque groupe. Source unique partagée par le
@@ -728,6 +748,15 @@ function ouvrirConversation(id) {
 async function supprimerConversation(id) {
   const c = conversations.find((x) => x.id === id);
   if (!c) return;
+  /* v20260926d (kimi) : supprimer la conversation ACTIVE pendant une
+     génération détache le tableau où la réponse en vol est poussée —
+     réponse perdue en silence. On refuse, sans ambiguïté. */
+  if (id === idConversation && occupe) {
+    boiteModale({ titre: 'Génération en cours',
+      message: '« ' + c.titre + ' » reçoit une réponse : attendez la fin (ou stoppez-la) avant de la supprimer.',
+      labelOk: 'OK', info: true }).catch(() => {});
+    return;
+  }
   /* v9.4 : modale sobre au lieu de window.confirm (non stylé, bloquant) */
   if (c.messages.length > 0) {
     const accord = await boiteModale({
@@ -789,6 +818,11 @@ function copierTexte(texte, bouton) {
    attente non bloquante, Escape = annuler, Entrée = confirmer, focus géré. */
 function boiteModale({ titre, message, champ = null, labelOk = 'Confirmer', labelAnnuler = 'Annuler', danger = false, info = false }) {
   return new Promise((resoudre) => {
+    /* v20260926d (kimi) : pile des modales — Escape ne ferme que la DERNIÈRE
+       (avant, deux modales empilées se fermaient d'un coup : stopPropagation
+       ne bloque pas les autres listeners document). */
+    if (!window.__modalesAthena) window.__modalesAthena = [];
+    const precedentFocus = document.activeElement;
     const voile = document.createElement('div');
     voile.className = 'voile-modale';
     voile.setAttribute('role', 'dialog');
@@ -815,7 +849,14 @@ function boiteModale({ titre, message, champ = null, labelOk = 'Confirmer', labe
     actions.className = 'modale-actions';
     const fermer = (ok) => {
       document.removeEventListener('keydown', surTouche);
+      const pile = window.__modalesAthena || [];
+      const idx = pile.indexOf(voile);
+      if (idx >= 0) pile.splice(idx, 1);
       voile.remove();
+      /* v20260926d : le focus revient à l'élément déclencheur. */
+      try {
+        if (precedentFocus && precedentFocus.isConnected && typeof precedentFocus.focus === 'function') precedentFocus.focus();
+      } catch { /* focus optionnel */ }
       resoudre(ok ? (champ !== null ? (input.value.trim() || null) : true) : null);
     };
     if (!info) {
@@ -834,10 +875,23 @@ function boiteModale({ titre, message, champ = null, labelOk = 'Confirmer', labe
     boite.appendChild(actions);
     voile.appendChild(boite);
     voile.addEventListener('mousedown', (e) => { if (e.target === voile) fermer(false); });
+    const piegerTab = (e) => {
+      const focusables = [...voile.querySelectorAll('button, input, [tabindex]')].filter((el) => !el.disabled);
+      if (!focusables.length) return;
+      const premier = focusables[0];
+      const dernier = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === premier) { e.preventDefault(); dernier.focus(); }
+      else if (!e.shiftKey && document.activeElement === dernier) { e.preventDefault(); premier.focus(); }
+    };
     const surTouche = (e) => {
-      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); fermer(false); }
+      /* v20260926d : seule la modale du dessus réagit (pile) + piège Tab. */
+      const pile = window.__modalesAthena || [];
+      if (pile.length && pile[pile.length - 1] !== voile) return;
+      if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); fermer(false); return; }
+      if (e.key === 'Tab') piegerTab(e);
     };
     document.addEventListener('keydown', surTouche);
+    window.__modalesAthena.push(voile);
     document.body.appendChild(voile);
     /* NB : le focus va au champ (ou au bouton) ; Escape/Entrée sont traités
        LOCALEMENT (puis stopPropagation) car stopPropagation empêcherait
@@ -846,6 +900,9 @@ function boiteModale({ titre, message, champ = null, labelOk = 'Confirmer', labe
     const surToucheChamp = (e) => {
       if (e.key === 'Enter') { e.preventDefault(); fermer(true); }
       else if (e.key === 'Escape') { e.preventDefault(); fermer(false); }
+      /* v20260926d : le piège Tab vit aussi ici — ce handler stoppe la
+         propagation, la version document ne verrait jamais Tab sinon. */
+      else if (e.key === 'Tab') piegerTab(e);
       e.stopPropagation(); // pas de raccourci global du chat derrière la modale
     };
     if (input) {
@@ -867,6 +924,9 @@ function boiteModale({ titre, message, champ = null, labelOk = 'Confirmer', labe
 let toastActif = null;
 function notifier(message, action) {
   if (toastActif) toastActif.remove();
+  /* v20260926d (kimi) : appel précoce (avant le rendu du shell) = crash. */
+  const shellEl = document.querySelector('.chat-shell');
+  if (!shellEl) return;
   const t = document.createElement('div');
   t.className = 'toast-notice';
   t.setAttribute('role', 'status');
@@ -886,7 +946,7 @@ function notifier(message, action) {
     });
     t.appendChild(b);
   }
-  document.querySelector('.chat-shell').appendChild(t);
+  shellEl.appendChild(t);
   toastActif = t;
   setTimeout(() => {
     if (!t.isConnected) return;
@@ -1095,9 +1155,10 @@ publierHooks('__atelierImport', { importerConversationsDepuisTexte, importerFich
    (le DOM de la sidebar est reconstruit à chaque rendu). */
 function renommerDepuisLigne(ligne) {
   if (!ligne || ligne.querySelector('.renommer-conversation')) return;
-  const tri = trierPourAffichage(); /* MÊME ordre que le rendu (épinglées d'abord) */
-  const idx = Array.from(listeConversationsEl.querySelectorAll('.convo-ligne')).indexOf(ligne);
-  const c = tri[idx];
+  /* v20260926d (kimi) : retrouver par id (dataset), jamais par index DOM —
+     un index dérive dès que l'ordre change entre rendu et clic. */
+  const ligneId = ligne.dataset ? ligne.dataset.convoId : null;
+  const c = conversations.find((x) => x.id === ligneId);
   if (!c) return;
   const label = ligne.querySelector('.side-item-label');
   if (!label) return;
@@ -1814,9 +1875,14 @@ function markdownInline(texte) {
     // liens [texte](https://…) — http(s) uniquement, jamais de javascript:
     t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, texte2, url) =>
       '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + texte2 + '</a>');
-    // URLs nues -> liens (le modèle sort rarement du [texte](url))
-    t = t.replace(/(^|[\s(])((?:https?:\/\/)[^\s<)]+)/g, (_m, avant, url) =>
-      avant + '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>');
+    // URLs nues -> liens (le modèle sort rarement du [texte](url)), SAUF dans
+    // les <a> déjà générés (v20260926d : une URL dans le texte d'un lien
+    // re-matchait et imbriquait un second <a>).
+    t = t.split(/(<a\s[^>]*>[\s\S]*?<\/a>)/gi).map((frag) => {
+      if (/^<a\s/i.test(frag)) return frag;
+      return frag.replace(/(^|[\s(])((?:https?:\/\/)[^\s<)]+)/g, (_m, avant, url) =>
+        avant + '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>');
+    }).join('');
     t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
     t = t.replace(/(^|[^*\w])\*([^*\n]+)\*(?![\w*])/g, '$1<em>$2</em>');
     return t;
@@ -2366,6 +2432,53 @@ function memoriserTraceActivite(commande, donnees, convoId = idConversation) {
   sauverConversations();
 }
 
+/* v20260926d : tableau pipe minimal (| a | b | + séparateur |---|---|).
+   Cellules en textContent (pas de HTML injecté) ; alignements :---: gérés. */
+function estLigneSeparateurTableau(ligne) {
+  const t = String(ligne || '').trim();
+  if (!t.includes('-')) return false;
+  return /^\|?[\s:|.-]*\|[\s:|.-]*$/.test(t) && !/[^|\s:.-]/.test(t);
+}
+function decouperCellules(ligne) {
+  return String(ligne || '').trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+}
+function construireTableau(lignes, debut) {
+  const entetes = decouperCellules(lignes[debut]);
+  const aligns = decouperCellules(lignes[debut + 1]).map((c) => {
+    const g = c.startsWith(':');
+    const d = c.endsWith(':');
+    return g && d ? 'center' : d ? 'right' : 'left';
+  });
+  const table = document.createElement('table');
+  table.className = 'md-table';
+  const thead = document.createElement('thead');
+  const lr = document.createElement('tr');
+  entetes.forEach((h, k) => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    if (aligns[k] && aligns[k] !== 'left') th.style.textAlign = aligns[k];
+    lr.appendChild(th);
+  });
+  thead.appendChild(lr);
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  let i = debut + 2;
+  while (i < lignes.length && lignes[i].includes('|') && lignes[i].trim()) {
+    const cels = decouperCellules(lignes[i]);
+    const tr = document.createElement('tr');
+    cels.forEach((c, k) => {
+      const td = document.createElement('td');
+      td.textContent = c;
+      if (aligns[k] && aligns[k] !== 'left') td.style.textAlign = aligns[k];
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+    i++;
+  }
+  table.appendChild(tbody);
+  return { el: table, fin: i };
+}
+
 /* Analyse bloc par bloc (ligne à ligne) ; retourne un DocumentFragment. */
 function markdownVersFragment(texte) {
   const fragment = document.createDocumentFragment();
@@ -2400,6 +2513,15 @@ function markdownVersFragment(texte) {
       } else {
         fragment.appendChild(creerBlocCode(langage, corps.join('\n')));
       }
+      continue;
+    }
+    /* v20260926d (kimi) : tableaux pipe — le commentaire les promettait, le
+       rendu les crachait en paragraphes bruts. */
+    if (ligne.includes('|') && i + 1 < lignes.length && estLigneSeparateurTableau(lignes[i + 1])) {
+      viderParagraphe();
+      const tab = construireTableau(lignes, i);
+      fragment.appendChild(tab.el);
+      i = tab.fin;
       continue;
     }
     if (!ligne.trim()) { viderParagraphe(); i++; continue; }
@@ -2651,6 +2773,9 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
     const cible = String(texteFinal || '');
     if (!cible || recu) return;
     recu = true;
+    /* v20260926d (kimi) : un flush différé pouvait écraser la frappe
+       progressive avec l'ancien acumulé. */
+    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
     zone.hidden = false;
     let i = 0;
     while (i < cible.length) {
@@ -2702,15 +2827,16 @@ function preparerHistorique(messages) {
 
 /* ---------- Sonde de santé rapide (v9.4 : utilisée entre les réessais) ---------- */
 async function etatService() {
+  /* v20260926d (kimi) : le timer survivait sur le chemin d'exception. */
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 3000);
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 3000);
     const r = await fetch('/api/chat', { cache: 'no-store', signal: ctrl.signal });
-    clearTimeout(t);
     if (!r.ok) return { up: false, pret: false };
     const d = await r.json();
     return { up: true, pret: Boolean(d.modele_charge) };
   } catch { return { up: false, pret: false }; }
+  finally { clearTimeout(t); }
 }
 
 /* v9.4 / v10.6 (F20) — erreurs serveur HUMANISÉES. L'ancien ordre renvoyait
@@ -2755,7 +2881,14 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
   let cause = 'inconnue';
   for (let essai = 0; essai < 3; essai++) {
     if (essai > 0) {
-      await new Promise((res) => setTimeout(res, 8000));
+      /* v20260926d (kimi) : l'attente de 8 s était sourde au Stop — l'UI
+         restait « occupée » jusqu'au bout. Race avec le signal d'abort. */
+      await new Promise((res) => {
+        if (signal && signal.aborted) { res(); return; }
+        const t = setTimeout(() => { if (signal) signal.removeEventListener('abort', annuler); res(); }, 8000);
+        const annuler = () => { clearTimeout(t); res(); };
+        if (signal) signal.addEventListener('abort', annuler, { once: true });
+      });
       if (signal && signal.aborted) throw new DOMException('Abandon', 'AbortError');
       const sante = await etatService();
       if (!sante.up) cause = 'injoignable';
@@ -2856,7 +2989,9 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
       if (final) {
         /* v10.9.4 (HUD) : repli discret si le modèle choisi n'a pas répondu */
         if (final.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
-        return { ok: true, reponse: final.reponse || '(réponse vide)', outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus };
+        /* v20260926d : final PARTIEL (reponse null) — pas de '(réponse vide)'
+           ici, genererReponse reprend la frappe déjà diffusée. */
+        return { ok: true, reponse: final.reponse || (final.partiel ? '' : '(réponse vide)'), outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus, partiel: Boolean(final.partiel) };
       }
       return { ok: false, erreur: 'Le flux de raisonnement a été interrompu avant la réponse — renvoyez votre message.' };
     }
@@ -3107,9 +3242,12 @@ let controleurEnCours = null;
    (fetch, lecteurs de flux) dont certaines n'ont plus de consommateur au
    moment de l'abort — AbortError bénin (l'interruption elle-même est gérée
    et affichée), jamais un crash : on l'absorbe pour ne pas polluer la
-   console. Tout autre rejet non géré remonte normalement. */
+   console. v20260926d (kimi) : ciblé aux générations + 5 s après un stop —
+   tout autre rejet remonte normalement. */
+let dernierStop = 0;
 window.addEventListener('unhandledrejection', (e) => {
-  if (e && e.reason && e.reason.name === 'AbortError') e.preventDefault();
+  if (e && e.reason && e.reason.name === 'AbortError'
+    && (occupe || Date.now() - dernierStop < 5000)) e.preventDefault();
 });
 const CLE_SAISIES = 'chat-saisies';
 let saisies = chargerStockage(CLE_SAISIES, []);
@@ -3271,12 +3409,7 @@ async function genererReponse(convo) {
         if (rangeePensee) rangeePensee.remove();
         bulle('assistant', 'Génération interrompue.');
       }
-  controleurEnCours = null;
-  /* v20260926b (direct) : chemin tamponné (aucun jeton) — on révèle le texte
-     final en machine à écrire plutôt que de l'afficher d'un bloc. */
-  if (r && r.ok && !r.jetonsRecus && vueOuverte()) {
-    try { await diffusion.reveler(r.reponse); } catch (e) { /* rendu final direct */ }
-  }
+      controleurEnCours = null;
       occupe = false;
       majBoutonArret();
       majBouton();
@@ -3286,6 +3419,18 @@ async function genererReponse(convo) {
     r = { ok: false, erreur: 'Erreur inattendue.' };
   }
   controleurEnCours = null;
+  /* v20260926d (kimi) : final PARTIEL (cascade stoppée côté shim pour ne pas
+     doublonner) — la frappe déjà affichée devient la réponse, marquée. */
+  if (r && r.ok && r.partiel) {
+    const textePartiel = (r.reponse && r.reponse.trim()) ? r.reponse : diffusion.texte();
+    r.reponse = (textePartiel || '(réponse vide)') + '\n\n[…réponse interrompue en cours de frappe — début conservé tel quel…]';
+  }
+  /* v20260926b (direct) : chemin tamponné (aucun jeton reçu) — on révèle le
+     texte final en machine à écrire plutôt que de l'afficher d'un bloc.
+     Placé APRÈS le try/catch : ici r porte la réponse (jamais dans le catch). */
+  if (r && r.ok && !r.jetonsRecus && vueOuverte()) {
+    try { await diffusion.reveler(r.reponse); } catch (e) { /* rendu final direct */ }
+  }
   /* v7.1.1 : si le panneau vivant n'a reçu AUCUN événement (repli JSON,
      flux coupé avant la 1re étape) mais que la réponse finale porte des
      étapes, on les utilise quand même */
@@ -3400,6 +3545,7 @@ $('form').addEventListener('submit', (e) => {
   e.preventDefault();
   if (occupe) {
     if (controleurEnCours) controleurEnCours.abort();
+    dernierStop = Date.now();
     return;
   }
   envoyer();

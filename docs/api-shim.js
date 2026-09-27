@@ -33,9 +33,15 @@
     if (EFFORTS_HUD.indexOf(v) < 0) v = 'max';
     var admis = (entry && entry.efforts) || EFFORTS_HUD;
     if (admis.indexOf(v) >= 0) return v;
+    /* v20260926d (kimi) : repli vers l'échelon admis le plus PROCHE, en
+       descendant d'abord (jamais au-dessus du choix sauf impasse). */
     var i = EFFORTS_HUD.indexOf(v);
-    while (i > 0 && admis.indexOf(EFFORTS_HUD[i - 1]) < 0) i -= 1;
-    return admis.indexOf(EFFORTS_HUD[i]) >= 0 ? EFFORTS_HUD[i] : admis[0];
+    var j = i;
+    while (j > 0 && admis.indexOf(EFFORTS_HUD[j - 1]) < 0) j -= 1;
+    if (admis.indexOf(EFFORTS_HUD[j]) >= 0) return EFFORTS_HUD[j];
+    j = i;
+    while (j < EFFORTS_HUD.length - 1 && admis.indexOf(EFFORTS_HUD[j + 1]) < 0) j += 1;
+    return admis.indexOf(EFFORTS_HUD[j]) >= 0 ? EFFORTS_HUD[j] : admis[0];
   }
 
   var PROVIDERS = {
@@ -186,8 +192,23 @@
      chaîne est "lisible" (≤300 car., sans HTML/JSON/traceback) ET si le
      status est <500. On sanitisée donc et on renvoie 400 (pas 502) pour
      que l'utilisateur voie la VRAIE raison (429, timeout, CORS, quota…). */
+  /* v20260926d (kimi) : un provider pourrait renvoyer la clé API dans un
+     corps d'erreur — purge systématique avant tout affichage ou stockage. */
+  function purgerCles(texte) {
+    var t = String(texte || '');
+    if (!t) return t;
+    try {
+      Object.keys(PROVIDERS).forEach(function (pk) {
+        var k = '';
+        try { k = keyFor(pk); } catch (e) { k = ''; }
+        if (k && k.length > 8) t = t.split(k).join('[clé masquée]');
+      });
+    } catch (e) {}
+    return t;
+  }
+
   function detailAffichable(msg) {
-    var t = String(msg || 'erreur inconnue')
+    var t = purgerCles(String(msg || 'erreur inconnue'))
       .replace(/[\{\}<>]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
@@ -242,7 +263,7 @@
       try { d = JSON.parse(t); } catch (e) { d = null; }
       if (!r.ok) {
         var m = (d && d.error && d.error.message) || t.slice(0, 80) || ('HTTP ' + r.status);
-        DYN = { ts: Date.now(), models: [], err: r.status + ' ' + m };
+        DYN = { ts: Date.now(), models: [], err: purgerCles(r.status + ' ' + m) };
         return;
       }
       var ids = (d && Array.isArray(d.data) ? d.data : [])
@@ -257,7 +278,7 @@
         }),
       };
     } catch (e) {
-      DYN = { ts: Date.now(), models: [], err: String((e && e.message) || e).slice(0, 80) };
+      DYN = { ts: Date.now(), models: [], err: purgerCles(String((e && e.message) || e)).slice(0, 80) };
     }
   }
 
@@ -377,6 +398,10 @@
         if ('targetAddressSpace' in reqObj) reqObj.targetAddressSpace = 'loopback';
         var r = await appelBorne(realFetch(reqObj), 25000);
       } catch (eReq) {
+        /* v20260926d (kimi) : un abort utilisateur ne doit pas déclencher
+           le second essai — il se propage (le catch externe le laisse passer
+           aussi, pas de 503 sur un stop volontaire). */
+        if (eReq && eReq.name === 'AbortError') throw eReq;
         var r = await appelBorne(realFetch(LOCAL_AGENT + '/exec', reqInit), 25000);
       }
       var t = await r.text();
@@ -385,6 +410,7 @@
       if (!d) return json({ erreur: 'agent local : réponse illisible' }, 502);
       return json(d, r.status || 200);
     } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
       return json({
         erreur: 'Agent local injoignable ou Local Network bloqué — démarrez node mini-services/local-agent/index.js, puis autorisez le site (⋮ → Local Network → Allow).',
         detail: String((e && e.message) || e).slice(0, 160),
@@ -435,6 +461,7 @@
           headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
         });
       } catch (e) {
+        if (e && e.name === 'AbortError') throw e;
         return json({
           erreur: msgAgentJoint,
           detail: String((e && e.message) || e).slice(0, 160),
@@ -465,6 +492,7 @@
         if ('targetAddressSpace' in reqObj) reqObj.targetAddressSpace = 'loopback';
         r = await appelBorne(realFetch(reqObj), 25000);
       } catch (eReq) {
+        if (eReq && eReq.name === 'AbortError') throw eReq;
         r = await appelBorne(realFetch(LOCAL_AGENT + '/write', reqInit), 25000);
       }
       var t = await r.text();
@@ -473,6 +501,7 @@
       if (!d) return json({ erreur: 'agent local : réponse illisible' }, 502);
       return json(d, r.status || 200);
     } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
       return json({
         erreur: 'Agent local injoignable ou Local Network bloqué — démarrez node mini-services/local-agent/index.js, puis autorisez le site (⋮ → Local Network → Allow).',
         detail: String((e && e.message) || e).slice(0, 160),
@@ -599,12 +628,19 @@
       var dernierEnvoi = 0;
       var fini = false;
       var emis = false;
+      /* v20260926d (kimi) : sans [DONE] ni finish_reason, une fin de flux
+         propre reste une COUPURE — le partiel ne passe pas pour du complet. */
+      var vuFin = false;
       /* v20260926b (direct) : curseurs des JETONS (texte nouveau depuis le
          dernier envoi) — l'UI affiche la réponse et le raisonnement AU FUR
          ET À MESURE au lieu d'attendre le bloc final. */
       var emisJetonContenu = 0;
       var emisJetonPensee = 0;
-      var dernierJeton = 0;
+      /* v20260926d (kimi) : curseurs de temps SÉPARÉS par canal — un flux de
+         raisonnement actif ne doit pas vider l'autre canal caractère par
+         caractère (ni le bloquer sous le seuil). */
+      var dernierJetonPensee = 0;
+      var dernierJetonContenu = 0;
 
       function tranche(txt, dep) {
         var s = txt.slice(dep);
@@ -643,15 +679,15 @@
         var maintenant = Date.now();
         var np = pensee.length - emisJetonPensee;
         var nc = contenu.length - emisJetonContenu;
-        if (np > 0 && (np >= 24 || maintenant - dernierJeton > 150)) {
+        if (np > 0 && (np >= 24 || maintenant - dernierJetonPensee > 150)) {
           onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
           emisJetonPensee = pensee.length;
-          dernierJeton = maintenant;
+          dernierJetonPensee = maintenant;
         }
-        if (nc > 0 && (nc >= 24 || maintenant - dernierJeton > 150)) {
+        if (nc > 0 && (nc >= 24 || maintenant - dernierJetonContenu > 150)) {
           onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
           emisJetonContenu = contenu.length;
-          dernierJeton = maintenant;
+          dernierJetonContenu = maintenant;
         }
       }
 
@@ -667,7 +703,7 @@
             if (ligne.charAt(0) === '\r') ligne = ligne.slice(1);
             if (ligne.indexOf('data:') !== 0) continue;
             var donnees = ligne.slice(5).replace(/^ /, '');
-            if (donnees === '[DONE]') { fini = true; break; }
+            if (donnees === '[DONE]') { fini = true; vuFin = true; break; }
             var d = null;
             try { d = JSON.parse(donnees); } catch (e) { continue; }
             if (d && d.error) {
@@ -677,6 +713,7 @@
             }
             var ch = d && d.choices && d.choices[0];
             var delta = (ch && ch.delta) || {};
+            if (ch && ch.finish_reason) vuFin = true;
             if (typeof delta.reasoning_content === 'string') pensee += delta.reasoning_content;
             else if (typeof delta.reasoning === 'string') pensee += delta.reasoning;
             if (typeof delta.content === 'string') contenu += delta.content;
@@ -696,11 +733,15 @@
       var txt = contenu;
       if (!String(txt).trim()) txt = pensee;
       if (!String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
-      /* v20260926b (direct) : reliquat de jetons — tout le texte nouveau part
-         avant le final pour que l'UI n'ait rien à deviner. */
+      /* v20260926d (kimi) : reliquat de jetons PUIS contrôle de fin. */
       if (onDelta) {
         if (pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
         if (contenu.length > emisJetonContenu) onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
+      }
+      if (!vuFin) {
+        var eCoup = new Error(entry.provider + ' : flux terminé sans marqueur de fin');
+        eCoup.partiel = true;
+        throw eCoup;
       }
       return String(txt);
     }
@@ -822,7 +863,10 @@
       var morceaux = [];
       for (var ip = 0; ip < attachments.length; ip++) {
         var att = attachments[ip] || {};
-        var nom = att.name || att.filename || att.file_id || 'fichier';
+        /* v20260926d (kimi) : le nom part dans le prompt — sauts de ligne
+           neutralisés (faux délimiteurs) + borne de longueur. */
+        var nom = String(att.name || att.filename || att.file_id || 'fichier')
+          .replace(/[\r\n\t]+/g, ' ').trim().slice(0, 120) || 'fichier';
         var contenuAtt = typeof att.contenu === 'string' ? att.contenu : '';
         var enTete = '--- Pièce jointe : ' + nom;
         if (restant <= 0) {
@@ -947,10 +991,10 @@
           try {
             /* v20260926b (direct) : en flux, la borne porte sur la durée
                TOTALE (l'inactivité est déjà bornée à 120 s/chunk dans
-               lireSSE) — 300 s minimum pour laisser les longues frappes
-               aboutir, comme nvidia. */
+               lireSSE) — 600 s pour laisser les très longs raisonnements
+               (kimi-k3 « max ») aboutir, comme nvidia. */
             var borne = bornePour(entry);
-            if (p && p.sse && borne < 300000) borne = 300000;
+            if (p && p.sse && borne < 600000) borne = 600000;
             var texte = await appelBorne(callModel(entry, messages, signal, onDelta), borne);
             var fin = assembler(entry, texte);
             emit({ type: 'progress', etape: 'generation', message: 'Réponse générée via ' + fin.nomVoie });
@@ -971,6 +1015,16 @@
           } catch (e2) {
             if (e2 && e2.name === 'AbortError') {
               try { ctrl.error(e2); } catch (e3) {}
+              return;
+            }
+            /* v20260926d (kimi) : des jetons sont déjà partis vers l'UI —
+               on NE cascade PAS vers le modèle suivant (sinon texte A +
+               texte B doublonnés) : final partiel, l'UI conserve la frappe. */
+            if (e2 && e2.partiel) {
+              emit({ type: 'final', reponse: null, partiel: true, outil: null,
+                correction: false, verification: null, rag: null, tache: null,
+                conversation_id: null, raisonnement: null, modele_repli: false });
+              try { ctrl.close(); } catch (e4) {}
               return;
             }
             err = e2;
@@ -1076,7 +1130,9 @@
       if (url.indexOf('/api/') === -1 && url.indexOf('/chat-attache') === -1) return realFetch(input, init);
       if (/^https?:\/\//.test(url)) return realFetch(input, init);
     }
-    if (/^\/(api\/|chat-attache)/.test(url)) return handleApi(url, input, init || {});
+    /* v20260926d (kimi) : le préfixe doit être suivi de /, ? ou fin de
+       chaîne — '/chat-attachements' n'est pas une route. */
+    if (/^\/(api([\/\?]|$)|chat-attache([\/\?]|$))/.test(url)) return handleApi(url, input, init || {});
     return realFetch(input, init);
   };
 })();

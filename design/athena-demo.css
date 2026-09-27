@@ -3690,3 +3690,27 @@ details.trace-cmd.echec .trace-cmd-status {
   opacity: 0.55;
   cursor: default;
 }
+/* v20260926d (kimi) : tableaux pipe rendus en vrai <table>. */
+.md-table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 0.85rem;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto;
+}
+.md-table th,
+.md-table td {
+  border: 1px solid #3a3a3a;
+  padding: 5px 10px;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+}
+.md-table thead th {
+  background: #161616;
+  font-weight: 600;
+}
+.md-table tbody tr:nth-child(even) td {
+  background: #101010;
+}

@@ -27,6 +27,9 @@ from pydantic import BaseModel, Field  # noqa: E402
 
 import uuid  # noqa: E402
 
+# v20260926d (kimi) : plafond d'ingestion (protection RAM du sidecar).
+MAX_OCTETS_INGEST = 25 * 1024 * 1024
+
 from athena import __version__  # noqa: E402
 from athena.agent import skills as skill_reg  # noqa: E402 — enregistre les skills
 from athena.agent.agent import run_agent  # noqa: E402
@@ -108,7 +111,14 @@ def telemetrie() -> dict:
 @app.post("/chat")
 def chat(req: RequeteChat) -> dict:
     try:
-        max_etapes = int(req.options.get("max_etapes", 14))
+        # v20260926d (kimi) : max_etapes borné et parsé sans exception — un
+        # client ne peut ni crasher la route (ValueError → 500) ni gonfler
+        # la boucle agent.
+        try:
+            max_etapes = int(req.options.get("max_etapes", 14))
+        except (TypeError, ValueError):
+            max_etapes = 14
+        max_etapes = max(1, min(32, max_etapes))
         mode = req.options.get("mode", "auto")
         historique = [{"role": m.role, "contenu": m.contenu} for m in req.historique][:20]
         pieces = [{"file_id": p.file_id, "name": p.name} for p in req.attachments][:10]
@@ -215,6 +225,9 @@ def contenu_fichier(file_id: str) -> Response:
         raise HTTPException(404, "fichier introuvable")
     rec = memoire.lire_fichier(file_id)
     nom = (rec or {}).get("nom") or f"{file_id}.txt"
+    # v20260926d (kimi) : le nom vient de l'upload — guillemets, CRLF et
+    # antislashs neutralisés (injection d'en-tête), longueur bornée.
+    nom = str(nom).replace('"', "_").replace("\r", " ").replace("\n", " ").replace("\\", "_").strip().strip(".")[:120] or f"{file_id}.txt"
     return Response(
         content=texte,
         media_type="text/plain; charset=utf-8",
@@ -233,7 +246,19 @@ def purger_fichier(file_id: str) -> dict:
 
 @app.post("/files/ingest")
 async def ingest(fichier: UploadFile = File(...)) -> dict:
-    octets = await fichier.read()
+    # v20260926d (kimi) : lecture par blocs plafonnée — un upload géant ne
+    # doit pas épuiser la RAM du sidecar d'un coup.
+    morceaux: list[bytes] = []
+    total = 0
+    while True:
+        bloc = await fichier.read(1024 * 1024)
+        if not bloc:
+            break
+        total += len(bloc)
+        if total > MAX_OCTETS_INGEST:
+            raise HTTPException(413, "fichier trop volumineux (limite 25 Mo)")
+        morceaux.append(bloc)
+    octets = b"".join(morceaux)
     if not octets:
         raise HTTPException(400, "fichier vide")
     resultat = tfiles.ingester(fichier.filename or "fichier", octets)
