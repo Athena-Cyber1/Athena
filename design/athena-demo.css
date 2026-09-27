@@ -95,6 +95,9 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* v20260926i : la pile s'applique aussi hors .page-demo (modales,
+     voiles) — avant : Times New Roman par défaut du navigateur. */
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
 }
 
 /* v20260926h : Inter auto-hébergée — les @font-face sont dans le <head>
@@ -683,7 +686,8 @@ a:hover {
   gap: 12px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--bord);
-  background: var(--heros);
+  /* v20260926i : fond transparent (demande UI). */
+  background: transparent;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -3760,4 +3764,76 @@ details.trace-cmd.echec .trace-cmd-status {
 .setting-champ:focus {
   outline: 2px solid var(--primaire-doux);
   border-color: var(--primaire);
+}
+
+/* ============ v20260926i (UI) : métriques demandées ============ */
+/* Inter dans TOUTE l'UI, y compris le markdown (fini le serif). */
+.md {
+  font-family: "Inter", var(--font-geist-sans, system-ui), -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
+}
+/* Émojis style Twemoji (proche macOS) au lieu des émojis système. */
+.bubble img.emoji,
+.md img.emoji {
+  height: 1.2em;
+  width: 1.2em;
+  vertical-align: -0.2em;
+  margin: 0 0.05em;
+}
+@media (min-width: 721px) {
+  .row.user {
+    max-width: 736px;
+  }
+  .row.bot .bubble,
+  .row.user .bubble,
+  .bubble {
+    max-width: 736px;
+  }
+  .composeur-carte {
+    max-width: 744px;
+  }
+  .composeur-pied {
+    max-width: 744px;
+    box-sizing: border-box;
+  }
+  /* v20260926i : .chat-tete transparent (des règles plus spécifiques
+     remettaient un fond opaque plus bas dans la cascade). */
+  .chat-tete {
+    background: transparent;
+  }
+}
+/* Compositeur : départ 44 px, +24 px par ligne (line-height 24), plafond
+   424 px avec scroll interne. Miroir aligné au pixel près. */
+.saisie,
+.saisie-mirror {
+  font-size: 1rem;
+  line-height: 24px;
+  /* v20260926i : 10 px haut + 0 bas + ligne 24 = 34 de champ ; +8 de carte
+     +2 de bordure = 44 px pile au départ, +24/ligne ensuite. */
+  padding: 10px 4px 0;
+}
+.saisie {
+  min-height: 24px;
+  max-height: 424px;
+  field-sizing: content;
+  overflow-y: auto;
+}
+.saisie-mirror {
+  max-height: 424px;
+  overflow: hidden;
+}
+.composeur-carte {
+  min-height: 44px;
+  height: auto;
+  max-height: none;
+}
+/* v20260926i : la zone et le miroir suivent la croissance — le groupe
+   .saisie-zone/.saisie-mirror/.saisie les figeait à 35-40 px (blocage
+   constaté : textarea à 262 px dans une carte à 45 px). */
+.saisie-zone {
+  height: auto;
+  max-height: none;
+  align-items: flex-start;
+}
+.saisie-mirror {
+  height: auto;
 }

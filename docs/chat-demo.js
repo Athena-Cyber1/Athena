@@ -3290,6 +3290,10 @@ function defilerSiBas() {
     defilRaf = 0;
     try {
       if (presDuBas()) msgsEl.scrollTop = msgsEl.scrollHeight;
+      /* v20260926i : la pastille « Nouvelle réponse » doit VRAIMENT
+         apparaître quand l'utilisateur a remonté pendant un stream
+         (avant : rien ne l'actualisait hors ajout de rangée). */
+      else majPastilleReponse();
     } catch {}
   });
 }
@@ -3385,6 +3389,26 @@ function actionMessage(contenu, role) {
   return actions;
 }
 
+/* v20260926i : émojis style Twemoji (proche macOS) au lieu des émojis
+   système (Microsoft sur Windows). Lib auto-hébergée (vendor/) ; images
+   CDN avec repli gracieux (l'attribut alt garde l'émoji si hors-ligne).
+   Jamais dans le code (pre) : la coloration syntaxique resterait lisible. */
+const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+function emojiser(racine) {
+  try {
+    if (!racine || !window.twemoji || typeof window.twemoji.parse !== 'function') return;
+    if (racine.matches && (racine.matches('.bubble') || racine.matches('.md'))) {
+      if (!racine.querySelector('pre')) {
+        try { window.twemoji.parse(racine, { base: TWEMOJI_BASE }); } catch {}
+        return;
+      }
+    }
+    racine.querySelectorAll('p, li, h1, h2, h3, blockquote, td, th').forEach((el) => {
+      if (el.closest('pre')) return;
+      try { window.twemoji.parse(el, { base: TWEMOJI_BASE }); } catch {}
+    });
+  } catch {}
+}
 /* ---------- Rendu des messages ---------- */
 /* v20260926e : options.actions === false → pas de .message-actions (bulle de
    réflexion : les actions n'apparaissent qu'une fois la réponse FINIE). */
@@ -3457,6 +3481,7 @@ function bulle(role, contenu, outil, meta, options) {
   row.appendChild(b);
   if (!options || options.actions !== false) row.appendChild(actionMessage(contenu, role));
   msgsEl.appendChild(row);
+  emojiser(b);
   return b;
 }
 /* Écran d'accueil : la fonction avait été vidée (centre vide à l'ouverture)
@@ -3796,8 +3821,16 @@ function majMirrorSaisie() {
 }
 function ajusterSaisie() {
   majMirrorSaisie();
-  saisieEl.style.height = '40px';
-  saisieEl.style.overflowY = 'hidden';
+  /* v20260926i : 44 px de départ (min-height carte), +24 px/ligne jusqu'à
+     ~424 px puis scroll interne. Mesure explicite (scrollHeight) : robuste
+     partout, sans dépendre de field-sizing. */
+  saisieEl.style.height = 'auto';
+  /* v20260926i : boîte content-box (+10 px de padding) — on vise 24 de
+     contenu (34 de champ, 44 de carte), +24/ligne, plafond 404 (414 de
+     champ, 424 de carte). */
+  const h = Math.min(404, Math.max(24, saisieEl.scrollHeight - 10));
+  saisieEl.style.height = h + 'px';
+  saisieEl.style.overflowY = saisieEl.scrollHeight > h + 1 ? 'auto' : 'hidden';
   if (saisieMirrorEl) saisieMirrorEl.scrollTop = 0;
 }
 const MAX_SAISIE = 4000;

@@ -27,4 +27,6 @@ copy("docs/index.html", "public/_index.html");
 copy("docs/fonts/inter-400.woff2", "public/fonts/inter-400.woff2");
 copy("docs/fonts/inter-500.woff2", "public/fonts/inter-500.woff2");
 copy("docs/fonts/inter-700.woff2", "public/fonts/inter-700.woff2");
+/* v20260926i : Twemoji auto-hébergé (émojis proches macOS). */
+copy("docs/vendor/twemoji.min.js", "public/vendor/twemoji.min.js");
 console.log("prepared generated assets");
