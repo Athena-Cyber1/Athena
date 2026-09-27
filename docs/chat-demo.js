@@ -701,6 +701,9 @@ function majRechercheConversations() {
   if (conversations.length < 2) {
     rechercheConversationsEl.hidden = true;
     if (rechercheConversationsEl.value) rechercheConversationsEl.value = '';
+    /* v20260926o (audit) : sans champ, la rangée (loupe seule) n'a aucun
+       sens — on la referme. */
+    document.querySelector('.side-recherche')?.classList.remove('ouverte');
   } else {
     rechercheConversationsEl.hidden = false;
   }

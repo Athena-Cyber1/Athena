@@ -266,15 +266,30 @@ a:hover {
   display: flex;
   gap: 6px;
   align-items: center;
+  /* v20260926o (kimi) : la loupe suit le thème via mask (avant : stroke
+     #888 en dur, invisible sur fond sombre comme clair). */
+  position: relative;
+}
+.side-recherche::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+  background-color: var(--texte-doux);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  pointer-events: none;
 }
 .recherche {
   flex: 1 1 auto;
   min-width: 0;
   border: 1px solid var(--bord);
   background-color: var(--carte-doux);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.6-3.6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: 10px 50%;
   border-radius: 10px;
   padding: 6px 10px 6px 31px;
   font-size: 0.8rem;
@@ -495,6 +510,7 @@ a:hover {
 .side-section {
   flex: 0 0 auto;
   max-height: 30%;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -609,6 +625,9 @@ a:hover {
   bottom: calc(100% + 8px);
   left: 0;
   right: 0;
+  /* v20260926o (kimi) : jamais plus haut que le viewport sur petit écran. */
+  max-height: 60dvh;
+  overflow-y: auto;
   background: var(--carte);
   border: 1px solid var(--bord-fort);
   border-radius: var(--rayon);
@@ -929,6 +948,11 @@ button.dot:focus-visible,
   text-transform: uppercase;
   color: #9e9e9e;
   font-family: var(--mono);
+  /* v20260926o (kimi) : un langage long ne passe plus sous les boutons. */
+  max-width: calc(100% - 110px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .code-copier {
   position: absolute;
@@ -1890,6 +1914,9 @@ span.think:not(details .think) {
   padding: 22px;
   box-shadow: var(--ombre);
   animation: apparait 0.18s ease;
+  /* v20260926o (kimi) : sur petit écran les actions sortaient du viewport. */
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
 }
 .modale h3 {
   margin: 0 0 8px;
@@ -2130,6 +2157,11 @@ span.think:not(details .think) {
     display: none !important;
   }
   .msgs {
+    overflow: visible;
+  }
+  /* v20260926o (kimi) : sans ça, le contenu au-delà d'une page est coupé. */
+  .page-demo {
+    height: auto;
     overflow: visible;
   }
 }
@@ -3563,7 +3595,9 @@ details.trace-cmd.echec .trace-cmd-status {
 @media (prefers-reduced-motion: reduce) {
   .thinking i,
   .diffusion-curseur,
-  details.raisonnement.vivant .think::before {
+  details.raisonnement.vivant .think::before,
+  .btn-envoyer.en-cours,
+  .dot {
     animation: none;
   }
   .thinking i {
@@ -3574,8 +3608,15 @@ details.trace-cmd.echec .trace-cmd-status {
   .voile-modale .modale,
   .toast-notice,
   .hud-fichier,
-  .menu-compte {
+  .menu-compte,
+  .btn-nouvelle,
+  .settings-tabs .settings-tab,
+  input[type="checkbox"] {
     animation: none;
+    transition: none;
+  }
+  .msgs {
+    scroll-behavior: auto;
   }
 }
 .exec-terminal {
@@ -3734,11 +3775,15 @@ details.trace-cmd.echec .trace-cmd-status {
   border-color: var(--primaire);
 }
 /* v20260926m : PAS de ligne sous le header (demande UI) — ni bordure,
-   ni couleur de bordure résiduelle des surcharges. */
+   ni couleur de bordure résiduelle des surcharges.
+   v20260926o (kimi) : le défilement restait lisible sous le fond
+   transparent — flou léger, toujours transparent. */
 header.chat-tete {
   background: transparent;
   border-bottom: none;
   border-bottom-color: transparent;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 /* v20260926k (HUD fichier) : panneau latéral droit UNIFORME — ouvert au
    clic sur une carte, largeur réglable à la souris (persistée). */
@@ -4036,7 +4081,13 @@ html[data-theme="light"] .sidebar {
   border-right-color: var(--bord-fort);
 }
 /* v20260926m : audit blanc-sur-blanc — icônes et textes codés clairs en
-   dur, invisibles sur fond blanc. */
+   dur, invisibles sur fond blanc.
+   v20260926n-3 : survols à fond sombre = texte clair imposé aussi. */
+html[data-theme="light"] .btn-nouvelle:hover {
+  background: #e2e2e2;
+  color: #111111;
+  border-color: transparent;
+}
 html[data-theme="light"] .md pre {
   color: #171717;
 }
@@ -4092,6 +4143,12 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 }
 html[data-theme="light"] .code-copier {
   color: #333333;
+}
+/* v20260926o : champ de recherche resté sombre en thème clair. */
+html[data-theme="light"] .recherche {
+  background-color: #ffffff;
+  border-color: var(--bord-fort);
+  color: #171717;
 }
 /* v20260926n-2 : pastille + des boutons et icône du groupe d'activité —
    disque sombre et icône claire invisibles sur fond blanc. */
@@ -4356,6 +4413,21 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   color: #111111;
 }
 
+/* v20260926o (kimi) : tactile sans hover — les actions des conversations
+   restent accessibles (avant : invisibles, opacity 0). */
+@media (hover: none) {
+  .convo-renommer,
+  .convo-export,
+  .convo-suppr,
+  .convo-epingle,
+  .projet-desepingle {
+    opacity: 1;
+  }
+}
+/* v20260926o (kimi) : compteur au-dessus des chips de pièces jointes. */
+.compteur-saisie {
+  top: -28px;
+}
 /* ============ v20260926n : sidebar compacte et uniforme ============
    L'espace libre vit dans la liste des discussions (flex:1) — le reste
    est resserré : marque, bouton, nav, section projets et pied. */
