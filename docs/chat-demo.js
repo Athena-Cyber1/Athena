@@ -4333,7 +4333,13 @@ try {
   if (brut && typeof brut.id === 'string' && brut.id !== 'auto'
       && /^[A-Za-z0-9._:/\-]+$/.test(brut.id) && brut.id.length <= 120
       && typeof brut.name === 'string') {
-    modeleChoisi = { id: brut.id, name: brut.name.slice(0, 80) };
+    /* v20260928 : tokenrouter retiré (quota épuisé) — un vieux choix
+       mémorisé ne doit plus être rejoué (403 à chaque message). */
+    if (!brut.id.startsWith('tokenrouter:')) {
+      modeleChoisi = { id: brut.id, name: brut.name.slice(0, 80) };
+    } else {
+      try { localStorage.removeItem(CLE_MODELE); } catch {}
+    }
   }
 } catch { /* stockage optionnel — « auto » par défaut */ }
 
