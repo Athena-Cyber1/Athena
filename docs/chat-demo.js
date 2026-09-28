@@ -269,8 +269,9 @@ function endpointChat() {
   return '/api/chat';
 }
 /* v20260926a (pièces jointes) : borne de lecture NAVIGATEUR (le serveur a sa
-   propre borne de découpage/indexation). */
-const MAX_CONTENU_JOINT = 200000;
+   propre borne de découpage/indexation). Au-delà, on lit le DÉBUT seul avec
+   mention de troncature — jamais de « trop volumineux » sec pour un texte. */
+const MAX_CONTENU_JOINT = 1000000;
 const MAX_PIECES = 10;
 /* Lecture texte : on ne garde que ce qui ressemble vraiment à du texte — un
    PNG/PDF/DOCX décodé en UTF-8 contient des octets de contrôle et est rejeté. */
@@ -294,11 +295,15 @@ function compteOctetsDeControle(texte) {
   return mauvais;
 }
 async function lireTexteSiPossible(fichier) {
-  if (!fichier || fichier.size <= 0 || fichier.size > MAX_CONTENU_JOINT) return null;
-  const texte = await lectureTexte(fichier);
+  if (!fichier || fichier.size <= 0) return null;
+  /* v1.2 (audit) : un texte de 219 Ko n'est ni « binaire » ni « trop
+     volumineux » — on lit le début (1 Mo) avec mention, au lieu de null. */
+  const tronque = fichier.size > MAX_CONTENU_JOINT;
+  const source = tronque && typeof fichier.slice === 'function' ? fichier.slice(0, MAX_CONTENU_JOINT) : fichier;
+  const texte = await lectureTexte(source);
   if (texte == null || !texte.length) return null;
   if (compteOctetsDeControle(texte) / texte.length > 0.02) return null;
-  return texte;
+  return tronque ? texte + '\n[…fichier volumineux : début seul transmis…]' : texte;
 }
 /* v20260926a : le contenu lu part UNIQUEMENT au moment de l'appel (jamais
    persisté avec la conversation — seuls file_id, name et des métadonnées

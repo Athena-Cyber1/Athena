@@ -917,7 +917,7 @@
           continue;
         }
         if (!contenuAtt) {
-          morceaux.push(enTete + ' ---\n(contenu non transmis : fichier binaire ou trop volumineux pour être lu côté navigateur.)');
+          morceaux.push(enTete + ' ---\n(contenu non transmis : fichier illisible côté navigateur — binaire ou protégé.)');
           continue;
         }
         if (contenuAtt.length > restant) contenuAtt = contenuAtt.slice(0, restant) + '\n[…contenu tronqué…]';
