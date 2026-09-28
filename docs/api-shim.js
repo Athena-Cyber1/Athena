@@ -996,27 +996,30 @@
     var chaine = [];
     /* v1.2 (strict) : modèle CHOISI = lui seul, sans relais — en cas d'échec,
        l'erreur honnête DE CE MODÈLE remonte (plus de réponse surprise d'un
-       autre modèle). Sélection invalide/indisponible → repli sur la cascade
-       auto (ex. vieux choix mémorisé). Mode auto : cascade inchangée. */
+       autre modèle). Sélection invalide/indisponible → repli sur le choix
+       auto (ex. vieux choix mémorisé). */
     var choixValide = Boolean(modelId && parId[modelId] && parId[modelId].up);
     if (choixValide) {
       chaine.push(parId[modelId]);
       return { chaine: chaine, choisiOk: true, strict: true };
     }
-    /* Un seul entry openrouter free : models[] couvre déjà les autres free
-       en cascade interne → on ne les empile pas (évite 5× la même requête). */
-    var orCouvert = chaine.some(function (e) {
-      return e.providerKey === 'openrouter' && OR_FREE.indexOf(e.model) >= 0;
-    });
-    cat.forEach(function (e) {
-      if (!e.up || chaine.indexOf(e) >= 0) return;
-      if (e.providerKey === 'openrouter' && OR_FREE.indexOf(e.model) >= 0) {
-        if (orCouvert) return;
-        orCouvert = true;
-      }
-      chaine.push(e);
-    });
-    return { chaine: chaine, choisiOk: !modelId || (parId[modelId] && parId[modelId].up), strict: false };
+    /* v1.2 (strict) : mode auto = UN SEUL modèle, le plus fiable disponible,
+       sans relais — ordre : openrouter free avec clé (cascade interne models[]
+       côté provider), puis pollinations (gratuit), puis les autres clés dans
+       l'ordre du catalogue, nvidia en dernier (souvent en panne). */
+    var candidats = cat.filter(function (e) { return e.up; });
+    var orPremier = null, pollPremier = null, autrePremier = null, nvPremier = null;
+    for (var k = 0; k < candidats.length; k++) {
+      var ce = candidats[k];
+      var estOrFree = ce.providerKey === 'openrouter' && OR_FREE.indexOf(ce.model) >= 0;
+      if (estOrFree && !orPremier) orPremier = ce;
+      else if (!estOrFree && ce.providerKey === 'pollinations' && !pollPremier) pollPremier = ce;
+      else if (!estOrFree && ce.providerKey === 'nvidia' && !nvPremier) nvPremier = ce;
+      else if (!estOrFree && !autrePremier) autrePremier = ce;
+    }
+    var elu = orPremier || pollPremier || autrePremier || nvPremier || null;
+    if (elu) chaine.push(elu);
+    return { chaine: chaine, choisiOk: !modelId || (parId[modelId] && parId[modelId].up), strict: true };
   }
 
   async function gererChat(bodyStr, signal) {

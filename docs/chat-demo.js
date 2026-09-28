@@ -4568,7 +4568,7 @@ function majBadgeModele() {
   if (bouton) {
     bouton.title = modeleChoisi
       ? `Modèle actif : ${modeleChoisi.name} - clic pour changer`
-      : 'Modèle de langue - auto = cascade (gratuit → zai)';
+      : 'Modèle de langue - auto = meilleur dispo, sans relais';
   }
   majBadgeContexte();
 }
@@ -4642,7 +4642,7 @@ function rendreHud(modeles, dispo) {
   titreActif.className = 'hud-section-titre';
   titreActif.textContent = 'Actif';
   panneau.appendChild(titreActif);
-  panneau.appendChild(itemModeleHud({ id: 'auto', name: 'auto (cascade)', provider: 'gratuit → zai → pools', up: true, local: false, active: false }, selectionCourante));
+  panneau.appendChild(itemModeleHud({ id: 'auto', name: 'auto (sans relais)', provider: 'meilleur dispo, un seul essai', up: true, local: false, active: false }, selectionCourante));
 
   const cloud = modeles.filter((m) => !m.local);
   const locaux = modeles.filter((m) => m.local);
@@ -4957,7 +4957,7 @@ function rendreHudContexte() {
   const lim = limiteDiscussion();
   const lignes = [
     ['Utilisés (estimés)', u + ' tokens'],
-    ['Modèle', modeleChoisi ? modeleChoisi.name : 'auto (cascade)'],
+    ['Modèle', modeleChoisi ? modeleChoisi.name : 'auto (sans relais)'],
     ['Limite', lim ? lim + ' tokens' : 'selon le modèle choisi'],
     ['Remplissage', lim ? Math.round((u / lim) * 100) + ' %' : '—'],
     ['Messages', nb + ' message' + (nb > 1 ? 's' : '')],
