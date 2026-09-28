@@ -24,15 +24,20 @@
      tokenrouter_proxy : "https://<url>/v1"
      nvidia_proxy      : "https://<url>/nvidia/v1"
 
-   Sécurité : le proxy est "open" mais inutile sans clé — chaque
-   appel doit fournir son propre Authorization: Bearer … (l'amont
-   renvoie 401 sans clé valide). Optionnel : passer ALLOW_ORIGIN
-   à l'URL exacte de la Pages pour restreindre encore l'accès.
+   Sécurité (v20260928) : AUCUNE clé dans le dépôt ni dans le
+   navigateur. Les secrets vivent dans le Worker :
+     npx wrangler secret put NVIDIA_KEY        (clé nvapi-…)
+     npx wrangler secret put TOKENROUTER_KEY   (clé sk-…)
+   puis `npx wrangler deploy`. Le Worker injecte le secret côté
+   serveur quand le client n'envoie pas d'Authorization (cas normal
+   de la Pages) ; une clé client reste acceptée en priorité (dev
+   local via localStorage athena_api_keys). Pour verrouiller
+   l'usage au seul site, mettre ALLOW_ORIGIN à l'URL de la Pages.
    ============================================================ */
 
 const ROUTES = [
-  { mount: '/nvidia', upstream: 'https://integrate.api.nvidia.com' },
-  { mount: '', upstream: 'https://api.tokenrouter.com' }, // rétrocompat : /v1/…
+  { mount: '/nvidia', upstream: 'https://integrate.api.nvidia.com', secret: 'NVIDIA_KEY' },
+  { mount: '', upstream: 'https://api.tokenrouter.com', secret: 'TOKENROUTER_KEY' }, // rétrocompat : /v1/…
 ];
 const ALLOW_ORIGIN = '*'; // ex. 'https://athena-cyber1.github.io'
 
@@ -61,7 +66,7 @@ function routePour(pathname) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
@@ -81,7 +86,11 @@ export default {
     // (c'est précisément ce que le 403 amont rejette).
     const headers = new Headers();
     const auth = request.headers.get('Authorization');
-    if (auth) headers.set('Authorization', auth);
+    if (auth) {
+      headers.set('Authorization', auth); // dev local : clé perso prioritaire
+    } else if (env && route.secret && env[route.secret]) {
+      headers.set('Authorization', 'Bearer ' + env[route.secret]); // secret serveur
+    }
     const ct = request.headers.get('Content-Type');
     if (ct) headers.set('Content-Type', ct);
     // Accept transmis tel quel : indispensable pour le flux SSE

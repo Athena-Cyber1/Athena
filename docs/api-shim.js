@@ -62,7 +62,7 @@
     xai:          { base: 'https://api.x.ai/v1', label: 'xai · clé API' },
     /* tokenrouter : amont 403 sur Origin navigateur → base = URL du
        proxy Cloudflare Worker (stockée dans keys.js: tokenrouter_proxy). */
-    tokenrouter:  { baseKey: 'tokenrouter_proxy', label: 'tokenrouter · proxy CF' },
+    tokenrouter:  { baseKey: 'tokenrouter_proxy', label: 'tokenrouter · proxy CF', viaProxy: true },
     /* NVIDIA : integrate.api.nvidia.com ne renvoie AUCUN en-tête CORS →
        base = URL du proxy Worker (keys.js: nvidia_proxy, monture /nvidia/v1).
        sse: la réponse amont arrive en flux SSE (delta.reasoning_content
@@ -73,7 +73,8 @@
     nvidia:       {
       baseKey: 'nvidia_proxy',
       label: 'nvidia · proxy CF',
-      sse: true,
+      viaProxy: true, // v20260928 : la clé vit dans le Worker (secret),
+      sse: true,      // le client n'envoie rien — plus de clé visible.
       payload: function (entry) {
         /* reasoning_effort = effort choisi dans le HUD (athena_effort),
            replié sur l'échelon admis par CE modèle (voir effortNvidia). */
@@ -288,10 +289,12 @@
       var p = PROVIDERS[m.provider];
       var aCle = !!(p && keyFor(m.provider));
       var aBase = !!(p && baseFor(p));
-      var up = !!(p && (p.free || (aCle && aBase)));
+      /* v20260928 : viaProxy = clé détenue par le Worker (secret serveur) —
+         le modèle est utilisable sans clé cliente (aBase suffit). */
+      var up = !!(p && (p.free || (aBase && (aCle || p.viaProxy))));
       var label = p ? p.label : m.provider;
       if (!up && p && !p.free) {
-        label = m.provider + ' · ' + (!aCle ? 'clé manquante' : 'proxy non déployé');
+        label = m.provider + ' · ' + ((!aCle && !p.viaProxy) ? 'clé manquante' : 'proxy non déployé');
       }
       return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null };
     });

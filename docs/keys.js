@@ -1,44 +1,38 @@
 /* ============================================================
    Athéna — clés API des modèles cloud (GitHub Pages).
 
-   ⚠ CET EST PUBLIC : tout ce qui est écrit ICI est lisible par
-   quiconque ouvre la page (view-source) et par le dépôt GitHub.
-   Utilisez des clés À PLAFOND LIMITÉ (dépense max) et révoquables.
+   ⚠ CE FICHIER EST PUBLIC : n'y écrivez AUCUNE clé (ni view-source,
+   ni dépôt GitHub). Les secrets vivent dans le Worker Cloudflare :
+     npx wrangler secret put NVIDIA_KEY / TOKENROUTER_KEY
+   (voir worker/index.js), qui les injecte côté serveur.
 
-   Remplissez une clé pour activer le modèle correspondant dans le
-   HUD (sélecteur ▾ du header). Les modèles sans clé (pollinations)
-   restent gratuits et actifs par défaut.
-
-   Alternative SANS écrire la clé dans le dépôt (prioritaire) :
-   localStorage de la console du navigateur —
-     localStorage.setItem('athena_api_keys', JSON.stringify({ groq: 'gsk_…' }))
+   Usage perso (clé à vous, invisible des autres) : localStorage —
+      localStorage.setItem('athena_api_keys', JSON.stringify({ groq: 'gsk_…' }))
    ============================================================ */
 window.ATHENA_KEYS = {
-  openai: "",      // sk-…      → gpt-4o-mini (CORS souvent bloqué en navigateur)
-  groq: "",        // gsk_…     → llama-3.3-70b, llama-3.1-8b
-  openrouter: "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",
-                   // compte GRATUIT sans carte ; modèles « :free » = 0 crédit
-  deepseek: "",    // sk-…      → deepseek-chat
-  mistral: "",     // …         → mistral-small-latest
-  together: "",    // …         → llama-3.3-70b
-  gemini: "",      // AIza…     → gemini-2.0-flash
-  zai: "",         // …         → glm-4.5-air (open.bigmodel.cn)
-  cerebras: "",    // …         → llama-3.3-70b
-  nebius: "",      // …         → llama-3.3-70b
-  xai: "",         // …         → grok-3-mini
-  tokenrouter: "sk-0D7XguItXT6h9KawDNTX9cK7xd3rveysAmdwZfDqSNzSwJsR",
-                   // jeton Token Router (api.tokenrouter.com) — UTILISÉ VIA
-                   // le proxy Worker ci-dessous (l'amont 403 les navigateurs).
-                   // ⚠ quota actuellement épuisé (RemainQuota=0) : recharger
-                   // sur le dashboard tokenrouter.com avant usage.
+   openai: "",      // sk-…      → gpt-4o-mini (CORS souvent bloqué en navigateur)
+   groq: "",        // gsk_…     → llama-3.3-70b, llama-3.1-8b
+   openrouter: "",   // v20260928 : clé retirée (était visible en public).
+                    // compte GRATUIT sans carte ; modèles « :free » = 0 crédit.
+                    // Perso : localStorage athena_api_keys { openrouter: 'sk-or-v1-…' }
+   deepseek: "",    // sk-…      → deepseek-chat
+   mistral: "",     // …         → mistral-small-latest
+   together: "",    // …         → llama-3.3-70b
+   gemini: "",      // AIza…     → gemini-2.0-flash
+   zai: "",         // …         → glm-4.5-air (open.bigmodel.cn)
+   cerebras: "",    // …         → llama-3.3-70b
+   nebius: "",      // …         → llama-3.3-70b
+   xai: "",         // …         → grok-3-mini
+   tokenrouter: "",  // v20260928 : secret déplacé dans le Worker (TOKENROUTER_KEY).
+                    // Modèles proposés via le proxy sans clé cliente (viaProxy).
+                    // ⚠ quota actuellement épuisé (RemainQuota=0) : recharger
+                    // sur le dashboard tokenrouter.com avant usage.
   tokenrouter_proxy: "https://athena.amineelbekkai8.workers.dev/v1",
                    // proxy Cloudflare Worker (déployé) — contourne le 403
                    // navigateur de api.tokenrouter.com. Vide = modèles
                    // tokenrouter grisés "proxy non déployé".
-  nvidia: "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",
-                   // clé NVIDIA (integrate.api.nvidia.com) → kimi-k3.
-                   // UTILISÉE VIA le proxy Worker ci-dessous : l'amont ne
-                   // renvoie aucun en-tête CORS → fetch navigateur bloqué.
+   nvidia: "",       // v20260928 : secret déplacé dans le Worker (NVIDIA_KEY).
+                    // Modèles proposés via le proxy sans clé cliente (viaProxy).
   nvidia_proxy: "https://athena.amineelbekkai8.workers.dev/nvidia/v1",
                    // même Worker, monture /nvidia → integrate.api.nvidia.com
                    // (routage par préfixe : /v1 reste tokenrouter).
