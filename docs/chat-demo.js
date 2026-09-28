@@ -1407,6 +1407,10 @@ try {
 function appliquerPreferences() {
   document.documentElement.classList.toggle('reduce-animation', preferences.animationsReduites);
   document.documentElement.classList.toggle('compact-density', preferences.densiteCompacte);
+  /* v1.2 (audit UI) : en mode manuel (executionAuto off), les blocs exec
+     redeviennent visibles et cliquables — masqués, aucune exécution manuelle
+     n'est possible (dead-end depuis le masquage v20260926h). */
+  document.documentElement.classList.toggle('exec-manuel', preferences.executionAuto === false);
   document.getElementById('app').classList.toggle('sidebar-fermee', preferences.sidebarVisible === false);
   /* v20260926l : thème clair/sombre sur toute la page (défaut : sombre). */
   try {
@@ -2606,7 +2610,8 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
         return echec('Bloqué : ' + (dj.motif || dj.erreur));
       }
       if (probe.status !== 428 && !probe.ok) {
-        return echec((dj && dj.erreur) || ('Erreur agent (' + probe.status + ')'));
+        const msgProbe = (dj && dj.erreur) || ('Erreur agent (' + probe.status + ')');
+        return echec(msgProbe + (dj && dj.aide ? ' — ' + dj.aide : ''));
       }
       const ok = await boiteModale({
         titre: 'Exécuter sur ce PC ?',

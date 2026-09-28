@@ -110,8 +110,10 @@
     { provider: 'openrouter', model: 'openrouter/free', name: 'free models router · openrouter' },
     /* v20260928 : space-bunny-alpha — gratuit (pricing 0) mais SANS suffixe
        :free (modèle furtif) : appel direct, pas de cascade models[]. Son
-       raisonnement interne ne doit jamais devenir la réponse visible. */
-    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true },
+       raisonnement interne ne doit jamais devenir la réponse visible.
+       v1.2 : effort low imposé — en max (défaut), le raisonnement mange tout
+       le budget et content revient vide. */
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, payload: { reasoning: { effort: 'low', exclude: false }, max_tokens: 1200 } },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -371,7 +373,11 @@
     'Ce bloc est exécuté AUTOMATIQUEMENT sur le poste (agent local 127.0.0.1:3020) ' +
     'sans intervention de l\'utilisateur : tu n\'as pas besoin de demander la permission ' +
     'ni d\'ajouter d\'autre balise. Sers-t\'en UNIQUEMENT quand l\'action demande réellement ' +
-    'le shell ; si l\'agent est injoignable ou si la commande est bloquée, dis-le simplement.';
+    'le shell ; si l\'agent est injoignable ou si la commande est bloquée, dis-le simplement. ' +
+    'Le shell est PowerShell sous Windows : syntaxe PowerShell UNIQUEMENT (pas de cmd, pas ' +
+    'de bash — `start "" prog` et `export X=y` échouent ; utilise Start-Process et ' +
+    '$env:X=\'y\'). Si `python` est introuvable, réessaie avec `py`. Commandes en un ' +
+    'seul passage, jamais interactives.';
 
   /* v20260926b (direct) : le modèle peut aussi CRÉER des fichiers sur le PC —
      bloc fenced athena-file avec le chemin en première ligne, contenu ensuite.
@@ -651,9 +657,6 @@
       var dernierJetonPensee = 0;
       var dernierJetonContenu = 0;
       var reponseAnnoncee = false;
-      /* Space Bunny : son raisonnement interne n'est jamais diffusé, afin
-         qu'une absence de réponse finale puisse utiliser la cascade. */
-      var penseeVisible = entry.reponseSansRaisonnement !== true;
 
       /* v20260926g (Claude) : les TRANCHES de contenu ne partent plus en
          progress — c'était la console de logs (un chunk = une « étape »).
@@ -680,7 +683,7 @@
         var maintenant = Date.now();
         var np = pensee.length - emisJetonPensee;
         var nc = contenu.length - emisJetonContenu;
-        if (np > 0 && penseeVisible && (np >= 24 || maintenant - dernierJetonPensee > 150)) {
+        if (np > 0 && (np >= 24 || maintenant - dernierJetonPensee > 150)) {
           onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
           emisJetonPensee = pensee.length;
           dernierJetonPensee = maintenant;
@@ -745,7 +748,7 @@
       if (!String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
       /* v20260926d (kimi) : reliquat de jetons PUIS contrôle de fin. */
       if (onDelta) {
-        if (penseeVisible && pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
+        if (pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
         if (contenu.length > emisJetonContenu) onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
       }
       if (!vuFin) {

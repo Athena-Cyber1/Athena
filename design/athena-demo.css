@@ -3687,6 +3687,11 @@ details.trace-cmd.echec .trace-cmd-status {
 .exec-bloc {
   display: none;
 }
+/* v1.2 (audit UI) : mode manuel (executionAuto off, classe posée par
+   appliquerPreferences) — le bloc reste visible pour le bouton Exécuter. */
+.exec-manuel .exec-bloc {
+  display: block;
+}
 /* v20260926e (kimi) : indicateur « le modèle réfléchit » — trois points
    pulsants, CSS pur, monochrome. Désactivé par .reduce-animation (global)
    et prefers-reduced-motion (ci-dessous). */
