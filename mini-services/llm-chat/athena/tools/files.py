@@ -190,8 +190,16 @@ def ingester(nom: str, octets: bytes) -> dict[str, Any]:
     }
     morceaux = _morceaux(ex["texte"], dt["langue"])
     memoire.enregistrer_fichier(rec, morceaux)
+    # v20260926o-2 : UNKNOWN sans raison = « échec du traitement (200) »
+    # incompréhensible côté UI — on dit pourquoi (souvent : image ou PDF
+    # scanné, OCR indisponible).
+    statut = "SUPPORTED" if (ex["texte"] or syms) else "UNKNOWN"
+    raison = None
+    if statut == "UNKNOWN":
+        raison = (ex["notes"][0] if ex["notes"] else None) or "aucun texte extractible"
     return {
-        "statut": "SUPPORTED" if (ex["texte"] or syms) else "UNKNOWN",
+        "statut": statut,
+        "raison": raison,
         "file_id": file_id, "nom": nom, "filename": nom, "mime": dt["mime"], "langue": dt["langue"],
         "lignes": rec["lignes"], "symboles": syms[:30], "chunks": len(morceaux),
         "status": "indexed", "kind": memoire._genre(dt["mime"]), "size_bytes": len(octets),

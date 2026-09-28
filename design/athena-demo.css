@@ -302,6 +302,8 @@ a:hover {
 }
 .recherche::placeholder {
   color: var(--texte-doux);
+  /* v20260926o-2 (kimi) : Firefox atténue les placeholders par défaut. */
+  opacity: 1;
 }
 .plier {
   flex: 0 0 auto;
@@ -442,7 +444,8 @@ a:hover {
   flex: 0 0 auto;
   font-size: 0.68rem;
   color: var(--texte-doux);
-  opacity: 0.72;
+  /* v20260926o-2 (kimi) : l'opacity 0.72 faisait tomber le contraste à ~3:1
+     pour un micro-texte — couleur pleine (~5,9:1 en clair). */
   font-variant-numeric: tabular-nums;
 }
 .convo-renommer,
@@ -1217,7 +1220,8 @@ details.raisonnement.vivant .think::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 400;
-  opacity: 0.85;
+  /* v20260926o-2 (kimi) : l'opacity 0.85 faisait tomber le contraste sous
+     4,5:1 pour ce micro-texte — couleur pleine. */
 }
 span.think:not(details .think) {
   font-size: 0.8rem;
@@ -1711,6 +1715,7 @@ span.think:not(details .think) {
 }
 .saisie::placeholder {
   color: var(--texte-doux);
+  opacity: 1;
 }
 .btn-attacher {
   flex: 0 0 auto;
@@ -4310,7 +4315,8 @@ html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
 html[data-theme="light"] .btn-envoyer {
   color: #666666;
 }
-html[data-theme="light"] .side-item.active {
+html[data-theme="light"] .side-item.active,
+html[data-theme="light"] .side-item:hover {
   background: #dcdcdc;
 }
 html[data-theme="light"] .side-item.active .side-item-label {

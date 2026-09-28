@@ -187,7 +187,7 @@ async function uploaderFichier(fichier) {
     size: fichier.size,
     status: indexe ? 'indexed' : 'failed',
     chunks: d.chunks || 0,
-    erreur: indexe ? null : (d.erreur || (r.status === 422
+    erreur: indexe ? null : (d.raison || d.erreur || (r.status === 422
       ? 'type de fichier non pris en charge'
       : 'échec du traitement (' + r.status + ')')),
   };

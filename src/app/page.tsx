@@ -1,4 +1,4 @@
-import Script from "next/script";
+﻿import Script from "next/script";
 import "../../design/athena-demo.css";
 
 /**
@@ -234,9 +234,9 @@ export default function Accueil() {
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925ba" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925bb" strategy="beforeInteractive" />
       <Script src="/vendor/twemoji.min.js" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925ba" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925bb" strategy="beforeInteractive" />
     </div>
   );
 }

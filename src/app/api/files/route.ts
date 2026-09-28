@@ -193,6 +193,9 @@ async function ingesterOctets(
     size_bytes: json.size_bytes ?? 0,
     chunks: json.chunks ?? 0,
     mime: json.mime ?? null,
+    // v20260926o-2 : la raison d'échec remonte à l'UI (ex. image sans OCR).
+    ...(typeof json.raison === "string" ? { raison: json.raison } : {}),
+    ...(typeof json.erreur === "string" ? { erreur: json.erreur } : {}),
   });
 }
 
