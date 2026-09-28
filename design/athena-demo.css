@@ -5,6 +5,21 @@
    (traits currentColor) + typographie sobre.
    Les variables ci-dessous sont les tokens consommés par l'importeur de
    design (/api/design + theme-loader.js) : un thème importé les redéfinit.
+
+   CARTE DES COUCHES (la source l'emporte à spécificité égale) :
+   1. :root clair + @media prefers-color-scheme: dark (tokens)
+   2. base + composants (ordre : sidebar, en-tête, fil, bulles, cartes,
+      composeur, modales, paramètres)
+   3. @media (max-width: 940px / 600px / 480px) (responsive)
+   4. patch sombre (surfaces codées pour le thème par défaut)
+   5. @media (min-width: 721px) (cadrage 768 px — GAGNE TOUJOURS sur desktop)
+   6. html[data-theme="light"] (surcharges du mode clair)
+   Règles collectives : bordures neutres = --bord/--bord-fort (jamais de
+   hex en dur) ; rayons = --rayon-s/--rayon/--rayon-l ; ombres = --ombre ;
+   z-index : 0/1 saisie, 5 en-tête, 6 pastille, 8/20 toasts, 20 menus,
+   30 sidebar mobile, 40 HUD fichier, 60 HUD modèles + voile modale.
+   Accessibilité : :focus-visible global (anneau 2px, rayon préservé),
+   cibles ≥ 24 px, contrastes texte ≥ 4.5:1 vérifiés (voir ARCHITECTURE §9).
    ========================================================================== */
 
 :root {
@@ -41,7 +56,10 @@
   --ok: #111111;
   --heros: linear-gradient(135deg, #fafafa 0%, #f1f1f1 55%, #ffffff 100%);
   --ombre: 0 1px 3px rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 0, 0, 0.07);
+  /* Échelle de rayons partagée : S=petits contrôles, défaut=cartes, L=compositeur */
+  --rayon-s: 8px;
   --rayon: 12px;
+  --rayon-l: 16px;
   /* ———— Réglages de position (modifiez ici) ————
      Largeur + décalages de la sidebar : une seule valeur à changer.
      `width` et `flex-basis` suivent --pos-sidebar-largeur ; la marge du
@@ -158,7 +176,6 @@ button {
 :focus-visible {
   outline: 2px solid var(--primaire);
   outline-offset: 2px;
-  border-radius: 6px;
 }
 
 /* Le ROUGE est réservé aux liens (demande explicite de l'utilisateur). */
@@ -309,7 +326,7 @@ a:hover {
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   border: 1px solid var(--bord);
   background: var(--carte);
   color: var(--texte-doux);
@@ -350,7 +367,7 @@ a:hover {
 }
 .liste-conversations::-webkit-scrollbar-thumb {
   background: var(--bord-fort);
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
 }
 .liste-conversations.import-md {
   outline: 2px dashed var(--primaire);
@@ -502,7 +519,7 @@ a:hover {
   flex: 1 1 auto;
   min-width: 0;
   border: 1px solid var(--primaire);
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   padding: 7px 9px;
   font-size: 0.85rem;
   background: var(--carte);
@@ -648,7 +665,7 @@ a:hover {
   gap: 9px;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   padding: 6px 9px;
   font-size: 0.8rem;
   color: var(--texte);
@@ -677,7 +694,7 @@ a:hover {
   flex: 0 0 auto;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   border: 1px solid var(--bord);
   background: var(--carte);
   color: var(--texte-doux);
@@ -760,7 +777,7 @@ button.dot:focus-visible,
 }
 .msgs::-webkit-scrollbar-thumb {
   background: var(--bord-fort);
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   border: 2px solid var(--fond);
 }
 
@@ -806,7 +823,7 @@ button.dot:focus-visible,
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   border: 1px solid var(--bord);
   background: var(--carte);
   color: var(--texte-doux);
@@ -1763,8 +1780,8 @@ span.think:not(details .think) {
   cursor: pointer;
   font-size: 1rem;
   line-height: 1;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   display: inline-grid;
   place-items: center;
@@ -1868,7 +1885,7 @@ span.think:not(details .think) {
   flex: 0 0 auto;
   width: 32px;               /* Carré : largeur égale à la hauteur */
   height: 32px;
-  border-radius: 8px;        /* Bords arrondis du carré */
+  border-radius: var(--rayon-s);        /* Bords arrondis du carré */
   border: none;
   background: transparent;   /* Translucide/masqué par défaut */
   color: var(--texte);       /* Couleur de l'icône adaptée au fond */
@@ -1987,7 +2004,7 @@ span.think:not(details .think) {
   align-self: flex-end;
   border: 1px solid var(--bord);
   background: var(--carte-doux);
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   padding: 3px 11px;
   cursor: pointer;
   font-size: 0.76rem;
@@ -2014,7 +2031,7 @@ span.think:not(details .think) {
 .modale {
   width: min(460px, 100%);
   background: var(--carte);
-  border-radius: 16px;
+  border-radius: var(--rayon-l);
   border: 1px solid var(--bord);
   padding: 22px;
   box-shadow: var(--ombre);
@@ -2120,7 +2137,7 @@ span.think:not(details .think) {
   border: 1px solid var(--danger-bord);
   background: var(--carte);
   color: var(--danger-texte);
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   padding: 4px 12px;
   font: inherit;
   font-size: 0.8rem;
@@ -2286,7 +2303,7 @@ span.think:not(details .think) {
   gap: 6px;
   height: 32px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   border: 1px solid var(--bord);
   background: var(--carte-doux); /* Même fond que .btn-attacher */
   color: var(--texte);
@@ -2359,7 +2376,7 @@ span.think:not(details .think) {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   background: transparent;
   color: var(--texte);
   font: inherit;
@@ -2608,7 +2625,7 @@ span.think:not(details .think) {
 
 .recherche {
   min-height: 34px;
-  border-color: #444;
+  border-color: var(--bord-fort);
   border-radius: 9px;
   background-color: #262626;
   font-size: 0.82rem;
@@ -2715,7 +2732,7 @@ span.think:not(details .think) {
 .btn-modele {
   min-height: 34px;
   padding: 0 12px;
-  border-color: #4a4a4a;
+  border-color: var(--bord-fort);
   border-radius: 999px;
   background: #3a3a3a;
   color: #ededed;
@@ -2727,8 +2744,8 @@ span.think:not(details .think) {
   gap: 7px;
   min-height: 34px;
   padding: 0 12px;
-  border: 1px solid #4a4a4a;
-  border-radius: 8px;
+  border: 1px solid var(--bord-fort);
+  border-radius: var(--rayon-s);
   background: #3a3a3a;
   color: #e5e5e5;
   font: inherit;
@@ -2815,7 +2832,7 @@ details.raisonnement summary {
   gap: 8px;
   min-height: 64px;
   padding: 9px 11px;
-  border-color: #505050;
+  border-color: var(--bord-fort);
   border-radius: 24px;
   background: #2b2b2b;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
@@ -2865,14 +2882,14 @@ details.raisonnement summary {
 .compteur-saisie {
   top: -27px;
   right: 12px;
-  border-color: #4a4a4a;
+  border-color: var(--bord-fort);
   background: #2b2b2b;
 }
 
 .activity-group {
   margin: 14px 0 18px;
   overflow: hidden;
-  border: 1px solid #4a4a4a;
+  border: 1px solid var(--bord-fort);
   border-radius: 13px;
   background: #292929;
 }
@@ -2923,7 +2940,7 @@ details.raisonnement summary {
 
 .activity-group .trace-cmd {
   margin: 8px 0 0;
-  border-color: #454545;
+  border-color: var(--bord-fort);
   background: #1d1d1d;
 }
 
@@ -3280,7 +3297,7 @@ details.raisonnement li.doute {
 }
 
 .message-actions button:hover {
-  border-color: #454545;
+  border-color: var(--bord-fort);
   background: #303030;
   color: #e8e8e8;
 }
@@ -3455,7 +3472,7 @@ details.trace-cmd.echec .trace-cmd-status {
 .row.user .bubble {
   max-width: min(576px, 90%);
   padding: 10px 14px;
-  border: 1px solid #333;
+  border: 1px solid var(--bord);
   border-radius: 14px 14px 5px 14px;
   background: #242424;
   color: #eeeeee;
@@ -3475,7 +3492,7 @@ details.trace-cmd.echec .trace-cmd-status {
   padding: 4px 10px; /* Ajusté pour respecter les 30px au total */
   border-radius: 15px;
   background: #181818;
-  border: 1px solid #333333;
+  border: 1px solid var(--bord);
   overflow-y: auto; /* Affiche un scroll si le texte dépasse max-height */
   display: flex;
   align-items: center;
@@ -3726,7 +3743,7 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 .exec-terminal {
   margin-top: 6px;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--bord);
   border-radius: 6px;
   background: #111;
   color: #e8e8e8;
@@ -3753,8 +3770,8 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 .file-bloc {
   margin: 8px 0;
-  border: 1px solid #3a3a3a;
-  border-radius: 8px;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-s);
   overflow: hidden;
 }
 .file-tete {
@@ -3820,7 +3837,7 @@ details.trace-cmd.echec .trace-cmd-status {
   font-size: 0.8rem;
   padding: 5px 12px;
   border-radius: 6px;
-  border: 1px solid #4a4a4a;
+  border: 1px solid var(--bord-fort);
   background: #1d1d1d;
   color: #eee;
   cursor: pointer;
@@ -3840,7 +3857,7 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 .md-table th,
 .md-table td {
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--bord);
   padding: 5px 10px;
   text-align: left;
   white-space: normal;
@@ -4115,7 +4132,7 @@ header.chat-tete {
 }
 *::-webkit-scrollbar-thumb {
   background: #5a5a5a;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   border: 2px solid #292929;
 }
 *::-webkit-scrollbar-corner {
@@ -4285,7 +4302,7 @@ html[data-theme="light"] .saisie {
   align-items: center;
   font-size: 0.72rem;
   padding: 4px 10px;
-  border-radius: 8px;
+  border-radius: var(--rayon-s);
   border: 1px solid var(--bord-fort);
   background: transparent;
   color: var(--texte-doux);

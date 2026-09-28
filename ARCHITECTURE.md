@@ -1,6 +1,6 @@
 ﻿# Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925bi`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925bj`
 
 ---
 
@@ -468,3 +468,41 @@ cd mini-services/llm-chat && pip install fastapi uvicorn && bash daemon.sh  # :3
 | Pont LLM | `mini-services/llm-bridge` | multi-provider résilient |
 | Commandes PC | `mini-services/local-agent` | shell local sécurisé |
 | Proxy réseaux | `worker/` | CORS tokenrouter + nvidia |
+
+---
+
+## 9. Design system CSS (`design/athena-demo.css`, ~4600 lignes)
+
+Ordre des couches (la source l’emporte à spécificité égale) :
+base `:root` clair → `@media prefers-color-scheme: dark` → composants →
+`@media (max-width)` → patch sombre → `@media (min-width: 721px)` (cadrage) →
+surcharges `html[data-theme="light"]`. Règle d’or : ne jamais ajouter de
+`max-width` après le bloc cadrage, il gagne toujours sur desktop.
+
+| Token | Clair | Sombre | Usage |
+|-------|-------|--------|-------|
+| `--fond` | `#ffffff` | `#0f0f0f` | fond page |
+| `--carte` / `--carte-doux` | `#ffffff` / `#f4f4f4` | `#181818` / `#242424` | cartes, bulles |
+| `--sidebar` | `#ffffff` | `#292929` | barre latérale |
+| `--texte` / `--texte-doux` | `#171717` / `#616161` | `#f1f1f1` / `#b0b0b0` | texte (contrastes 12–20:1 / 6–8:1, AA) |
+| `--bord` / `--bord-fort` | `#e4e4e4` / `#c8c8c8` | `#3d3d3d` / `#505050` | **toutes** les bordures neutres (relief hover/focus = `--bord-fort`) |
+| `--primaire` / `--sur-primaire` | `#171717` / `#ffffff` | `#f1f1f1` / `#202020` | boutons d’action, focus `outline` |
+| `--lien` | `#c81e1e` | `#ff756a` | liens seuls (5.7–8:1) |
+| `--danger-*` / `--ambre-*` / `--ok` / `--marque` | teintes dédiées | teintes dédiées | statuts ; contraste ≥ 5.3:1 vérifié |
+| `--rayon-s` / `--rayon` / `--rayon-l` | `8px` / `12px` / `16px` | idem | petits contrôles / cartes / compositeur (`999px` = pilules, `50%` = pastilles) |
+| `--ombre` | douce claire | profonde sombre | ombre unique des surfaces |
+
+Échelle z-index (ne pas intercaler de valeur sans raison) :
+`0/1` miroir/saisie → `5` en-tête sticky → `6` pastille → `8/20` toasts →
+`20` menus → `30` sidebar mobile → `40` HUD fichier → `60` HUD modèles et
+voile modale (le voile, plus bas dans le DOM, gagne en cas de conflit).
+
+Accessibilité contractuelle : `:focus-visible` global (anneau 2px
+`--primaire` + décalage 2px, sans toucher au rayon), nom accessible sur les
+76 contrôles (audit Playwright : 0 sans nom), cibles ≥ 24×24 px
+(`file-chip-remove` passé de 22 à 24px), animations limitées à
+`opacity`/`transform`.
+
+Perf mesurée (Playwright, localhost) : DOMContentLoaded ~186 ms,
+~155 Ko (JS+CSS+fonts), 184 nœuds, 61 ips au scroll, 0 long task.
+Goulots connus : aucun — `twemoji` (4 Ko) et les keyframes sont négligeables.
