@@ -104,7 +104,9 @@ def _extraire_texte(nom: str, octets: bytes, mime: str, ext: str) -> dict[str, A
                     if not n.endswith((".py", ".js", ".ts", ".java", ".c", ".h", ".md", ".txt", ".json", ".csv")):
                         continue
                     try:
-                        contenu = zf.read(n).decode("utf-8", errors="replace")
+                        # v20260926p (audit) : lecture bornée par membre —
+                        # un ZIP piégé ne doit pas gonfler la RAM.
+                        contenu = zf.read(n)[:25000].decode("utf-8", errors="replace")
                         morceaux_texte.append(f"### fichier {n}\n{contenu[:20000]}")
                     except Exception:
                         continue
@@ -125,7 +127,8 @@ def _extraire_texte(nom: str, octets: bytes, mime: str, ext: str) -> dict[str, A
                         continue
                     f = tf.extractfile(m)
                     if f:
-                        morceaux_texte.append(f"### fichier {m.name}\n{f.read().decode('utf-8', 'replace')[:20000]}")
+                        # v20260926p (audit) : idem ZIP — borne anti bombe.
+                        morceaux_texte.append(f"### fichier {m.name}\n{f.read(25000).decode('utf-8', 'replace')[:20000]}")
             return {"texte": "\n".join(morceaux_texte), "notes": notes}
         except Exception as e:
             return {"texte": "", "notes": [f"TAR illisible : {e}"]}
