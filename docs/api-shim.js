@@ -111,9 +111,10 @@
     /* v20260928 : space-bunny-alpha — gratuit (pricing 0) mais SANS suffixe
        :free (modèle furtif) : appel direct, pas de cascade models[]. Son
        raisonnement interne ne doit jamais devenir la réponse visible.
-       v1.2 : effort low imposé — en max (défaut), le raisonnement mange tout
+       v1.2 : effort de raisonnement SUIT le bouton effort du HUD (low par
+       défaut via repli) — en max permanent, le raisonnement mange tout
        le budget et content revient vide. */
-    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, payload: { reasoning: { effort: 'low', exclude: false }, max_tokens: 1200 } },
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { var ef = effortNvidia(entry); var mt = { low: 1200, medium: 2000, high: 4000, max: 8000 }[ef] || 2000; return { reasoning: { effort: ef, exclude: false }, max_tokens: mt }; } },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -655,9 +656,11 @@
       };
       /* cadrage spécifique : provider (nvidia → kimi-k3 : temperature 1,
          seed 0, max_tokens 16384, reasoning_effort « max ») ; une entry
-         peut le surcharger (payload local) pour un modèle qui refuse
-         reasoning_effort ou plafonne sous 16 384 tokens. */
-      var opts = entry.payload || (p.payload ? p.payload(entry) : null);
+         peut le surcharger via son propre `payload` (objet ou fonction(entry))
+         pour un modèle qui refuse reasoning_effort ou plafonne sous 16 384 tokens. */
+      var pe = entry.payload;
+      if (typeof pe === 'function') { try { pe = pe(entry); } catch (e) { pe = null; } }
+      var opts = pe || (p.payload ? p.payload(entry) : null);
       if (opts) {
         Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
       }
