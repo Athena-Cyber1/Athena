@@ -1404,6 +1404,60 @@ span.think:not(details .think) {
   font-size: 0.92rem;
 }
 
+/* Journal et requêtes (vue) */
+.journal-view h3 {
+  margin: 22px 0 8px;
+  font-size: 1.05rem;
+}
+.journal-barre {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.journal-btn {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: var(--rayon-s);
+  border: 1px solid var(--bord-fort);
+  background: var(--carte);
+  color: var(--texte);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.journal-btn:hover {
+  border-color: var(--primaire);
+}
+.journal-cadre {
+  overflow-x: auto;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon);
+  background: var(--carte);
+}
+.journal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+.journal-table th,
+.journal-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--bord);
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+.journal-table thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--texte-doux);
+}
+.journal-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* Projets (vue) */
 .projets-liste {
   display: flex;

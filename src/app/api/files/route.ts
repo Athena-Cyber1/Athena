@@ -23,11 +23,11 @@ import { z } from "zod";
 
 const URL_SIDECAR_FILES = "http://127.0.0.1:3010/files";
 const URL_SIDECAR_INGEST = "http://127.0.0.1:3010/files/ingest";
-const MAX_OCTETS = 20_000_000; // même borne que le sidecar (ZAI_MAX_UPLOAD)
+const MAX_OCTETS = 52_428_800; // 50 Mio, même borne que le sidecar (MAX_OCTETS_INGEST)
 
 const schemaUploadJson = z.object({
   filename: z.string().min(1).max(300),
-  content_base64: z.string().min(1).max(28_000_000), // 20 Mo ≈ 26,7 Mo en base64
+  content_base64: z.string().min(1).max(70_000_000), // 50 Mio ≈ 69,9 Mo en base64
 });
 
 /* ------------------------------------------------------------------ */
@@ -148,7 +148,7 @@ function decoderBase64(brut: string): { ok: true; octets: Uint8Array } | { ok: f
   }
   if (tampon.length === 0) return { ok: false, erreur: "fichier vide." };
   if (tampon.length > MAX_OCTETS) {
-    return { ok: false, erreur: "fichier trop volumineux (> 20 Mo)." };
+    return { ok: false, erreur: "fichier trop volumineux (> 50 Mo)." };
   }
   return { ok: true, octets: new Uint8Array(tampon) };
 }
@@ -226,7 +226,7 @@ export async function POST(req: Request) {
     const parse = schemaUploadJson.safeParse(brut);
     if (!parse.success) {
       return Response.json(
-        { erreur: "filename et content_base64 requis (fichier ≤ 20 Mo)." },
+        { erreur: "filename et content_base64 requis (fichier ≤ 50 Mo)." },
         { status: 400 }
       );
     }

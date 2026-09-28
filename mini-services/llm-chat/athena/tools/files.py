@@ -18,7 +18,7 @@ from typing import Any
 
 from ..memory import store as memoire
 
-MAX_OCTETS = 20 * 1024 * 1024
+MAX_OCTETS = 50 * 1024 * 1024
 CHUNK = 900
 CHEVAUCHEMENT = 120
 
@@ -172,7 +172,7 @@ def _morceaux(texte: str, langue: str) -> list[dict[str, Any]]:
 
 def ingester(nom: str, octets: bytes) -> dict[str, Any]:
     if len(octets) > MAX_OCTETS:
-        return {"statut": "ERREUR", "raison": "fichier trop volumineux (> 20 Mo)"}
+        return {"statut": "ERREUR", "raison": "fichier trop volumineux (> 50 Mo)"}
     dt = detecter_type(nom, octets)
     # v10.6 (F14) : exécutables (PE/ELF ou extension binaire connue) → REFUS.
     # Le contenu n'est pas un document : l'indexer comme « lignes de texte »

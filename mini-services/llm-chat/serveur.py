@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field  # noqa: E402
 import uuid  # noqa: E402
 
 # v20260926d (kimi) : plafond d'ingestion (protection RAM du sidecar).
-MAX_OCTETS_INGEST = 25 * 1024 * 1024
+MAX_OCTETS_INGEST = 50 * 1024 * 1024
 
 from athena import __version__  # noqa: E402
 from athena.agent import skills as skill_reg  # noqa: E402 — enregistre les skills
@@ -256,7 +256,7 @@ async def ingest(fichier: UploadFile = File(...)) -> dict:
             break
         total += len(bloc)
         if total > MAX_OCTETS_INGEST:
-            raise HTTPException(413, "fichier trop volumineux (limite 25 Mo)")
+            raise HTTPException(413, "fichier trop volumineux (limite 50 Mo)")
         morceaux.append(bloc)
     octets = b"".join(morceaux)
     if not octets:

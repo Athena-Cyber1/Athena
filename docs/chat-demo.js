@@ -153,10 +153,10 @@ function extensionFichier(nom) {
    fichier et les injecte comme FILE_DATA (donnée NON FIABLE, règle 9). */
 const API_FILES = '/api/files';
 const MAX_FICHIERS = 10;             // borne serveur : FICHIER_MAX_ATTACHMENTS
-/* v20260922l (17) : même borne que le sidecar (ZAI_MAX_UPLOAD, défaut 20 Mo).
+/* v20260922l (17) : même borne que le sidecar (MAX_OCTETS_INGEST, 50 Mo).
    Contrôle AVANT lecture FileReader : un fichier trop gros ne gonfle plus la
    RAM en base64 (+33 %) pour récolter un 413 garanti. */
-const MAX_OCTETS_CLIENT = 20000000;
+const MAX_OCTETS_CLIENT = 52428800; // 50 Mio (affiché « 50,0 Mo »)
 /* v20260922l (20) : délai d'abandon pour les appels JSON rapides (sondes,
    état entraînement, purges). AbortSignal.timeout n'existe pas sur les
    vieux navigateurs -> repli sans signal (comportement historique). */
@@ -371,6 +371,102 @@ function afficherVue(titre, description, contenu) {
   p.textContent = description;
   vue.append(h, p);
   if (contenu) vue.appendChild(contenu);
+  msgsEl.appendChild(vue);
+}
+
+/* ---------- Journal et requêtes envoyées ---------- */
+const URL_JOURNAL_AGENT = 'http://127.0.0.1:3020/journal?limit=200';
+function heureCourte(ts) {
+  try { return new Date(ts).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+  catch { return ''; }
+}
+function tableauSimple(entetes, lignes) {
+  const table = document.createElement('table');
+  table.className = 'journal-table';
+  const thead = document.createElement('thead');
+  const tr = document.createElement('tr');
+  entetes.forEach((h) => { const th = document.createElement('th'); th.textContent = h; tr.appendChild(th); });
+  thead.appendChild(tr);
+  const tbody = document.createElement('tbody');
+  lignes.forEach((cells) => {
+    const row = document.createElement('tr');
+    cells.forEach((c) => { const td = document.createElement('td'); td.textContent = c; row.appendChild(td); });
+    tbody.appendChild(row);
+  });
+  table.append(thead, tbody);
+  const cadre = document.createElement('div');
+  cadre.className = 'journal-cadre';
+  cadre.appendChild(table);
+  return cadre;
+}
+async function chargerJournalAgent() {
+  const r = await fetch(URL_JOURNAL_AGENT, { signal: delaiFetch(8000) });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const d = await r.json();
+  return Array.isArray(d.entrees) ? d.entrees : [];
+}
+function afficherJournal() {
+  msgsEl.replaceChildren();
+  const vue = document.createElement('section');
+  vue.className = 'workspace-view journal-view';
+  const h = document.createElement('h2');
+  h.textContent = 'Journal et requêtes';
+  const intro = document.createElement('p');
+  intro.textContent = 'Tout ce qui a été envoyé : commandes et écritures de l’agent local, et requêtes de vos discussions.';
+  const barre = document.createElement('div');
+  barre.className = 'journal-barre';
+  const retour = document.createElement('button');
+  retour.type = 'button';
+  retour.className = 'journal-btn';
+  retour.textContent = '← Retour à la discussion';
+  retour.addEventListener('click', () => ouvrirConversation(idConversation));
+  const rafraichir = document.createElement('button');
+  rafraichir.type = 'button';
+  rafraichir.className = 'journal-btn';
+  rafraichir.textContent = '↻ Actualiser';
+  rafraichir.addEventListener('click', () => afficherJournal());
+  barre.append(retour, rafraichir);
+  vue.append(h, intro, barre);
+  /* — Agent local : exécutions + écritures — */
+  const hAgent = document.createElement('h3');
+  hAgent.textContent = 'Agent local (exécutions et fichiers)';
+  vue.appendChild(hAgent);
+  const zoneAgent = document.createElement('div');
+  zoneAgent.textContent = 'Chargement…';
+  vue.appendChild(zoneAgent);
+  chargerJournalAgent().then((entrees) => {
+    zoneAgent.replaceChildren();
+    if (!entrees.length) {
+      zoneAgent.textContent = 'Aucune entrée — aucune commande ni écriture enregistrée pour le moment.';
+      return;
+    }
+    const lignes = [...entrees].reverse().map((e) => {
+      if (e && e.ecriture) {
+        return [heureCourte(e.ts), 'écriture', String(e.ecriture).slice(-80), 'oui', tailleFichier(e.octets || 0) + (e.ecrase ? ' (remplacé)' : '')];
+      }
+      return [heureCourte(e.ts), 'commande', String((e && e.commande) || '').slice(0, 80), (e && e.ok) ? 'oui' : 'non (code ' + ((e && e.code) ?? '?') + ')', ((e && e.duree_ms) ?? '?') + ' ms'];
+    });
+    zoneAgent.appendChild(tableauSimple(['Heure', 'Type', 'Détail', 'Réussi', 'Mesure'], lignes));
+  }).catch(() => {
+    zoneAgent.textContent = 'Agent local injoignable (127.0.0.1:3020) — démarrez node mini-services/local-agent/index.js pour voir son journal.';
+  });
+  /* — Requêtes des discussions — */
+  const hReq = document.createElement('h3');
+  hReq.textContent = 'Requêtes envoyées (discussions)';
+  vue.appendChild(hReq);
+  let totalMessages = 0;
+  let totalPieces = 0;
+  const lignes = conversations.map((c) => {
+    const msgs = Array.isArray(c.messages) ? c.messages : [];
+    const questions = msgs.filter((m) => m && m.role === 'user').length;
+    const pieces = msgs.reduce((n, m) => n + (Array.isArray(m.attachments) ? m.attachments.length : 0), 0);
+    totalMessages += msgs.length;
+    totalPieces += pieces;
+    return [c.titre || 'Sans titre', String(questions), String(pieces), heureCourte(c.maj)];
+  });
+  const resume = document.createElement('p');
+  resume.textContent = conversations.length + ' discussion(s), ' + totalMessages + ' message(s), ' + totalPieces + ' pièce(s) jointe(s).';
+  vue.append(resume, tableauSimple(['Discussion', 'Questions', 'Pièces jointes', 'Dernière activité'], lignes));
   msgsEl.appendChild(vue);
 }
 
@@ -4223,6 +4319,7 @@ navArtefactsEl?.addEventListener('click', () => afficherVue('Artefacts', 'Les ar
 navCodeEl?.addEventListener('click', () => afficherVue('Code', 'Les extraits et commandes exécutables apparaîtront ici.'));
 navPersonnaliserEl?.addEventListener('click', () => afficherParametres());
 $('telecharger-conversations')?.addEventListener('click', () => exporterToutesConversations());
+$('ouvrir-journal')?.addEventListener('click', () => afficherJournal());
 $('rechercher-conversations')?.addEventListener('click', () => {
   const zone = document.querySelector('.side-recherche');
   if (!zone) return;
