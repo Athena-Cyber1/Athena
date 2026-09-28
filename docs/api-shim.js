@@ -249,6 +249,10 @@
   var DYN = { ts: 0, models: [], err: '' };
 
   async function refreshDyn() {
+    /* v20260928 : tokenrouter retiré du catalogue (quota épuisé) —
+       pas d'appel réseau, même si une vieille clé traîne en localStorage. */
+    DYN = { ts: Date.now(), models: [], err: '' };
+    return;
     var p = PROVIDERS.tokenrouter;
     var base = baseFor(p);
     var key = keyFor('tokenrouter');
@@ -284,7 +288,9 @@
   }
 
   function catalogue() {
-    var liste = MODELS.concat(DYN.models);
+    /* v20260928 : tokenrouter exclu (quota épuisé) — filtre définitif,
+       quelle que soit la source (statique, dynamique, localStorage). */
+    var liste = MODELS.concat(DYN.models).filter(function (m) { return m.provider !== 'tokenrouter'; });
     var cat = liste.map(function (m) {
       var p = PROVIDERS[m.provider];
       var aCle = !!(p && keyFor(m.provider));
