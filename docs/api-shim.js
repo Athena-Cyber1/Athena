@@ -108,6 +108,9 @@
     { provider: 'openrouter', model: 'liquid/lfm-2.5-2.6b:free', name: 'lfm-2.5-2.6b free · openrouter' },
     { provider: 'openrouter', model: 'nvidia/nemotron-3.5-content-safety:free', name: 'nemotron-3.5-safety free · openrouter' },
     { provider: 'openrouter', model: 'openrouter/free', name: 'free models router · openrouter' },
+    /* v20260928 : space-bunny-alpha — gratuit (pricing 0) mais SANS suffixe
+       :free (modèle furtif) : appel direct, pas de cascade models[]. */
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter' },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
