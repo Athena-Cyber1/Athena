@@ -868,6 +868,12 @@ function ouvrirConversation(id) {
     setTimeout(() => { renduVueEnCours = false; }, 0);
   }
   saisieEl.focus();
+  /* v1.2 (audit UI) : après (re)chargement ou changement de conversation, on
+     repart d'en BAS (dernier message) — sans ça l'utilisateur atterrit en
+     haut, au premier message. Respecte defilementAuto. */
+  if (preferences.defilementAuto !== false) {
+    requestAnimationFrame(() => { try { msgsEl.scrollTop = msgsEl.scrollHeight; } catch {} });
+  }
 }
 async function supprimerConversation(id) {
   const c = conversations.find((x) => x.id === id);
@@ -4517,6 +4523,25 @@ publierHooks('__atelierRegenerer', { regenerer: regenererDerniereReponse, visibl
    - ↻ = rafraîchissement manuel (re-catalogue cloud + re-scan serveurs locaux
      Ollama / LM Studio / llama.cpp côté pont). */
 const CLE_MODELE = 'athena_selected_model';
+/* v1.2 : limites de contexte PARTOUT avant tout usage — ces consts sont lues
+   par majBadgeContexte() dès l'init (initHudModele) ; déclarées après, c'est
+   une TDZ qui tue tout le chargement (boutons morts, sidebar vide). */
+const LIMITE_DEFAUT_CTX = 32768;
+const LIMITES_CTX = {
+  'pollinations:openai-fast': 131072, 'pollinations:openai': 131072,
+  'openrouter:google/gemma-4-31b-it:free': 262144, 'openrouter:google/gemma-4-26b-a4b-it:free': 262144,
+  'openrouter:qwen/qwen3.8-27b:free': 262144,
+  'openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 262144,
+  'openrouter:nvidia/nemotron-3-ultra-550b-a55b:free': 1048576,
+  'openrouter:nvidia/nemotron-3-super-120b-a12b:free': 262144,
+  'openrouter:nvidia/nemotron-3.5-lightning:free': 1048576,
+  'openrouter:nvidia/nemotron-3.5-content-safety:free': 131072,
+  'openrouter:poolside/laguna-s-2.1:free': 262144, 'openrouter:poolside/laguna-xs-2.1:free': 262144,
+  'openrouter:cohere/north-mini-code:free': 262144,
+  'openrouter:inclusionai/ling-3.0-flash-sante:free': 262144, 'openrouter:inclusionai/ling-3.0-flash-fin:free': 262144,
+  'openrouter:dots-studio/dots-3-note-preview:free': 524288, 'openrouter:liquid/lfm-2.5-2.6b:free': 65536,
+  'openrouter:stealth/space-bunny-alpha': 1048576, 'openrouter:openrouter/free': 32768,
+};
 let modeleChoisi = null;
 let hudCharge = false;
 
@@ -4881,22 +4906,7 @@ function rendreHudTemp() {
 })();
 
 /* ---------- Contexte (tokens de la discussion) ---------- */
-const LIMITE_DEFAUT_CTX = 32768;
-const LIMITES_CTX = {
-  'pollinations:openai-fast': 131072, 'pollinations:openai': 131072,
-  'openrouter:google/gemma-4-31b-it:free': 262144, 'openrouter:google/gemma-4-26b-a4b-it:free': 262144,
-  'openrouter:qwen/qwen3.8-27b:free': 262144,
-  'openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 262144,
-  'openrouter:nvidia/nemotron-3-ultra-550b-a55b:free': 1048576,
-  'openrouter:nvidia/nemotron-3-super-120b-a12b:free': 262144,
-  'openrouter:nvidia/nemotron-3.5-lightning:free': 1048576,
-  'openrouter:nvidia/nemotron-3.5-content-safety:free': 131072,
-  'openrouter:poolside/laguna-s-2.1:free': 262144, 'openrouter:poolside/laguna-xs-2.1:free': 262144,
-  'openrouter:cohere/north-mini-code:free': 262144,
-  'openrouter:inclusionai/ling-3.0-flash-sante:free': 262144, 'openrouter:inclusionai/ling-3.0-flash-fin:free': 262144,
-  'openrouter:dots-studio/dots-3-note-preview:free': 524288, 'openrouter:liquid/lfm-2.5-2.6b:free': 65536,
-  'openrouter:stealth/space-bunny-alpha': 1048576, 'openrouter:openrouter/free': 32768,
-};
+/* LIMITES_CTX déclarées près de CLE_MODELE (anti-TDZ à l'init). */
 function jetonsDiscussion() {
   const c = typeof conversationOuverte === 'function' ? conversationOuverte() : null;
   let n = 0;
