@@ -122,9 +122,10 @@ let messages = [];   // référence vers les messages de la conversation OUVERTE
 let occupe = false;
 let fichiersJoints = [];
 /* v20260926a (pièces jointes) : contenu TEXTUEL lu côté navigateur à l'ajout
-   du fichier, indexé par file_id. Non persisté (les conversations ne gardent
-   que {file_id,name}) : la lecture est donc valable pour la SESSION en cours,
-   y compris après la purge des puces (envoyer) et pendant une régénération. */
+   du fichier, indexé par file_id. Non persisté (les conversations gardent
+   file_id, name et des métadonnées d'affichage) : la lecture est donc valable
+   pour la SESSION en cours, y compris après la purge des puces (envoyer) et
+   pendant une régénération. */
 const contenusFichiers = new Map();
 /* v20260922l (21) : true PENDANT un re-rendu complet de vue (changement de
    conversation) — l'observateur de pastille ignore ces mutations-là. */
@@ -133,6 +134,13 @@ let renduVueEnCours = false;
 function tailleFichier(octets) {
   if (octets < 1024 * 1024) return Math.max(1, Math.round(octets / 1024)) + ' Ko';
   return (octets / (1024 * 1024)).toFixed(1) + ' Mo';
+}
+
+function extensionFichier(nom) {
+  const base = String(nom || '').split(/[\\/]/).pop() || '';
+  const point = base.lastIndexOf('.');
+  if (point <= 0 || point === base.length - 1) return '';
+  return base.slice(point + 1).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 4).toUpperCase();
 }
 
 /* ---------- v9.5 — File Ingestion Layer : VRAI upload des fichiers ----------
@@ -238,11 +246,19 @@ async function ajouterFichiers(liste) {
     afficherFichiers(); majBouton();
   }
 }
-/* Seuls les fichiers INDEXÉS partent avec le message. */
+/* Seuls les fichiers INDEXÉS partent avec le message. Les métadonnées
+   d'affichage restent locales : le schéma /api/chat ne conserve que
+   file_id et name. */
 function attachmentsEnvoyes() {
   return fichiersJoints
     .filter((f) => f.file_id && f.status === 'indexed')
-    .map((f) => ({ file_id: f.file_id, name: f.name }));
+    .map((f) => {
+      const sortie = { file_id: f.file_id, name: f.name };
+      if (Number.isFinite(f.size)) sortie.size = f.size;
+      if (Number.isFinite(f.chunks)) sortie.chunks = f.chunks;
+      if (f.status) sortie.status = f.status;
+      return sortie;
+    });
 }
 /* v9.5 : /chat-attache était une passerelle vers un proxy dédié — ce chemin
    n'existe plus côté Next (404) ni côté Pages (handler identique). /api/chat
@@ -285,7 +301,8 @@ async function lireTexteSiPossible(fichier) {
   return texte;
 }
 /* v20260926a : le contenu lu part UNIQUEMENT au moment de l'appel (jamais
-   persisté avec la conversation — seul {file_id,name} est stocké). */
+   persisté avec la conversation — seuls file_id, name et des métadonnées
+   d'affichage sont stockés). */
 function enrichirPieces(pieces) {
   if (!pieces || !pieces.length) return [];
   return pieces.slice(0, MAX_PIECES).map((p) => {
@@ -3700,14 +3717,52 @@ function bulle(role, contenu, outil, meta, options) {
   }
   /* v9.5 : fichiers joints du message (affichés, pas cousus dans le texte) */
   if (meta && meta.attachments && meta.attachments.length) {
-    const ligne = document.createElement('div');
-    ligne.className = 'fichier-joint';
-    /* v20260926e : séparateur ' ; ' — les noms contenant des virgules
-       restaient ambigus avec ', '. */
-    ligne.textContent = 'Fichier' + (meta.attachments.length > 1 ? 's' : '') + ' analysé'
-      + (meta.attachments.length > 1 ? 's' : '') + ' : '
-      + meta.attachments.map((a) => a.name).join(' ; ');
-    b.appendChild(ligne);
+    const carte = document.createElement('div');
+    carte.className = 'fichier-joint';
+    const entete = document.createElement('div');
+    entete.className = 'fichier-joint-tete';
+    entete.appendChild(icoSvg('file'));
+    const titre = document.createElement('span');
+    titre.className = 'fichier-joint-titre';
+    titre.textContent = 'Fichier' + (meta.attachments.length > 1 ? 's analysés' : ' analysé');
+    const compteur = document.createElement('span');
+    compteur.className = 'fichier-joint-compte';
+    compteur.textContent = String(meta.attachments.length);
+    entete.append(titre, compteur);
+    const liste = document.createElement('ul');
+    liste.className = 'fichier-joint-liste';
+    meta.attachments.forEach((piece) => {
+      const nomComplet = piece && typeof piece.name === 'string' && piece.name.trim()
+        ? piece.name
+        : 'Fichier sans nom';
+      const item = document.createElement('li');
+      item.className = 'fichier-joint-item';
+      const extension = extensionFichier(nomComplet);
+      if (extension) {
+        const pastille = document.createElement('span');
+        pastille.className = 'fichier-joint-extension';
+        pastille.textContent = extension;
+        item.appendChild(pastille);
+      }
+      const nom = document.createElement('span');
+      nom.className = 'fichier-joint-nom';
+      nom.textContent = nomComplet;
+      nom.title = nomComplet;
+      item.appendChild(nom);
+      const details = [];
+      if (piece && Number.isFinite(piece.size)) details.push(tailleFichier(piece.size));
+      if (piece && Number.isFinite(piece.chunks)) details.push(piece.chunks + ' seg.');
+      if (piece && piece.status === 'indexed') details.push('indexé');
+      if (details.length) {
+        const metaFichier = document.createElement('span');
+        metaFichier.className = 'fichier-joint-meta';
+        metaFichier.textContent = details.join(' · ');
+        item.appendChild(metaFichier);
+      }
+      liste.appendChild(item);
+    });
+    carte.append(entete, liste);
+    b.appendChild(carte);
   }
   if (outil && outil.nom) {
     const badge = document.createElement('div');
@@ -3889,8 +3944,9 @@ async function envoyer(texte) {
   if (convo.titre === 'Nouvelle discussion') {
     convo.titre = titreDepuis(contenu || 'Fichier : ' + attaches.map((a) => a.name).join(', '));
   }
-  /* les attachments vivent sur le message (petit : file_id + nom) —
-     « Régénérer » les renvoie à l'identique, le re-rendu les affiche */
+  /* les attachments vivent sur le message (petit : file_id, nom et
+     métadonnées d'affichage) — « Régénérer » les renvoie à l'identique,
+     le re-rendu les affiche */
   const messageUtilisateur = { role: 'user', content: contenu };
   if (attaches.length) messageUtilisateur.attachments = attaches;
   convo.messages.push(messageUtilisateur);
@@ -3940,8 +3996,8 @@ async function genererReponse(convo) {
      accompagnent cet appel — « Régénérer » les renvoie donc à l'identique. */
   const dernierUser = [...convo.messages].reverse().find((m) => m.role === 'user');
   /* v20260926a : le contenu TEXTUEL lu à l'ajout (mémoire de session) est
-     ajouté ici, au moment de l'appel — les conversations ne stockent jamais
-     que {file_id,name}. */
+     ajouté ici, au moment de l'appel — les conversations stockent file_id,
+     name et des métadonnées d'affichage, jamais le contenu. */
   const attachesTour = enrichirPieces((dernierUser && dernierUser.attachments) || []);
   try {
     r = await appelerApi(preparerHistorique(convo.messages), controleurEnCours.signal,

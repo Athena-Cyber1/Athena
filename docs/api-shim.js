@@ -109,8 +109,9 @@
     { provider: 'openrouter', model: 'nvidia/nemotron-3.5-content-safety:free', name: 'nemotron-3.5-safety free · openrouter' },
     { provider: 'openrouter', model: 'openrouter/free', name: 'free models router · openrouter' },
     /* v20260928 : space-bunny-alpha — gratuit (pricing 0) mais SANS suffixe
-       :free (modèle furtif) : appel direct, pas de cascade models[]. */
-    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter' },
+       :free (modèle furtif) : appel direct, pas de cascade models[]. Son
+       raisonnement interne ne doit jamais devenir la réponse visible. */
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -300,7 +301,7 @@
       if (!up && p && !p.free) {
         label = m.provider + ' · ' + ((!aCle && !p.viaProxy) ? 'clé manquante' : 'proxy non déployé');
       }
-      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null };
+      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null, reponseSansRaisonnement: m.reponseSansRaisonnement === true };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
@@ -609,8 +610,9 @@
         txt = txt.map(function (x) { return (x && x.text) || ''; }).join('');
       }
       /* reasoning-only (modèles free type GLM/gemma/qwen) : si content
-         vide, on retient le raisonnement plutôt que d'échouer. */
-      if ((!txt || !String(txt).trim()) && c && typeof c.reasoning === 'string' && c.reasoning.trim()) {
+         vide, on retient le raisonnement plutôt que d'échouer. Space Bunny
+         est exclu : son raisonnement interne n'est pas une réponse. */
+      if ((!txt || !String(txt).trim()) && entry.reponseSansRaisonnement !== true && c && typeof c.reasoning === 'string' && c.reasoning.trim()) {
         txt = c.reasoning;
       }
       if (txt && typeof txt !== 'string') txt = JSON.stringify(txt);
@@ -649,6 +651,9 @@
       var dernierJetonPensee = 0;
       var dernierJetonContenu = 0;
       var reponseAnnoncee = false;
+      /* Space Bunny : son raisonnement interne n'est jamais diffusé, afin
+         qu'une absence de réponse finale puisse utiliser la cascade. */
+      var penseeVisible = entry.reponseSansRaisonnement !== true;
 
       /* v20260926g (Claude) : les TRANCHES de contenu ne partent plus en
          progress — c'était la console de logs (un chunk = une « étape »).
@@ -675,7 +680,7 @@
         var maintenant = Date.now();
         var np = pensee.length - emisJetonPensee;
         var nc = contenu.length - emisJetonContenu;
-        if (np > 0 && (np >= 24 || maintenant - dernierJetonPensee > 150)) {
+        if (np > 0 && penseeVisible && (np >= 24 || maintenant - dernierJetonPensee > 150)) {
           onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
           emisJetonPensee = pensee.length;
           dernierJetonPensee = maintenant;
@@ -734,11 +739,13 @@
         throw e;
       }
       var txt = contenu;
-      if (!String(txt).trim()) txt = pensee;
+      /* Space Bunny : un flux sans contenu final reste une réponse vide,
+         même si le raisonnement a été reçu. */
+      if (!String(txt).trim() && entry.reponseSansRaisonnement !== true && String(pensee).trim()) txt = pensee;
       if (!String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
       /* v20260926d (kimi) : reliquat de jetons PUIS contrôle de fin. */
       if (onDelta) {
-        if (pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
+        if (penseeVisible && pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
         if (contenu.length > emisJetonContenu) onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
       }
       if (!vuFin) {

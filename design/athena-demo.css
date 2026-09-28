@@ -780,7 +780,8 @@ button.dot:focus-visible,
 }
 
 .bubble {
-  max-width: min(80%, 720px);
+  box-sizing: border-box;
+  max-width: min(576px, 100%);
   padding: calc(11px * var(--dens)) 16px;
   border-radius: 14px;
   font-size: 0.9375rem;
@@ -830,18 +831,117 @@ button.dot:focus-visible,
 }
 
 .fichier-joint {
-  margin-top: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 9px 11px;
   font-size: 0.78rem;
   color: var(--texte-doux);
   background: var(--gris-fond);
-  border: 1px dashed var(--bord-fort);
+  border: 1px solid var(--bord-fort);
+  border-radius: 11px;
+}
+.fichier-joint-tete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+.fichier-joint-tete .ico {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+.fichier-joint-titre {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fichier-joint-compte {
+  flex: 0 0 auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--carte);
+  border: 1px solid var(--bord-fort);
+  color: var(--texte);
+}
+.fichier-joint-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fichier-joint-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--carte);
+  border: 1px solid var(--bord);
   border-radius: 9px;
-  padding: 6px 10px;
+}
+.fichier-joint-extension {
+  flex: 0 0 auto;
+  min-width: 38px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: var(--primaire-doux);
+  color: var(--primaire-texte);
+}
+.fichier-joint-nom {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--texte);
+}
+.fichier-joint-meta {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: var(--texte-doux);
 }
 .row.user .fichier-joint {
-  background: color-mix(in srgb, var(--sur-primaire) 14%, transparent);
-  border-color: color-mix(in srgb, var(--sur-primaire) 35%, transparent);
-  color: var(--sur-primaire);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border-color: color-mix(in srgb, currentColor 30%, transparent);
+  color: inherit;
+}
+.row.user .fichier-joint-item {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  border-color: color-mix(in srgb, currentColor 24%, transparent);
+}
+.row.user .fichier-joint-compte,
+.row.user .fichier-joint-extension {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border-color: color-mix(in srgb, currentColor 34%, transparent);
+  color: inherit;
+}
+.row.user .fichier-joint-titre,
+.row.user .fichier-joint-nom,
+.row.user .fichier-joint-meta {
+  color: inherit;
 }
 
 .outil-badge {
@@ -2657,7 +2757,7 @@ span.think:not(details .think) {
 }
 
 .row.bot .bubble {
-  max-width: min(92%, 900px);
+  max-width: min(92%, 576px);
   padding: 0 4px;
   border: 0;
   border-radius: 0;
@@ -2666,7 +2766,7 @@ span.think:not(details .think) {
 }
 
 .row.user .bubble {
-  max-width: min(78%, 720px);
+  max-width: min(78%, 576px);
   padding: 12px 17px;
   border: 0;
   border-radius: 18px 18px 5px 18px;
@@ -3349,11 +3449,11 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 .row.bot .bubble {
-  max-width: 100%;
+  max-width: min(576px, 100%);
 }
 
 .row.user .bubble {
-  max-width: min(78%, 520px);
+  max-width: min(576px, 90%);
   padding: 10px 14px;
   border: 1px solid #333;
   border-radius: 14px 14px 5px 14px;
@@ -3945,7 +4045,7 @@ header.chat-tete {
   .row.bot .bubble,
   .row.user .bubble,
   .bubble {
-    max-width: 100%;
+    max-width: min(576px, 100%);
   }
   .composeur-carte {
     max-width: 744px;
