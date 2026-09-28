@@ -114,7 +114,7 @@
        v1.2 : effort de raisonnement SUIT le bouton effort du HUD (low par
        défaut via repli) — en max permanent, le raisonnement mange tout
        le budget et content revient vide. */
-    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { var ef = effortNvidia(entry); var mt = { low: 1200, medium: 2000, high: 4000, max: 8000 }[ef] || 2000; return { reasoning: { effort: ef, exclude: false }, max_tokens: mt }; } },
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { var ef = effortNvidia(entry); var mt = { low: 2000, medium: 8000, high: 32000, max: 64000 }[ef] || 8000; return { reasoning: { effort: ef, exclude: false }, max_tokens: mt }; } },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
