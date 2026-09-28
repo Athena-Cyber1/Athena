@@ -3418,13 +3418,13 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
 }
 
 /* ---------- v7.4.1 : fenêtre d'historique envoyée à l'API ---------- */
-/* L'API n'accepte que 40 messages / 8 000 caractères par message. On coupe
-   CÔTÉ CLIENT (les plus anciens tombent, une ouverture system éventuelle est
-   conservée, les contenus trop longs sont réduits) pour que la conversation
-   AFFICHÉE reste complète dans localStorage sans jamais déclencher
-   « Messages invalides » après ~20 échanges. */
-const FENETRE_API = 30;
-const MAX_CONTENU_API = 8000;
+/* v1.2 (audit) : les bornes historiques (30 messages / 8000 car.) mutilaient
+   le contexte — milieux de messages remplacés par « tronqué », fins de tâche
+   bâclées par manque d'infos. Les modèles actuels avalent 10× plus : on ne
+   coupe qu'au-delà de 100 messages / 60000 car., et la compression auto du
+   shim (85 % de la limite) prend le relais proprement par résumé. */
+const FENETRE_API = 100;
+const MAX_CONTENU_API = 60000;
 const MARQUEUR_COUPURE = '\n\n[… tronqué …]';
 
 function preparerHistorique(messages) {

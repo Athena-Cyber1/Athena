@@ -210,13 +210,13 @@
     return t;
   }
 
-  function detailAffichable(msg) {
+  function detailAffichable(msg, solo) {
     var t = purgerCles(String(msg || 'erreur inconnue'))
-      .replace(/[\{\}<>]/g, ' ')
+      .replace(/[\{\}<>"']/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     if (t.length > 280) t = t.slice(0, 280) + '…';
-    return 'Échec des modèles : ' + t;
+    return (solo ? 'Échec du modèle : ' : 'Échec des modèles : ') + t;
   }
 
   /* Garde-fou par tentative : une souche qui bloque (saturée, Turnstile,
@@ -427,6 +427,25 @@
     }
     return { messages: compresse, note: note, utilises: utilises, limite: limite };
   }
+  /* v1.2 (audit) : plafond de sortie MAXIMAL par modèle — vérifié le
+     2026-09-28 (top_provider.max_completion_tokens d'OpenRouter, docs
+     providers sinon). Appliqué sauf payload explicite (NVIDIA, Bunny). */
+  var MAX_SORTIE = {
+    'openrouter:google/gemma-4-31b-it:free': 32768, 'openrouter:google/gemma-4-26b-a4b-it:free': 32768,
+    'openrouter:qwen/qwen3.8-27b:free': 235929,
+    'openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 65536,
+    'openrouter:nvidia/nemotron-3-ultra-550b-a55b:free': 65536,
+    'openrouter:nvidia/nemotron-3-super-120b-a12b:free': 235929,
+    'openrouter:nvidia/nemotron-3.5-lightning:free': 65536,
+    'openrouter:nvidia/nemotron-3.5-content-safety:free': 8192,
+    'openrouter:poolside/laguna-s-2.1:free': 32768, 'openrouter:poolside/laguna-xs-2.1:free': 32768,
+    'openrouter:cohere/north-mini-code:free': 64000,
+    'openrouter:inclusionai/ling-3.0-flash-sante:free': 32768, 'openrouter:inclusionai/ling-3.0-flash-fin:free': 32768,
+    'openrouter:dots-studio/dots-3-note-preview:free': 460800, 'openrouter:liquid/lfm-2.5-2.6b:free': 8192,
+    'groq:llama-3.3-70b-versatile': 32768, 'groq:llama-3.1-8b-instant': 8192,
+    'openai:gpt-4o-mini': 16384, 'deepseek:deepseek-chat': 8192, 'gemini:gemini-2.0-flash': 8192,
+    'pollinations:openai-fast': 16384, 'pollinations:openai': 16384,
+  };
   function orModelsBody(entryModel) {
     if (OR_FREE.indexOf(entryModel) < 0) return null;
     /* OpenRouter : models[] = 3 items max (400 au-delà). */
@@ -456,7 +475,9 @@
     'Le shell est PowerShell sous Windows : syntaxe PowerShell UNIQUEMENT (pas de cmd, pas ' +
     'de bash — `start "" prog` et `export X=y` échouent ; utilise Start-Process et ' +
     '$env:X=\'y\'). Si `python` est introuvable, réessaie avec `py`. Commandes en un ' +
-    'seul passage, jamais interactives.';
+    'seul passage, jamais interactives. Dans tous les cas, mène chaque réponse à son ' +
+    'terme : aucun abrégé, aucun placeholder (« reste du code… », « etc. »), aucune ' +
+    'fin expédiée, même pour les longues réponses.';
 
   /* v20260926b (direct) : le modèle peut aussi CRÉER des fichiers sur le PC —
      bloc fenced athena-file avec le chemin en première ligne, contenu ensuite.
@@ -651,7 +672,11 @@
       var c = {
         messages: messages,
         temperature: 0.6,
-        max_tokens: 1200,
+        /* v1.2 (audit) : 1200 tokens coupaient toute réponse longue (code,
+           jeux) en plein milieu — 4096 par défaut, relevé au plafond du
+           modèle via MAX_SORTIE ; les payloads spécifiques (NVIDIA 16384,
+           Bunny par effort) restent prioritaires. */
+        max_tokens: 4096,
         stream: !!enFlux,
       };
       /* cadrage spécifique : provider (nvidia → kimi-k3 : temperature 1,
@@ -663,6 +688,12 @@
       var opts = pe || (p.payload ? p.payload(entry) : null);
       if (opts) {
         Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
+      }
+      /* v1.2 : plafond de sortie maximal du modèle (MAX_SORTIE) — sauf
+         payload explicite qui reste prioritaire. */
+      if ((!opts || opts.max_tokens === undefined)) {
+        var idm = (entry.providerKey || '') + ':' + (entry.model || '');
+        if (MAX_SORTIE[idm] !== undefined) c.max_tokens = MAX_SORTIE[idm];
       }
       /* v1.2 : température choisie dans les réglages — sauf réglage propre
          au modèle/provider (ex. NVIDIA temperature 1) qui reste prioritaire. */
@@ -963,7 +994,15 @@
     var parId = {};
     cat.forEach(function (e) { parId[e.id] = e; });
     var chaine = [];
-    if (modelId && parId[modelId] && parId[modelId].up) chaine.push(parId[modelId]);
+    /* v1.2 (strict) : modèle CHOISI = lui seul, sans relais — en cas d'échec,
+       l'erreur honnête DE CE MODÈLE remonte (plus de réponse surprise d'un
+       autre modèle). Sélection invalide/indisponible → repli sur la cascade
+       auto (ex. vieux choix mémorisé). Mode auto : cascade inchangée. */
+    var choixValide = Boolean(modelId && parId[modelId] && parId[modelId].up);
+    if (choixValide) {
+      chaine.push(parId[modelId]);
+      return { chaine: chaine, choisiOk: true, strict: true };
+    }
     /* Un seul entry openrouter free : models[] couvre déjà les autres free
        en cascade interne → on ne les empile pas (évite 5× la même requête). */
     var orCouvert = chaine.some(function (e) {
@@ -977,7 +1016,7 @@
       }
       chaine.push(e);
     });
-    return { chaine: chaine, choisiOk: !modelId || (parId[modelId] && parId[modelId].up) };
+    return { chaine: chaine, choisiOk: !modelId || (parId[modelId] && parId[modelId].up), strict: false };
   }
 
   async function gererChat(bodyStr, signal) {
@@ -1108,7 +1147,7 @@
           dernierErr = err;
         }
       }
-      var msg = detailAffichable((dernierErr && dernierErr.message) || 'erreur inconnue');
+      var msg = detailAffichable((dernierErr && dernierErr.message) || 'erreur inconnue', plan.strict);
       return json({ erreur: msg }, 400);
     }
 
@@ -1203,7 +1242,7 @@
             err = e2;
           }
         }
-        emit({ type: 'erreur', erreur: detailAffichable((err && err.message) || 'erreur inconnue') });
+        emit({ type: 'erreur', erreur: detailAffichable((err && err.message) || 'erreur inconnue', plan.strict) });
         try { ctrl.close(); } catch (e) {}
       },
     });
