@@ -1499,7 +1499,7 @@ publierHooks('__atelierProjets', {
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
 
-const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true, dossierTravail: '', theme: 'dark' };
+const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true, dossierTravail: '', theme: 'dark', temperature: 0.6 };
 let preferences = { ...preferencesParDefaut };
 try {
   preferences = { ...preferencesParDefaut, ...JSON.parse(localStorage.getItem('chat-preferences') || '{}') };
@@ -1568,6 +1568,34 @@ function creerInterrupteur(cle, titre, description) {
   check.addEventListener('change', () => enregistrerPreference(cle, check.checked));
   return creerLigneOption(titre, description, check);
 }
+/* v1.2 : curseur de température (0 = précis, 2 = audacieux). */
+function creerCurseurTemperature() {
+  const zone = document.createElement('span');
+  zone.className = 'setting-curseur-zone';
+  const curseur = document.createElement('input');
+  curseur.type = 'range';
+  curseur.min = '0';
+  curseur.max = '2';
+  curseur.step = '0.1';
+  curseur.className = 'setting-curseur';
+  const valeur = (typeof preferences.temperature === 'number' && Number.isFinite(preferences.temperature))
+    ? Math.max(0, Math.min(2, preferences.temperature)) : 0.6;
+  curseur.value = String(valeur);
+  curseur.setAttribute('aria-label', 'Température des modèles');
+  const pastille = document.createElement('span');
+  pastille.className = 'setting-curseur-valeur';
+  pastille.textContent = Number(curseur.value).toFixed(1);
+  const appliquer = () => {
+    const v = Math.max(0, Math.min(2, Math.round(Number(curseur.value) * 10) / 10));
+    pastille.textContent = v.toFixed(1);
+    enregistrerPreference('temperature', v);
+    majBadgeTemp();
+  };
+  curseur.addEventListener('input', () => { pastille.textContent = Number(curseur.value).toFixed(1); });
+  curseur.addEventListener('change', appliquer);
+  zone.append(curseur, pastille);
+  return creerLigneOption('Température', 'Créativité des réponses : 0 précis, 0,6 équilibré, 2 audacieux. Certains modèles gardent leur réglage.', zone);
+}
 /* v20260926e : ligne de réglage avec champ texte (ex. dossier de travail). */
 function creerLigneChamp(cle, titre, description, placeholder) {
   const champ = document.createElement('input');
@@ -1623,6 +1651,7 @@ function afficherParametres(ongletActif = 'Apparence') {
         creerInterrupteur('confirmationEnvoi', 'Confirmer avant l’envoi', 'Demande une confirmation avant chaque message.'),
         creerInterrupteur('outilsWeb', 'Outils web', 'Recherche internet, curl et lecture de pages quand la question le demande.'),
         creerInterrupteur('raisonnementVisible', 'Raisonnement visible', 'Affiche en direct les étapes : routage, recherche, mémoire, vérification.'),
+        creerCurseurTemperature(),
         creerInterrupteur('executionAuto', 'Exécution automatique des commandes', 'Les blocs athena-exec partent seuls sur l’agent local (127.0.0.1:3020) — sans modale « Exécuter sur ce PC ? ». Décocher pour reprendre la confirmation manuelle.'),
         creerLigneChamp('dossierTravail', 'Dossier de travail (fichiers créés)', 'Dossier du PC où le modèle enregistre les fichiers (chemins relatifs). Vide = dossier de l’agent. Ex. C:\\Users\\moi\\Documents\\Athena',
           'C:\\Users\\moi\\Documents\\Athena'),
@@ -4513,9 +4542,10 @@ function majBadgeModele() {
   const bouton = document.getElementById('btn-modele');
   if (bouton) {
     bouton.title = modeleChoisi
-      ? `Modèle actif : ${modeleChoisi.name} — clic pour changer`
-      : 'Modèle de langue — auto = cascade (gratuit → zai)';
+      ? `Modèle actif : ${modeleChoisi.name} - clic pour changer`
+      : 'Modèle de langue - auto = cascade (gratuit → zai)';
   }
+  majBadgeContexte();
 }
 
 function fermerHud() {
@@ -4526,6 +4556,8 @@ function fermerHud() {
     if (bouton) bouton.setAttribute('aria-expanded', 'false');
   }
   fermerHudEffort();
+  fermerHudTemp();
+  fermerHudContexte();
 }
 
 function itemModeleHud(m, selectionCourante) {
@@ -4761,6 +4793,192 @@ function rendreHudEffort() {
   note.textContent = 'Envoyé en reasoning_effort (payload NVIDIA) — repli automatique si le modèle refuse la valeur (ex. kimi-k3 : medium → low).';
   panneau.appendChild(note);
 }
+
+/* ---------- Température rapide (pied de page) ---------- */
+const TEMPS = [
+  { v: 0.2, nom: 'Précis', aide: 'Factuel, peu de fantaisie.' },
+  { v: 0.6, nom: 'Équilibré', aide: 'Valeur par défaut recommandée.' },
+  { v: 1.0, nom: 'Créatif', aide: 'Plus de variété et d’idées.' },
+  { v: 1.5, nom: 'Audacieux', aide: 'Très créatif, inexactitudes possibles.' },
+  { v: 2.0, nom: 'Maximum', aide: 'Chaos contrôlé.' },
+];
+function temperatureChoisie() {
+  const v = preferences.temperature;
+  return (typeof v === 'number' && Number.isFinite(v)) ? Math.max(0, Math.min(2, v)) : 0.6;
+}
+function majBadgeTemp() {
+  const el = document.getElementById('temp-actif-nom');
+  if (el) el.textContent = temperatureChoisie().toFixed(1);
+  const bouton = document.getElementById('btn-temp');
+  if (bouton) bouton.title = `Température des modèles : ${temperatureChoisie().toFixed(1)} — clic pour changer`;
+}
+function fermerHudTemp() {
+  const panneau = document.getElementById('hud-temp');
+  const bouton = document.getElementById('btn-temp');
+  if (!panneau || panneau.hidden) return;
+  panneau.hidden = true;
+  if (bouton) bouton.setAttribute('aria-expanded', 'false');
+}
+function itemTempHud(e) {
+  const item = document.createElement('button');
+  item.type = 'button';
+  item.className = 'hud-item' + (e.v === temperatureChoisie() ? ' actif' : '');
+  const point = document.createElement('span');
+  point.className = 'hud-point';
+  point.setAttribute('aria-hidden', 'true');
+  const infos = document.createElement('span');
+  infos.className = 'hud-item-infos';
+  const nom = document.createElement('span');
+  nom.className = 'hud-item-nom';
+  nom.textContent = e.v.toFixed(1) + ' · ' + e.nom;
+  const aide = document.createElement('span');
+  aide.className = 'hud-item-provider';
+  aide.textContent = e.aide;
+  infos.append(nom, aide);
+  item.append(point, infos);
+  if (e.v === temperatureChoisie()) {
+    const badge = document.createElement('span');
+    badge.className = 'hud-badge actif';
+    badge.textContent = 'actif';
+    item.appendChild(badge);
+  }
+  item.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    enregistrerPreference('temperature', e.v);
+    majBadgeTemp();
+    fermerHudTemp();
+  });
+  return item;
+}
+function rendreHudTemp() {
+  const panneau = document.getElementById('hud-temp');
+  if (!panneau) return;
+  panneau.replaceChildren();
+  const titre = document.createElement('div');
+  titre.className = 'hud-section-titre';
+  titre.textContent = 'Température des modèles';
+  panneau.appendChild(titre);
+  for (const e of TEMPS) panneau.appendChild(itemTempHud(e));
+  const note = document.createElement('div');
+  note.className = 'hud-note';
+  note.textContent = '0 = précis, 2 = audacieux. Certains modèles gardent leur réglage propre (ex. NVIDIA).';
+  panneau.appendChild(note);
+}
+(function initHudTemp() {
+  const bouton = document.getElementById('btn-temp');
+  const panneau = document.getElementById('hud-temp');
+  if (!bouton || !panneau) return;
+  majBadgeTemp();
+  bouton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!panneau.hidden) { fermerHudTemp(); return; }
+    fermerHud();
+    rendreHudTemp();
+    panneau.hidden = false;
+    bouton.setAttribute('aria-expanded', 'true');
+  });
+  panneau.addEventListener('click', (e) => e.stopPropagation());
+})();
+
+/* ---------- Contexte (tokens de la discussion) ---------- */
+const LIMITE_DEFAUT_CTX = 32768;
+const LIMITES_CTX = {
+  'pollinations:openai-fast': 131072, 'pollinations:openai': 131072,
+  'openrouter:google/gemma-4-31b-it:free': 262144, 'openrouter:google/gemma-4-26b-a4b-it:free': 262144,
+  'openrouter:qwen/qwen3.8-27b:free': 262144,
+  'openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 262144,
+  'openrouter:nvidia/nemotron-3-ultra-550b-a55b:free': 1048576,
+  'openrouter:nvidia/nemotron-3-super-120b-a12b:free': 262144,
+  'openrouter:nvidia/nemotron-3.5-lightning:free': 1048576,
+  'openrouter:nvidia/nemotron-3.5-content-safety:free': 131072,
+  'openrouter:poolside/laguna-s-2.1:free': 262144, 'openrouter:poolside/laguna-xs-2.1:free': 262144,
+  'openrouter:cohere/north-mini-code:free': 262144,
+  'openrouter:inclusionai/ling-3.0-flash-sante:free': 262144, 'openrouter:inclusionai/ling-3.0-flash-fin:free': 262144,
+  'openrouter:dots-studio/dots-3-note-preview:free': 524288, 'openrouter:liquid/lfm-2.5-2.6b:free': 65536,
+  'openrouter:stealth/space-bunny-alpha': 1048576, 'openrouter:openrouter/free': 32768,
+};
+function jetonsDiscussion() {
+  const c = typeof conversationOuverte === 'function' ? conversationOuverte() : null;
+  let n = 0;
+  ((c && c.messages) || []).forEach((m) => { n += Math.ceil(String((m && m.content) || '').length / 4) + 4; });
+  return n;
+}
+function limiteDiscussion() {
+  if (!modeleChoisi) return null;
+  if (LIMITES_CTX[modeleChoisi.id] !== undefined) return LIMITES_CTX[modeleChoisi.id];
+  if (String(modeleChoisi.id).startsWith('nvidia:')) return 131072;
+  return LIMITE_DEFAUT_CTX;
+}
+function formatK(n) {
+  const x = Math.round(n);
+  if (x < 1000) return String(x);
+  return (x / 1000).toFixed(x < 10000 ? 1 : 0).replace('.', ',') + 'k';
+}
+function majBadgeContexte() {
+  const el = document.getElementById('contexte-actif-nom');
+  if (!el) return;
+  const u = jetonsDiscussion();
+  const lim = limiteDiscussion();
+  el.textContent = lim ? formatK(u) + '/' + formatK(lim) : formatK(u);
+  const bouton = document.getElementById('btn-contexte');
+  if (bouton) bouton.title = lim
+    ? `Contexte : ${u} tokens estimés / ${lim} (${Math.round((u / lim) * 100)} %) — compression auto à 85 %`
+    : `Contexte : ${u} tokens estimés (mode auto — limite selon le modèle) — compression auto à 85 %`;
+}
+function fermerHudContexte() {
+  const panneau = document.getElementById('hud-contexte');
+  const bouton = document.getElementById('btn-contexte');
+  if (!panneau || panneau.hidden) return;
+  panneau.hidden = true;
+  if (bouton) bouton.setAttribute('aria-expanded', 'false');
+}
+function rendreHudContexte() {
+  const panneau = document.getElementById('hud-contexte');
+  if (!panneau) return;
+  panneau.replaceChildren();
+  majBadgeContexte();
+  const titre = document.createElement('div');
+  titre.className = 'hud-section-titre';
+  titre.textContent = 'Contexte de la discussion';
+  panneau.appendChild(titre);
+  const c = conversationOuverte();
+  const nb = (c.messages || []).length;
+  const u = jetonsDiscussion();
+  const lim = limiteDiscussion();
+  const lignes = [
+    ['Utilisés (estimés)', u + ' tokens'],
+    ['Modèle', modeleChoisi ? modeleChoisi.name : 'auto (cascade)'],
+    ['Limite', lim ? lim + ' tokens' : 'selon le modèle choisi'],
+    ['Remplissage', lim ? Math.round((u / lim) * 100) + ' %' : '—'],
+    ['Messages', nb + ' message' + (nb > 1 ? 's' : '')],
+  ];
+  lignes.forEach(([k, v]) => {
+    const row = document.createElement('div');
+    row.className = 'hud-note';
+    row.textContent = k + ' : ' + v;
+    panneau.appendChild(row);
+  });
+  const note = document.createElement('div');
+  note.className = 'hud-note';
+  note.textContent = 'Estimation : caractères / 4. Au-delà de 85 % de la limite, les anciens messages sont résumés automatiquement.';
+  panneau.appendChild(note);
+}
+(function initHudContexte() {
+  const bouton = document.getElementById('btn-contexte');
+  const panneau = document.getElementById('hud-contexte');
+  if (!bouton || !panneau) return;
+  majBadgeContexte();
+  bouton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!panneau.hidden) { fermerHudContexte(); return; }
+    fermerHud();
+    rendreHudContexte();
+    panneau.hidden = false;
+    bouton.setAttribute('aria-expanded', 'true');
+  });
+  panneau.addEventListener('click', (e) => e.stopPropagation());
+  setInterval(() => { try { majBadgeContexte(); } catch (_) {} }, 5000);
+})();
 
 (function initHudEffort() {
   const bouton = document.getElementById('btn-effort');

@@ -3955,6 +3955,24 @@ details.trace-cmd.echec .trace-cmd-status {
   outline: 2px solid var(--primaire-doux);
   border-color: var(--primaire);
 }
+/* v1.2 : curseur de température (réglages) — sobre, 24 px de haut. */
+.setting-curseur-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+}
+.setting-curseur {
+  width: 160px;
+  accent-color: var(--primaire);
+}
+.setting-curseur-valeur {
+  min-width: 30px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--texte-doux);
+}
 /* v20260926m : PAS de ligne sous le header (demande UI) — ni bordure,
    ni couleur de bordure résiduelle des surcharges.
    v20260926o (kimi) : le défilement restait lisible sous le fond

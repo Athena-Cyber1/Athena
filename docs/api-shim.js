@@ -348,6 +348,84 @@
     'openrouter/free',
   ]);
 
+  /* ---- Contexte : estimation + compression automatique ----
+     Jetons estimés en car/4 (+4 par message) — heuristique documentée
+     (pas de tokenizer dans le navigateur). Quand le prompt dépasse 85 %
+     de la limite du modèle visé, les anciens messages sont résumés par un
+     modèle gratuit (repli : troncature dure), jamais d'erreur 400 silencieuse. */
+  var LIMITE_DEFAUT = 32768;
+  var LIMITES_CONTEXTE = {
+    'pollinations:openai-fast': 131072,
+    'pollinations:openai': 131072,
+  };
+  var LIMITES_OR = {
+    'google/gemma-4-31b-it:free': 262144, 'google/gemma-4-26b-a4b-it:free': 262144,
+    'qwen/qwen3.8-27b:free': 262144, 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 262144,
+    'nvidia/nemotron-3-ultra-550b-a55b:free': 1048576, 'nvidia/nemotron-3-super-120b-a12b:free': 262144,
+    'nvidia/nemotron-3.5-lightning:free': 1048576, 'nvidia/nemotron-3.5-content-safety:free': 131072,
+    'poolside/laguna-s-2.1:free': 262144, 'poolside/laguna-xs-2.1:free': 262144,
+    'cohere/north-mini-code:free': 262144, 'inclusionai/ling-3.0-flash-sante:free': 262144,
+    'inclusionai/ling-3.0-flash-fin:free': 262144, 'dots-studio/dots-3-note-preview:free': 524288,
+    'liquid/lfm-2.5-2.6b:free': 65536, 'stealth/space-bunny-alpha': 1048576,
+  };
+  function limiteModele(entry) {
+    if (!entry) return LIMITE_DEFAUT;
+    var id = (entry.providerKey || '') + ':' + (entry.model || '');
+    if (LIMITES_CONTEXTE[id] !== undefined) return LIMITES_CONTEXTE[id];
+    if (entry.providerKey === 'openrouter' && LIMITES_OR[entry.model] !== undefined) return LIMITES_OR[entry.model];
+    if (entry.providerKey === 'openrouter') return LIMITE_DEFAUT;
+    if (entry.providerKey === 'nvidia') return 131072;
+    return LIMITE_DEFAUT;
+  }
+  function jetonsEstimes(msgs) {
+    var n = 0;
+    (msgs || []).forEach(function (m) { n += Math.ceil(String((m && m.content) || '').length / 4) + 4; });
+    return n;
+  }
+  async function compresserSiPlein(msgs, entry, signal) {
+    var limite = limiteModele(entry);
+    var utilises = jetonsEstimes(msgs);
+    if (utilises <= limite * 0.85 || msgs.length <= 8) return { messages: msgs, note: null, utilises: utilises, limite: limite };
+    var systeme = msgs.filter(function (m) { return m && m.role === 'system'; });
+    var recents = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(-6);
+    var anciens = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(0, -6);
+    var resume = null;
+    try {
+      var cat = catalogue();
+      /* v1.2 : openrouter d'abord (pollinations est muré anti-robot dans
+         les navigateurs — Turnstile 403 garanti, inutile de l'essayer). */
+      var eRes = null;
+      for (var i = 0; i < cat.length; i++) {
+        if (cat[i].up && cat[i].providerKey === 'openrouter') { eRes = cat[i]; break; }
+      }
+      if (!eRes) {
+        for (var j = 0; j < cat.length; j++) {
+          if (cat[j].up && cat[j].providerKey === 'pollinations') { eRes = cat[j]; break; }
+        }
+      }
+      if (eRes) {
+        var matiere = anciens.map(function (m) { return (m.role || '?') + ' : ' + String(m.content || ''); }).join('\n').slice(0, 8000);
+        var txt = await appelBorne(callModel(eRes, [
+          { role: 'system', content: 'Résume fidèlement en 12 lignes maximum : faits, décisions, contexte utile. Réponds UNIQUEMENT avec le résumé.' },
+          { role: 'user', content: matiere },
+        ], signal), 70000);
+        if (txt && txt.trim()) resume = txt.trim().slice(0, 2000);
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      resume = null;
+    }
+    var compresse;
+    var note;
+    if (resume) {
+      compresse = systeme.concat([{ role: 'user', content: '[Contexte compressé automatiquement : ' + anciens.length + ' anciens messages résumés]\n' + resume }], recents);
+      note = 'contexte compressé (' + anciens.length + ' messages résumés)';
+    } else {
+      compresse = systeme.concat(recents);
+      note = 'contexte tronqué (' + anciens.length + ' anciens messages retirés, résumé impossible)';
+    }
+    return { messages: compresse, note: note, utilises: utilises, limite: limite };
+  }
   function orModelsBody(entryModel) {
     if (OR_FREE.indexOf(entryModel) < 0) return null;
     /* OpenRouter : models[] = 3 items max (400 au-delà). */
@@ -583,6 +661,18 @@
       if (opts) {
         Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
       }
+      /* v1.2 : température choisie dans les réglages — sauf réglage propre
+         au modèle/provider (ex. NVIDIA temperature 1) qui reste prioritaire. */
+      if (!opts || opts.temperature === undefined) {
+        var tPref = null;
+        try {
+          var prefs = JSON.parse(localStorage.getItem('chat-preferences') || '{}');
+          if (prefs && typeof prefs.temperature === 'number' && Number.isFinite(prefs.temperature)) {
+            tPref = Math.max(0, Math.min(2, prefs.temperature));
+          }
+        } catch (e) {}
+        if (tPref !== null) c.temperature = tPref;
+      }
       if (liste) c.models = liste;
       else c.model = entry.model;
       return JSON.stringify(c);
@@ -760,7 +850,11 @@
     }
 
     function uneTentative(liste) {
-      var enFlux = !!p.sse;
+      /* v1.2 (audit) : le flux SSE ne se lit QUE si l'appelant veut du
+         stream (onDelta branché). Avant : `!!p.sse` forçait lireSSE même en
+         JSON — toute réponse non-stream d'un provider SSE finissait en
+         « réponse vide » (delta absent du JSON). */
+      var enFlux = !!p.sse && !!onDelta;
       var enTetes = headers;
       if (enFlux) {
         enTetes = {};
@@ -955,6 +1049,17 @@
       var e2 = 'Aucun modèle disponible (clé API manquante pour tous les providers non gratuits).';
       return wantStream ? ndjson([{ type: 'erreur', erreur: e2 }], 503) : json({ erreur: e2 }, 503);
     }
+    /* v1.2 : compression automatique du contexte — le modèle ne reçoit
+       jamais plus de 85 % de sa limite (résumé LLM, repli troncature). */
+    var noteCompression = null;
+    try {
+      var comp = await compresserSiPlein(messages, plan.chaine[0], signal);
+      messages = comp.messages;
+      noteCompression = comp.note;
+    } catch (eComp) {
+      if (eComp && eComp.name === 'AbortError') throw eComp;
+      noteCompression = null;
+    }
 
     /* aboutissement d'une tentative réussie — commun aux 2 chemins */
     function assembler(entry, texte) {
@@ -981,6 +1086,7 @@
           raisonnement: null,
           conversation_id: typeof body.conversation_id === 'string' ? body.conversation_id : null,
           modele_repli: repli || undefined,
+          compression: noteCompression || undefined,
         },
       };
     }
@@ -1015,6 +1121,7 @@
           try { ctrl.enqueue(enc.encode(JSON.stringify(ev) + '\n')); } catch (e) {}
         };
         var err = null;
+        if (noteCompression) emit({ type: 'progress', etape: 'contexte', message: 'Contexte compressé : ' + noteCompression });
         /* v20260926f (lags) : un provider qui timeout 2 fois de suite est
            écarté pour le reste de la passe — sinon 16 modèles × 10 s de
            TTFB = plusieurs minutes de vide. Seuls les timeouts comptent

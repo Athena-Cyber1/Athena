@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925bm" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925bn" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -237,6 +237,21 @@
                 </button>
                 <div id="hud-efforts" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Choisir l'effort de raisonnement"></div>
               </div>
+              <div class="hud-effort-wrap hud-effort-bas">
+                <button id="btn-temp" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-temp" title="Température des modèles — clic pour changer">
+                  <span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12h2l2-5 3 10 3-14 3 8 2-3h3"/></svg></span>
+                  <span id="temp-actif-nom" class="modele-actif-nom effort-valeur">0.6</span>
+                  <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+                </button>
+                <div id="hud-temp" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Choisir la température"></div>
+              </div>
+              <div class="hud-effort-wrap hud-effort-bas">
+                <button id="btn-contexte" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-contexte" title="Contexte de la discussion — tokens utilisés et limite">
+                  <span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 8 8"/><path d="M12 12l4-4"/></svg></span>
+                  <span id="contexte-actif-nom" class="modele-actif-nom effort-valeur">–</span>
+                </button>
+                <div id="hud-contexte" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Contexte de la discussion"></div>
+              </div>
             </div>
           </div>
           <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabindex="-1" />
@@ -247,11 +262,11 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260925bm"></script>
-    <script src="./api-shim.js?v=20260925bm"></script>
+    <script src="./keys.js?v=20260925bn"></script>
+    <script src="./api-shim.js?v=20260925bn"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20260925bm"></script>
+    <script src="./chat-demo.js?v=20260925bn"></script>
   </div>
 </body>
 </html>
