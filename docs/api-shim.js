@@ -92,7 +92,6 @@
        compte gratuit (sans carte) — catalogue vérifié via /models public.
        Trio prioritare d'abord (un seul endpoint chacun → cascade models[]
        côté OpenRouter si l'un est rate-limité). */
-    { provider: 'openrouter', model: 'z-ai/glm-5.2:free', name: 'glm-5.2 free · openrouter' },
     { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter' },
     { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter' },
     { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter' },
@@ -100,13 +99,9 @@
     { provider: 'openrouter', model: 'google/gemma-4-26b-a4b-it:free', name: 'gemma-4-26b free · openrouter' },
     { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'nemotron-3-super free · openrouter' },
     { provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free', name: 'nemotron-3.5-lightning free · openrouter' },
-    { provider: 'openrouter', model: 'thinkingmachines/inkling:free', name: 'inkling free · openrouter' },
-    { provider: 'openrouter', model: 'thinkingmachines/inkling-small:free', name: 'inkling-small free · openrouter' },
     { provider: 'openrouter', model: 'poolside/laguna-s-2.1:free', name: 'laguna-s free · openrouter' },
     { provider: 'openrouter', model: 'poolside/laguna-xs-2.1:free', name: 'laguna-xs free · openrouter' },
     { provider: 'openrouter', model: 'cohere/north-mini-code:free', name: 'north-mini-code free · openrouter' },
-    { provider: 'openrouter', model: 'nex-agi/nex-n2.5-mini:free', name: 'nex-n2.5-mini free · openrouter' },
-    { provider: 'openrouter', model: 'nex-agi/nex-n2.5-pro:free', name: 'nex-n2.5-pro free · openrouter' },
     { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free', name: 'ling-3.0-flash-sante free · openrouter' },
     { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-fin:free', name: 'ling-3.0-flash-fin free · openrouter' },
     { provider: 'openrouter', model: 'dots-studio/dots-3-note-preview:free', name: 'dots-3-note free · openrouter' },
@@ -321,10 +316,12 @@
   /* Modèles openrouter « :free » du catalogue : envoyés en tableau models[]
      OpenRouter cascade lui-même sur 429/5xx (rate-limit pool partagé amont
      = une seule issue : un autre free du trio/extra). */
+  /* v20260928 : trio rebâti sur les :free EXISTANTS (vérifié /models) —
+     glm-5.2 et nex-n2.5-* ont disparu d'OpenRouter (404). */
   var OR_TRIO = [
-    'z-ai/glm-5.2:free',
     'google/gemma-4-31b-it:free',
     'qwen/qwen3.8-27b:free',
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   ];
   var OR_EXTRA = [
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
@@ -334,13 +331,9 @@
     'google/gemma-4-26b-a4b-it:free',
     'nvidia/nemotron-3-super-120b-a12b:free',
     'nvidia/nemotron-3.5-lightning:free',
-    'thinkingmachines/inkling:free',
-    'thinkingmachines/inkling-small:free',
     'poolside/laguna-s-2.1:free',
     'poolside/laguna-xs-2.1:free',
     'cohere/north-mini-code:free',
-    'nex-agi/nex-n2.5-mini:free',
-    'nex-agi/nex-n2.5-pro:free',
     'inclusionai/ling-3.0-flash-sante:free',
     'inclusionai/ling-3.0-flash-fin:free',
     'dots-studio/dots-3-note-preview:free',

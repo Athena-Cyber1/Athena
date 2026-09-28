@@ -22,6 +22,7 @@ run("sync-design.js");
 run("gen-pages-index.js");
 copy("docs/chat-demo.js", "public/chat-demo.js");
 copy("docs/api-shim.js", "public/api-shim.js");
+copy("docs/keys.js", "public/keys.js"); // v20260928 : sinon localhost sert une vieille clé.
 copy("docs/index.html", "public/_index.html");
 /* v20260926h : police Inter auto-hébergée (zéro dépendance réseau). */
 copy("docs/fonts/inter-400.woff2", "public/fonts/inter-400.woff2");
