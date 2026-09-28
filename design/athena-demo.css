@@ -960,6 +960,16 @@ button.dot:focus-visible,
 .row.user .fichier-joint-meta {
   color: inherit;
 }
+/* v1.2 (anti-bâclage) : badge de réponse coupée par le budget. */
+.coupe-badge {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: var(--rayon-s);
+  border: 1px solid var(--ambre-bord);
+  background: var(--ambre-fond);
+  color: var(--ambre-texte);
+  font-size: 0.76rem;
+}
 
 .outil-badge {
   display: inline-block;

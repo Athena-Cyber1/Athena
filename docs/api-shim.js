@@ -749,6 +749,11 @@
       if (d && d.model) {
         try { entry._modeleReel = String(d.model); } catch (e) {}
       }
+      /* v1.2 : motif de fin conservé — `length` = réponse coupée par le
+         budget (l'UI le dit au lieu de laisser croire à un bâclage). */
+      if (ch && typeof ch.finish_reason === 'string') {
+        try { entry._fin = ch.finish_reason; } catch (e) {}
+      }
       return txt ? String(txt) : '';
     }
 
@@ -848,7 +853,10 @@
             }
             var ch = d && d.choices && d.choices[0];
             var delta = (ch && ch.delta) || {};
-            if (ch && ch.finish_reason) vuFin = true;
+            if (ch && ch.finish_reason) {
+              vuFin = true;
+              try { entry._fin = ch.finish_reason; } catch (e) {}
+            }
             if (typeof delta.reasoning_content === 'string') pensee += delta.reasoning_content;
             else if (typeof delta.reasoning === 'string') pensee += delta.reasoning;
             if (typeof delta.content === 'string') contenu += delta.content;
@@ -1132,6 +1140,7 @@
           conversation_id: typeof body.conversation_id === 'string' ? body.conversation_id : null,
           modele_repli: repli || undefined,
           compression: noteCompression || undefined,
+          tronquee: entry._fin === 'length' || undefined,
         },
       };
     }
@@ -1220,6 +1229,7 @@
               conversation_id: fin.payload.conversation_id,
               raisonnement: null,
               modele_repli: fin.payload.modele_repli,
+              tronquee: fin.payload.tronquee,
             });
             try { ctrl.close(); } catch (e) {}
             return;

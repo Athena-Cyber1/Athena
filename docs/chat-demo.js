@@ -3542,7 +3542,7 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
         const d = JSON.parse(texte);
         if (!r.ok) return { ok: false, erreur: humaniserErreur(d.erreur, r.status), statut: r.status };
         if (d.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
-        return { ok: true, reponse: d.reponse || '(réponse vide)', outil: d.outil || null, correction: Boolean(d.correction), verification: d.verification || null, rag: d.rag || null, tache: d.tache || null, raisonnement: d.raisonnement || null };
+        return { ok: true, reponse: d.reponse || '(réponse vide)', outil: d.outil || null, correction: Boolean(d.correction), verification: d.verification || null, rag: d.rag || null, tache: d.tache || null, raisonnement: d.raisonnement || null, tronquee: Boolean(d.tronquee) };
       } catch { cause = 'reponse'; /* corps non JSON -> réessai */ }
     } catch (err) {
       if (err && err.name === 'AbortError') throw err;  // stop demandé : ne pas réessayer
@@ -3619,7 +3619,7 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
         if (final.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
         /* v20260926d : final PARTIEL (reponse null) — pas de '(réponse vide)'
            ici, genererReponse reprend la frappe déjà diffusée. */
-        return { ok: true, reponse: final.reponse || (final.partiel ? '' : '(réponse vide)'), outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus, partiel: Boolean(final.partiel) };
+        return { ok: true, reponse: final.reponse || (final.partiel ? '' : '(réponse vide)'), outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus, partiel: Boolean(final.partiel), tronquee: Boolean(final.tronquee) };
       }
       return { ok: false, erreur: 'Le flux de raisonnement a été interrompu avant la réponse — renvoyez votre message.' };
     }
@@ -3637,7 +3637,7 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
     }
     if (d) {
       if (d.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
-      return { ok: true, reponse: d.reponse || '(réponse vide)', outil: d.outil || null, correction: Boolean(d.correction), verification: d.verification || null, rag: d.rag || null, tache: d.tache || null, raisonnement: d.raisonnement || null };
+      return { ok: true, reponse: d.reponse || '(réponse vide)', outil: d.outil || null, correction: Boolean(d.correction), verification: d.verification || null, rag: d.rag || null, tache: d.tache || null, raisonnement: d.raisonnement || null, tronquee: Boolean(d.tronquee) };
     }
     /* r.ok mais corps illisible -> réessai via chemin classique (une fois) */
   } catch (err) {
@@ -4224,6 +4224,16 @@ async function genererReponse(convo) {
           versEntrainement.textContent = 'Valider la correction dans Entraînement';
           versEntrainement.addEventListener('click', () => afficherParametres('Entraînement'));
           bAssist.appendChild(versEntrainement);
+        }
+        /* v1.2 (anti-bâclage) : réponse coupée par le budget (finish length) —
+           badge persistant dans la bulle + toast : ce n'est pas le modèle qui
+           bâcle, c'est la limite. Monter l'effort ou raccourcir la demande. */
+        if (r.tronquee) {
+          const badge = document.createElement('div');
+          badge.className = 'coupe-badge';
+          badge.textContent = 'Réponse coupée par la limite du modèle — demandez la suite ou montez l’effort.';
+          bAssist.appendChild(badge);
+          notifier('Réponse coupée par la limite du modèle (pas un bâclage).');
         }
         /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
            (préférence executionAuto, ON par défaut) — la commande part
