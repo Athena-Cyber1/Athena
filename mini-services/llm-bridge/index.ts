@@ -49,7 +49,10 @@ const VERSION = '2.2.0';
 const RETRIES_MAX = 3;                    // tours de cascade supplémentaires
 const BACKOFF_BASE_MS = 300;              // 300 → 700 → 1500 (± 30 % jitter)
 const BACKOFF_CAP_MS = 1600;
-const BUDGET_TOTAL_MS = 55_000;           // plafond global /complete
+const BUDGET_TOTAL_MS = (() => { // v1.2 : configurable (défaut 55 s) — les longs
+  const n = Number(Bun.env.ATHENA_BRIDGE_BUDGET_MS); // raisonnements dépassent la minute en local aussi
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_800_000) : 55_000;
+})();           // plafond global /complete
 const CONCURRENCE_MAX = 2;                // appels upstream simultanés
 const ESPACEMENT_MIN_MS = 250;            // entre deux DÉPARTS upstream
 const QUEUE_TIMEOUT_MS = 25_000;          // attente max dans la file

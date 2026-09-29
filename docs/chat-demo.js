@@ -2753,14 +2753,25 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       codeEl.closest('pre')?.appendChild(d);
       return d;
     })();
+  /* v1.2 (audit) : echec() ne doit JAMAIS lever — sinon l'erreur d'affichage
+     masque l'erreur réelle (et le finally levait un ReferenceError TDZ qui
+     tuait la promesse en silence). */
   const echec = (raison) => {
     const d = { commande: brut, ok: false, stderr: raison, code: null, duree_ms: null };
-    zone().textContent = raison;
-    zone().className = 'exec-sortie err';
-    ajouterTraceActivite(codeEl, d);
-    memoriserTraceActivite(brut, d, convoId);
+    try {
+      zone().textContent = raison;
+      zone().className = 'exec-sortie err';
+    } catch {}
+    try { ajouterTraceActivite(codeEl, d); } catch {}
+    try { memoriserTraceActivite(brut, d, convoId); } catch {}
     return null;
   };
+  /* v1.2 (audit) : ces lets sont HORS du try, en tête de fonction — toute
+     exception (y compris avant le flux) trouve le finally avec des variables
+     initialisées : plus aucun ReferenceError masquant. */
+  let terminal = null;
+  let tFlux = null;
+  const ctrlFlux = ('AbortController' in window) ? new AbortController() : null;
   try {
     if (!auto) {
       const probe = await fetch('/api/exec', {
@@ -2789,17 +2800,19 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
        (terminal ci-dessus), ou JSON unique si l'agent est ancien. En cas de
        coupure on finalise le partiel : JAMAIS de second POST (la commande
        ne doit pas tourner deux fois). */
-    const terminal = creerTerminalExec(codeEl, brut);
     try {
+      terminal = creerTerminalExec(codeEl, brut);
+      if (ctrlFlux) tFlux = setTimeout(() => { try { ctrlFlux.abort(); } catch {} }, 60000);
       const rf = await fetch('/api/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ commande: brut, confirme: true, flux: true }),
+        signal: ctrlFlux ? ctrlFlux.signal : undefined,
       });
       const ctypeF = rf.headers.get('content-type') || '';
       if (rf.ok && ctypeF.includes('ndjson') && rf.body) {
         const dFin = await lireFluxExec(rf.body, terminal);
-        if (terminal.el) terminal.el.remove();
+        if (terminal && terminal.el) terminal.el.remove();
         if (dFin && !dFin.interrompu) {
           if (dFin.motif) return echec('Bloqué : ' + dFin.motif);
           return conclureExec(codeEl, brut, dFin, auto, convoId);
@@ -2815,25 +2828,28 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       }
       /* Vieil agent (sans flux) ou erreur structurée : JSON réutilisé tel quel. */
       const d = await rf.json().catch(() => ({}));
-      if (terminal.el) terminal.el.remove();
+      if (terminal && terminal.el) terminal.el.remove();
       if (d && d.motif) return echec('Bloqué : ' + d.motif);
       if (!rf.ok || d.erreur) {
         return echec((d && d.erreur) || ('HTTP ' + rf.status));
       }
       return conclureExec(codeEl, brut, d, auto, convoId);
     } catch (e) {
-      if (terminal.el) terminal.el.remove();
+      if (terminal && terminal.el) terminal.el.remove();
+      if (e && e.name === 'AbortError') return echec('Délai dépassé (60 s) — commande trop longue ou agent bloqué.');
       return echec(String((e && e.message) || e).slice(0, 400));
     }
   } catch (e) {
     return echec(String((e && e.message) || e).slice(0, 400));
   } finally {
+    if (tFlux) clearTimeout(tFlux);
     bouton.disabled = false;
     bouton.textContent = 'Exécuter';
   }
 }
 
-/* Exécution automatique (préférence executionAuto, ON par défaut) :
+/* Exécution automatique (préférence executionAuto, OFF par défaut depuis
+   v1.2 — sécurité : pas d'exécution sans clic) :
    les blocs ```athena-exec de la réponse fraîche partent seuls sur
    l'agent local, dans l'ordre, sans modale. Appelé UNIQUEMENT après un
    rendu neuf (genererReponse) : recharger ou rouvrir une conversation
