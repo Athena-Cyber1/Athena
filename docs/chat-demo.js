@@ -2755,16 +2755,20 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
     })();
   /* v1.2 (audit) : echec() ne doit JAMAIS lever — sinon l'erreur d'affichage
      masque l'erreur réelle (et le finally levait un ReferenceError TDZ qui
-     tuait la promesse en silence). */
-  const echec = (raison) => {
-    const d = { commande: brut, ok: false, stderr: raison, code: null, duree_ms: null };
+     tuait la promesse en silence).
+     v1.2 (anti-bâclage) : RETOURNE `d`, plus null. Un refus (400 lint, 403
+     liste de refus, agent injoignable) doit revenir au modèle comme un
+     résultat : sinon la boucle s'arrêtait pile sur l'erreur et le modèle ne
+     pouvait jamais corriger sa propre commande. */
+  const echec = (raison, code) => {
+    const d = { commande: brut, ok: false, stderr: raison, code: (code === undefined ? null : code), duree_ms: null };
     try {
       zone().textContent = raison;
       zone().className = 'exec-sortie err';
     } catch {}
     try { ajouterTraceActivite(codeEl, d); } catch {}
     try { memoriserTraceActivite(brut, d, convoId); } catch {}
-    return null;
+    return d;
   };
   /* v1.2 (audit) : ces lets sont HORS du try, en tête de fonction — toute
      exception (y compris avant le flux) trouve le finally avec des variables
@@ -2832,9 +2836,11 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       /* Vieil agent (sans flux) ou erreur structurée : JSON réutilisé tel quel. */
       const d = await rf.json().catch(() => ({}));
       if (terminal && terminal.el) terminal.el.remove();
-      if (d && d.motif) return echec('Bloqué : ' + d.motif);
+      if (d && d.motif) return echec('Bloqué : ' + d.motif, 403);
       if (!rf.ok || d.erreur) {
-        return echec((d && d.erreur) || ('HTTP ' + rf.status));
+        /* v1.2 : le code HTTP part au modèle (400 = refus lint + aide,
+           403 = liste de refus) : sans lui il ne sait pas quoi corriger. */
+        return echec((d && (d.erreur + (d.aide ? ' — ' + d.aide : ''))) || ('HTTP ' + rf.status), rf.status);
       }
       return conclureExec(codeEl, brut, d, auto, convoId);
     } catch (e) {
@@ -2859,16 +2865,86 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
    ne ré-exécute JAMAIS rien. */
 function autoExecBlocs(bulleEl) {
   const blocs = bulleEl ? [...bulleEl.querySelectorAll('.exec-bloc')] : [];
-  if (!blocs.length) return;
-  (async () => {
+  if (!blocs.length) return Promise.resolve([]);
+  /* v1.2 (anti-bâclage) : REND LES RÉSULTATS. Avant, le résultat de la
+     commande partait dans le vide : le modèle emitait une commande,
+     l'agent l'exécutait, la sortie s'affichait… et le tour s'arrêtait là
+     (le modèle ne l'a jamais lue). Le tableau alimente enchainerApresExec. */
+  return (async () => {
+    const resultats = [];
     for (const pre of blocs) {
       const codeEl = pre.querySelector('code');
       const bouton = pre.querySelector('.code-exec');
       if (!codeEl || !bouton || pre.dataset.execAuto === '1') continue;
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
-      await lancerCommandeLocale(codeEl.textContent, bouton, codeEl, { auto: true });
+      const d = await lancerCommandeLocale(codeEl.textContent, bouton, codeEl, { auto: true });
+      if (d) resultats.push(d);
     }
+    return resultats;
   })();
+}
+
+/* v1.2 (anti-bâclage, BOUCLE) : le résultat d'une commande revient au modèle.
+   Symptôme : « analyse le code » → UNE commande, puis silence. Le modèle
+   écrivait son bloc, l'agent l'exécutait, la sortie s'affichait sous le bloc
+   — et personne ne la lui rendait. Aucune boucle = analyse jamais menée à
+   terme (pour l'agent Python il existe max_etapes=14 ; pas ici).
+   On ajoute donc un tour de suite : sortie+code de chaque commande repart
+   dans l'historique, le modèle continue (autre commande OU verdict). Plafond
+   MAX_TOURS_EXEC + arrêt si l'utilisateur interrompt — jamais de boucle infinie. */
+const MAX_TOURS_EXEC = 6;
+const MAX_SORTIE_EXEC_MODELE = 4000;
+
+function corpsPourModele(d) {
+  const sortie = String((d && d.stdout) || '');
+  const err = String((d && d.stderr) || '');
+  const coupe = (t) => (t.length > MAX_SORTIE_EXEC_MODELE
+    ? t.slice(0, MAX_SORTIE_EXEC_MODELE)
+      + '\n[…sortie tronquée : ' + t.length + ' caractères au total…]'
+    : t);
+  const corps = ['<resultat_commande>', 'commande : ' + String((d && d.commande) || '')];
+  corps.push('code : ' + ((d && d.code) == null ? 'n/c' : d.code));
+  corps.push('duree_ms : ' + ((d && d.duree_ms) == null ? 'n/c' : d.duree_ms));
+  if (sortie.trim()) corps.push('stdout :\n' + coupe(sortie));
+  if (err.trim()) corps.push('stderr :\n' + coupe(err));
+  if (!sortie.trim() && !err.trim()) corps.push('(aucune sortie)');
+  corps.push('</resultat_commande>');
+  return corps.join('\n');
+}
+
+function enchainerApresExec(convo, resultats) {
+  if (!Array.isArray(resultats) || !resultats.length) return;
+  if (preferences.executionAuto === false) return;
+  /* Plafond porté par la CONVERSATION, pas par la pile d'appels : la
+     commande part APRÈS le retour de genererReponse, si bien qu'un compteur
+     global était déjà remis à zéro au tour suivant → boucle infinie
+     (97 appels LLM mesurés en test). Un nouvel envoi remet le compteur à
+     zéro (dans envoyer) : chaque demande repart avec un budget neuf. */
+  const deja = Number(convo._toursExec) || 0;
+  if (deja >= MAX_TOURS_EXEC) {
+    notifier('Analyse arrêtée après ' + MAX_TOURS_EXEC + ' commandes — relance si tu veux la suite.');
+    return;
+  }
+  /* Dédoublon : ne pas renvoyer deux fois le même résultat de suite. */
+  const rapport = resultats.map(corpsPourModele).join('\n\n');
+  const dernier = convo.messages[convo.messages.length - 1];
+  if (dernier && dernier._exec && dernier._execR === rapport) return;
+  convo._toursExec = deja + 1;
+  convo.messages.push({
+    role: 'user',
+    content: 'Résultat de la commande que tu viens d\'exécuter sur le PC :\n\n' + rapport
+      + '\n\nPoursuis : autre commande si elle sert la demande, sinon ton analyse '
+      + 'et ton verdict. Ne réponds pas UNIQUEMENT par une commande.',
+    _exec: true,
+    _execR: rapport,
+  });
+  convo.maj = Date.now();
+  try { sauverConversations(); } catch (_) {}
+  try { rendreConversations(); } catch (_) {}
+  /* La suite s'affiche comme une réponse normale : l'utilisateur peut
+     l'interrompre à tout moment (contrôleurEnCours) et les messages restent
+     dans l'historique — un rechargement ne rejoue aucune commande. */
+  genererReponse(convo).catch(() => {});
 }
 /* v20260926b (direct) : enregistre un fichier créé par le modèle sur le PC
    (/api/write → agent local 127.0.0.1:3020).
@@ -4151,6 +4227,10 @@ async function envoyer(texte) {
     sauverSaisies();
     indexSaisie = saisies.length;
   }
+  /* v1.2 (anti-bâclage) : budget d'enchaînement neuf pour chaque demande —
+     sans cette remise à zéro, une conversation déjà à 6 commandes ne
+     pourrait plus jamais enchaîner. */
+  convo._toursExec = 0;
   await genererReponse(convo);
 }
 
@@ -4312,8 +4392,14 @@ async function genererReponse(convo) {
            seule sur l'agent local 127.0.0.1:3020, sans modale : c'est le
            modèle qui « appuie ». Chemin emprunté UNIQUEMENT sur une
            réponse fraîche : rejeu, rechargement et réouverture d'une
-           conversation ne ré-exécutent rien. */
-        if (preferences.executionAuto !== false) autoExecBlocs(bAssist);
+           conversation ne ré-exécutent rien.
+           v1.2 (anti-bâclage) : le .then rend la sortie au modèle pour qu'il
+           POURSUIVE l'analyse — sans cela il s'arrêtait à la 1re commande. */
+        if (preferences.executionAuto !== false) {
+          autoExecBlocs(bAssist)
+            .then((res) => enchainerApresExec(convo, res))
+            .catch(() => {});
+        }
         /* v20260926b (direct) : idem pour les fichiers créés par le modèle. */
         if (preferences.executionAuto !== false) autoFileBlocs(bAssist);
       } else {

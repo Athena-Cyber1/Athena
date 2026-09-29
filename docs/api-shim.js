@@ -476,12 +476,22 @@
     '(courte si simple, complète et menée à son terme si complexe).';
   var ATHENA_SYSTEM_EXEC =
     'Athéna · outil local : pour exécuter une commande sur le PC de l\'utilisateur, ' +
-    'réponds UNIQUEMENT avec un bloc de code fenced avec le langage exact athena-exec ' +
-    'contenant la commande shell exacte, par exemple:\n```athena-exec\nhostname\n```\n' +
+    'réponds avec un bloc de code fenced de langage exact athena-exec contenant la ' +
+    'commande shell exacte, par exemple:\n```athena-exec\nhostname\n```\n' +
     'Ce bloc est exécuté AUTOMATIQUEMENT sur le poste (agent local 127.0.0.1:3020) ' +
     'sans intervention de l\'utilisateur : tu n\'as pas besoin de demander la permission ' +
     'ni d\'ajouter d\'autre balise. Sers-t\'en UNIQUEMENT quand l\'action demande réellement ' +
     'le shell ; si l\'agent est injoignable ou si la commande est bloquée, dis-le simplement. ' +
+    /* v1.2 (anti-bâclage) : l'ancien texte disait « réponds UNIQUEMENT avec un bloc »
+       ET le résultat n'était jamais rendu au modèle — une seule commande, puis le
+       silence. La sortie revient désormais dans ton historique : enchaîne. */
+    'APRÈS une commande, son stdout/stderr et son code de retour te sont renvoyés ' +
+    'dans le message suivant, encadré par <resultat_commande>. Tu dois alors POURSUIVRE : ' +
+    'enchaîne les commandes utiles ( explorations, lectures de fichiers, mesures) pour ' +
+    'mener l\'analyse à son terme, puis livre ton verdict. Une seule commande suivie ' +
+    'd\'un silence est un échec. Si le résultat est une erreur (commande refusée, agent ' +
+    'injoignable), corrige et réessaie au lieu de t\'arrêter. N\'annonce pas une ' +
+    'commande à l\'avenir : elle part dès que tu écris le bloc. ' +
     'Le shell est PowerShell sous Windows : syntaxe PowerShell UNIQUEMENT (pas de cmd, pas ' +
     'de bash — `start "" prog` et `export X=y` échouent ; utilise Start-Process et ' +
     '$env:X=\'y\'). Si `python` est introuvable, réessaie avec `py`. Commandes en un ' +
