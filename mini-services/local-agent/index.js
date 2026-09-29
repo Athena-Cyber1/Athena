@@ -32,7 +32,7 @@ const PORT = 3020;
 const HOST = '127.0.0.1';
 const VERSION = '1.2.1';
 const AUTO = process.argv.includes('--auto');
-const TIMEOUT_MS = 20000;
+const TIMEOUT_MS = 60000;
 const TIMEOUT_MIN_MS = 100;
 const MAX_OUT = 64 * 1024;
 /* v1.1 (direct) : écriture de fichiers créés par le modèle. */
@@ -229,10 +229,27 @@ const LINT = [
   [/^[A-Za-z_][A-Za-z0-9_]*=(\S|$)/, "assignation bash : utilisez $env:NOM='valeur'"],
   [/^set\s+[A-Za-z_][A-Za-z0-9_]*=/i, "syntaxe cmd : utilisez $env:NOM='valeur'"],
 ];
+/* v1.2 (anti-timeout) : récursion NON BORNÉE sur une zone large = 20 s+ de
+   balayage puis timeout garanti (ex. Get-ChildItem -Recurse $HOME). On refuse
+   AVANT d'exécuter, avec la correction : -Depth + sous-dossier ciblé. Testé
+   sur les deux formes (brute + dé-échappée) comme refus(). */
+const RACINES_LARGES = String.raw`\$HOME|\$env:USERPROFILE|~(?![\w])|[A-Z]:[\\/]?(\s|$|["'])|\\\\|\\Desktop([\\/]|$)|\\Documents([\\/]|$)|\\Downloads([\\/]|$)|OneDrive|AppData|Program Files|\\Windows([\\/]|$)|\\Users([\\/]|$)`;
+function lintRecursion(cmd) {
+  /* v1.2 (anti-timeout, fix) : \b ne couvre PAS '-' (non-mot) — /\b-Recurse/
+     ne matche jamais ' -Recurse', le garde-fou était mort-né. Ancre (?:^|\s)
+     comme pour -EncodedCommand (v1.2.1). */
+  for (const f of [String(cmd || ''), normaliser(cmd)]) {
+    if (/(?:^|\s)-Recurse\b/i.test(f) && !/-Depth\s+\d+/i.test(f)
+        && new RegExp(RACINES_LARGES, 'i').test(f)) {
+      return 'recherche récursive non bornée sur une zone large (timeout garanti) : ajoutez -Depth (ex. -Depth 3) et ciblez un sous-dossier';
+    }
+  }
+  return null;
+}
 function lint(cmd) {
   const t = String(cmd || '').trim();
   for (const [re, aide] of LINT) if (re.test(t)) return aide;
-  return null;
+  return lintRecursion(cmd);
 }
 
 /* v1.2 (audit) : existe + est-dossier en UN SEUL appel (pas de TOCTOU

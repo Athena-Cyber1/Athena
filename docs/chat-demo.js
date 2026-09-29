@@ -2769,9 +2769,12 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
   /* v1.2 (audit) : ces lets sont HORS du try, en tête de fonction — toute
      exception (y compris avant le flux) trouve le finally avec des variables
      initialisées : plus aucun ReferenceError masquant. */
-  let terminal = null;
-  let tFlux = null;
-  const ctrlFlux = ('AbortController' in window) ? new AbortController() : null;
+    let terminal = null;
+    let tFlux = null;
+    const ctrlFlux = ('AbortController' in window) ? new AbortController() : null;
+    /* v1.2 (anti-timeout) : borne client 90 s (agent : 60 s) — sans elle, un
+       flux qui cale laisse le bouton sur '…' pour toujours. */
+    const BORNE_FLUX_MS = 90000;
   try {
     if (!auto) {
       const probe = await fetch('/api/exec', {
@@ -2802,7 +2805,7 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
        ne doit pas tourner deux fois). */
     try {
       terminal = creerTerminalExec(codeEl, brut);
-      if (ctrlFlux) tFlux = setTimeout(() => { try { ctrlFlux.abort(); } catch {} }, 60000);
+      if (ctrlFlux) tFlux = setTimeout(() => { try { ctrlFlux.abort(); } catch {} }, BORNE_FLUX_MS);
       const rf = await fetch('/api/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2836,7 +2839,7 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       return conclureExec(codeEl, brut, d, auto, convoId);
     } catch (e) {
       if (terminal && terminal.el) terminal.el.remove();
-      if (e && e.name === 'AbortError') return echec('Délai dépassé (60 s) — commande trop longue ou agent bloqué.');
+      if (e && e.name === 'AbortError') return echec('Délai dépassé (90 s) — commande trop longue ou agent bloqué.');
       return echec(String((e && e.message) || e).slice(0, 400));
     }
   } catch (e) {

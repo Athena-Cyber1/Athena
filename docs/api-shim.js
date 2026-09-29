@@ -485,7 +485,10 @@
     'Le shell est PowerShell sous Windows : syntaxe PowerShell UNIQUEMENT (pas de cmd, pas ' +
     'de bash — `start "" prog` et `export X=y` échouent ; utilise Start-Process et ' +
     '$env:X=\'y\'). Si `python` est introuvable, réessaie avec `py`. Commandes en un ' +
-    'seul passage, jamais interactives. Dans tous les cas, mène chaque réponse à son ' +
+    'seul passage, jamais interactives. Pour retrouver un fichier : Get-ChildItem ' +
+    '-LiteralPath <dossier> -Recurse -Depth 3 -File (TOUJOURS -Depth + dossier ciblé : ' +
+    'la récursion sans borne sur $HOME/Desktop/Documents est refusée). Dans tous les ' +
+    'cas, mène chaque réponse à son ' +
     'terme : aucun abrégé, aucun placeholder (« reste du code… », « etc. »), aucune ' +
     'fin expédiée, même pour les longues réponses.';
 
