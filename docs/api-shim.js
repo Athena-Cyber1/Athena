@@ -1227,10 +1227,18 @@
           try {
             /* v20260926b (direct) : en flux, la borne porte sur la durée
                TOTALE (l'inactivité est déjà bornée à 40 s/chunk dans
-               lireSSE) — 600 s pour laisser les très longs raisonnements
-               (kimi-k3 « max ») aboutir, comme nvidia. */
+               lireSSE). v1.2 : borne adaptée à l'effort pour les modèles à
+               raisonnement — un « max » mesuré dépasse 9 min ; couper à
+               600 s le faisait passer pour bâclé. */
             var borne = bornePour(entry);
-            if (p && p.sse && borne < 600000) borne = 600000;
+            if (p && p.sse) {
+              var raisonne = (entry && Array.isArray(entry.efforts) && entry.efforts.length > 0)
+                || (entry && entry.providerKey === 'nvidia');
+              var efBorne = 'low';
+              if (raisonne) { try { efBorne = effortNvidia(entry); } catch (e) {} }
+              var plafond = efBorne === 'max' ? 1200000 : efBorne === 'high' ? 900000 : 600000;
+              if (borne < plafond) borne = plafond;
+            }
             var texte = await appelBorne(callModel(entry, messages, signal, onDelta), borne);
             var fin = assembler(entry, texte);
             /* v20260926g : pas de progress « Réponse générée via X » — nom
