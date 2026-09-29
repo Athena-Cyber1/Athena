@@ -782,6 +782,15 @@
       var fini = false;
       var emis = false;
       var premierOctet = false;
+      /* v1.2 (anti-coupure) : délais adaptés à l'effort pour les modèles à
+         raisonnement — un « max » sous charge démarre lentement et marque de
+         longues pauses entre chunks ; 10 s / 40 s les tuaient à tort. */
+      var raisonneFlux = (entry && Array.isArray(entry.efforts) && entry.efforts.length > 0)
+        || (entry && entry.providerKey === 'nvidia');
+      var efFlux = 'low';
+      if (raisonneFlux) { try { efFlux = effortNvidia(entry); } catch (e) {} }
+      var delaiPremier = raisonneFlux ? 20000 : 10000;
+      var delaiInactivite = !raisonneFlux ? 40000 : efFlux === 'max' ? 150000 : efFlux === 'high' ? 90000 : 60000;
       /* v20260926d (kimi) : sans [DONE] ni finish_reason, une fin de flux
          propre reste une COUPURE — le partiel ne passe pas pour du complet. */
       var vuFin = false;
@@ -838,11 +847,11 @@
 
       try {
         while (!fini) {
-          /* v20260926f (kimi, lags) : TTFB 10 s pour le premier octet, puis
-             40 s d'inactivité max entre chunks (avant : 120 s de silence).
+          /* v20260926f (kimi, lags) : TTFB court pour le premier octet, puis
+             inactivité max entre chunks (avant : 120 s de silence).
              Un provider sain répond en < 3 s : on tourne vite au lieu
              d'attendre la borne totale. */
-          var lu = await appelBorne(reader.read(), premierOctet ? 40000 : 10000);
+          var lu = await appelBorne(reader.read(), premierOctet ? delaiInactivite : delaiPremier);
           premierOctet = true;
           if (lu.done) break;
           tampon += dec.decode(lu.value, { stream: true });
@@ -914,9 +923,9 @@
         enTetes.Accept = 'text/event-stream';
       }
       /* v20260926f (lags) : watchdog d'EN-TÊTES — si la réponse ne DÉMARRE
-         pas sous 12 s (connexion trou noir, proxy bloqué), on abandonne ce
-         modèle au lieu d'attendre la borne totale. Le TTFB interne ne couvre
-         que le corps SSE une fois les en-têtes reçus. */
+         pas sous 30 s (connexion trou noir, proxy bloqué, modèle froid),
+         on abandonne ce modèle au lieu d'attendre la borne totale. Le TTFB
+         interne ne couvre que le corps SSE une fois les en-têtes reçus. */
       var ctrlTete = null;
       var courseTete = null;
       var teteExpiree = false;
@@ -930,7 +939,7 @@
         courseTete = setTimeout(function () {
           teteExpiree = true;
           try { ctrlTete.abort(); } catch (_) {}
-        }, 12000);
+        }, 30000);
         signalEnvoi = ctrlTete.signal;
       }
       return realFetch(base + '/chat/completions', {
@@ -954,7 +963,7 @@
         /* En-têtes jamais arrivées et pas un abort utilisateur : timeout
            compté pour le saut de provider (sinon on attendrait la borne). */
         if (teteExpiree && (!signal || !signal.aborted)) {
-          throw new Error('timeout 12000 ms (en-têtes jamais reçus)');
+          throw new Error('timeout 30000 ms (en-têtes jamais reçus)');
         }
         throw eErr;
       });
@@ -1166,13 +1175,22 @@
 
     /* ---- Chemin JSON (sans flux) : tout arrive d'un coup ---- */
     if (!wantStream) {
+      /* v1.2 (anti-coupure) : UNE seconde chance sur timeout, même modèle
+         (pas un relais) — les hoquets réseau ne tuent plus la requête. */
+      var rejoues = {};
       for (var i = 0; i < plan.chaine.length; i++) {
         var entry = plan.chaine[i];
+        var pkEssai = entry.providerKey || entry.provider || entry.id;
         try {
           var texte = await appelBorne(callModel(entry, messages, signal), bornePour(entry));
           return json(assembler(entry, texte).payload);
         } catch (err) {
           if (err && err.name === 'AbortError') throw err;
+          if (/timeout \d+ ms/.test(String((err && err.message) || '')) && !rejoues[pkEssai]) {
+            rejoues[pkEssai] = true;
+            i--;
+            continue;
+          }
           dernierErr = err;
         }
       }
@@ -1213,11 +1231,15 @@
           }
           var p = PROVIDERS[pk];
           emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…' });
+          /* v1.2 (anti-coupure) : on ne rejoue un timeout que si RIEN n'a
+             été diffusé — rejouer après des jetons dupliquerait le texte. */
+          var jetonsVus = 0;
           var onDelta = p && p.sse
             ? function (etape, message) {
                 /* v20260926b (direct) : les jetons partent en {type:'jeton'}
                    (canal + texte nouveau), le reste en progress. */
                 if (etape === 'jeton-reponse' || etape === 'jeton-raisonnement') {
+                  jetonsVus++;
                   emit({ type: 'jeton', canal: etape === 'jeton-reponse' ? 'reponse' : 'raisonnement', texte: String(message || '') });
                 } else {
                   emit({ type: 'progress', etape: etape, message: message });
@@ -1278,6 +1300,13 @@
             if (/timeout \d+ ms/.test(String((e2 && e2.message) || ''))) {
               timeoutsParProvider[pk] = (timeoutsParProvider[pk] || 0) + 1;
               if (timeoutsParProvider[pk] >= 2) sauterProvider[pk] = true;
+              /* v1.2 (anti-coupure) : UNE seconde chance sur timeout si rien
+                 n'a été diffusé (même modèle, pas un relais). */
+              if (jetonsVus === 0 && !e2.rejoue) {
+                e2.rejoue = true;
+                i--;
+                continue;
+              }
             }
             err = e2;
           }
