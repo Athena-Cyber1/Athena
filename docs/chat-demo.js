@@ -2991,6 +2991,24 @@ function texteRepre(seul) {
     return String(copie.textContent || '').replace(/\s+/g, ' ');
   } catch (_) { return String(seul && seul.textContent || ''); }
 }
+/* v1.2 (anti-boucle cognitive) : détecte la RÉTRO-ANALYSE — le modèle
+   repasse des fois sur la même conclusion sans avancer. Signatures
+   observées en run réel (56 appels, 0 écriture) :
+   « Wait, but… », « Actually, I think… », « This is a bug! … This is a bug! »,
+   « I think I've been going in circles », « OK, I think… ». Trois marques
+   suffisent : la réponse est de l'hésitation, pas du travail. */
+function tournerEnRond(t) {
+  const s = String(t || '');
+  if (s.length < 200) return false;             // trop court pour en juger
+  let n = 0;
+  if (/(wait,\s*but|but wait|actually,?\s*i think|i think i|going in circles|going in circles|i've been going|maybe i|or maybe|actually the issue|actually i)/i.test(s)) n += 1;
+  /* la même affirmation répétée : « This is a bug! » au moins 2 fois */
+  const fois = (motif) => (s.match(motif) || []).length;
+  if (fois(/this is a bug/gi) >= 2) n += 1;
+  if (fois(/\b(is (a|the) bug\b|bug !)/gi) >= 3) n += 1;
+  return n >= 1;
+}
+
 function relancerSiPromesse(convo, bulleEl) {
   try {
     if (!convo || convo._relanceFaite || convo._budgetEpuise) return;
@@ -2998,8 +3016,38 @@ function relancerSiPromesse(convo, bulleEl) {
     const b = bulleEl || null;
     if (b && b.querySelector('.exec-bloc')) return; // il a agit : rien à relancer
     const reponse = b ? texteRepre(b) : '';
-    if (!PROMESSES.test(reponse)) return;
-    convo._relanceFaite = true;
+    /* v1.2 (anti-bouclecognitive) : le cas le plus destructeur n'est pas la
+       promesse, c'est la RÉTRO-ANALYSE. Run réel mesuré : le modèle a
+       réécrit six fois « nextX >= SIZE - 1 … This is a bug! Wait, … This is a
+       bug! OK, I think I've been going in circles » et a consommé 56 appels
+       sans jamais écrire. Aucun bloc, aucune promessefuture — donc la
+       détection ci-dessous ne le voyait pas. On détecte l'hésitation
+       circulaire et on tranche pour lui. */
+    if (tournerEnRond(reponse) || PROMESSES.test(reponse)) {
+      convo._relanceFaite = true;
+      convo.messages.push({
+        role: 'user',
+        _exec: true,
+        content: 'STOP. Tu tournes en rond sur le même point depuis plusieurs '
+          + 'réponses — tu n\'avances plus et tu n\'as rien modifié. '
+          + 'Décide MAINTENANT, sans plus réfléchir :\n'
+          + '1) Si tu as un bug identifié, CORRIGE-LE : sauvegarde '
+          + '(`Copy-Item -LiteralPath <f> -Destination <f.bak>`) puis écris le '
+          + 'bloc de commande qui applique la correction. Vérifie en relisant le '
+          + 'fichier. Un seul bug, mais corrigé et vérifié.\n'
+          + '2) Si tu n\'as pas de certitude, livre ton verdict honnête : ce que '
+          + 'tu as trouvé, ce que tu n\'as pas pu trancher.\n'
+          + 'Dans les deux cas, pas de nouvelle analyse : AGIS ou REND TON VERDICT.',
+      });
+      convo.maj = Date.now();
+      try { sauverConversations(); } catch (_) {}
+      notifier('Le modèle tournait en rond — relance pour qu\'il tranche.');
+      genererReponse(convo).catch(() => {});
+      return;
+    }
+    return;
+    /* (code conservé ci-dessous pour référence — plus atteint) */
+    if (false) {
     convo.messages.push({
       role: 'user',
       _exec: true,
@@ -3017,6 +3065,7 @@ function relancerSiPromesse(convo, bulleEl) {
     try { sauverConversations(); } catch (_) {}
     notifier('Le modèle s\'est arrêté sur une promesse — relance pour qu\'agisse.');
     genererReponse(convo).catch(() => {});
+    }
   } catch (_) { /* relance = confort, jamais bloquant */ }
 }
 
