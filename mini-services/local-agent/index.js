@@ -357,12 +357,25 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
       oublier();
       clearTimeout(coupe);
       code = c;
+      const errFin = err.slice(0, MAX_OUT);
       resolve({
-        ok: c === 0,
+        /* v1.2 (anti-boucle) : le code de sortie de `powershell -Command`
+           n'est PAS un signal de succès fiable sous Windows PowerShell 5.1.
+           Mesuré : `Get-ChildItem -Recurse -Depth 3 -ErrorAction
+           SilentlyContinue` sur C:\Users RUSSIT (stdout 356 car, stderr vide)
+           et renvoie pourtant exit=1 — tout error record interne (accès refusé
+           sur d'autres profils) fixe le code à 1 même masqué par
+           -ErrorAction. Conséquence mesurée : l'agent annonçait « échec
+           code=1 » sur une commande réussie, le modèle relançait la même
+           commande 49 fois et la tâche n'avançait plus.
+           Règle honnête : on ne déclare l'échec que si le shell a réellement
+           signalé quelque chose (code != 0 ET stderr non vide), ou si le code
+           est nul. Le `code` brut reste rapporté pour l'historique. */
+        ok: !(c !== 0 && errFin.trim()),
         code: c,
         signal: null,
         stdout: sortie.slice(0, MAX_OUT),
-        stderr: err.slice(0, MAX_OUT),
+        stderr: errFin,
         duree_ms: Date.now() - debut,
       });
     });
@@ -397,6 +410,13 @@ const serveur = http.createServer(async (req, res) => {
         version: VERSION,
         auto: AUTO,
         allow_dir: ALLOW_DIR,
+        /* v1.2 : la garde planifiée (AthenaAgentGarde) lisait ce point toutes
+           les 30 min et, sur un simple délai dépassé, REDÉMARRAIT l'agent —
+           tuant la commande en cours au milieu d'une tâche longue (« execution
+           agent is not reachable », mesuré sur un run de 27 commandes).
+           en_cours = nombre de commandes vivantes : la sonde ne relance plus
+           pendant qu'une tâche travaille. */
+        en_cours: enfantsActifs.size,
         platform: process.platform,
       }, origin, req);
       return;

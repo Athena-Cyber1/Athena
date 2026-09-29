@@ -114,7 +114,13 @@
        v1.2 : effort de raisonnement SUIT le bouton effort du HUD (low par
        défaut via repli) — en max permanent, le raisonnement mange tout
        le budget et content revient vide. */
-    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { var ef = effortNvidia(entry); var mt = { low: 2000, medium: 8000, high: 32000, max: 64000 }[ef] || 8000; return { reasoning: { effort: ef, exclude: false }, max_tokens: mt }; } },
+    /* v1.2 (pleine puissance) : le payload Bunny portait max_tokens
+       (2000 → 64000 selon l'effort). C'ETAIT la borne la plus agressive de
+       toutes et elle mutilait les réponses : à l'effort « low », 2000 jetons,
+       soit une coupure en pleine phrase. Le plafond de sortie est désormais
+       délégué au provider — on ne garde que l'effort de raisonnement, dont la
+       valeur est un VRAI réglage de puissance (et non une troncature). */
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -354,7 +360,15 @@
      (pas de tokenizer dans le navigateur). Quand le prompt dépasse 85 %
      de la limite du modèle visé, les anciens messages sont résumés par un
      modèle gratuit (repli : troncature dure), jamais d'erreur 400 silencieuse. */
-  var LIMITE_DEFAUT = 32768;
+  /* v1.2 (pleine puissance) : 32 768 était un repli CONSERVATEUR inherited
+     d'un temps où les modèles plafonnaient bas. Il bridea��t openrouter
+     générique (donc.space-bunny-alpha, le modèle des runs réels) à 32 K
+     alors que sa fenêtre réelle est 1 048 576 : la compression se déclenchait
+     à 27 K, bien avant saturation. On suppose désormais 256 K par défaut —
+     ordre de grandeur prudent pour un modèle inconnu, et la compression
+     reste le filet si le provider refuse vraiment (erreur 400 « context
+     length » → la borne est abaissée seule, voir.ctxRefuse). */
+  var LIMITE_DEFAUT = 262144;
   var LIMITES_CONTEXTE = {
     'pollinations:openai-fast': 131072,
     'pollinations:openai': 131072,
@@ -383,6 +397,14 @@
     (msgs || []).forEach(function (m) { n += Math.ceil(String((m && m.content) || '').length / 4) + 4; });
     return n;
   }
+  /* v1.2 (pleine puissance) : combien de messages récents on garde INTACTS
+     quand la compression tombe. 12 amputait durement une tâche longue (run
+     réel de 239 commandes : le raisonnement en cours passait dans le
+     résumé). 40 messages récents + un résumé large des 60 000 premiers
+     caractères : la compression ne mord qu'en dernier recours, et le résumé
+     porte de la matière au lieu d'une liste de commandes. */
+  var RECENTS_GARDES = 40;
+  var MATIERE_RESUME = 60000;
   async function compresserSiPlein(msgs, entry, signal) {
     var limite = limiteModele(entry);
     var utilises = jetonsEstimes(msgs);
@@ -390,10 +412,14 @@
        24 000 caractères de matière (avant : 6 / 12 lignes / 8000 car. —
        trop de perte). LIMITE_DEFAUT = 32768 vérifiée : simple repli pour les
        modèles sans limite connue (openrouter générique, autres). */
-    if (utilises <= limite * 0.85 || msgs.length <= 14) return { messages: msgs, note: null, utilises: utilises, limite: limite };
+    /* v1.2 (pleine puissance) : seuil de compression 0.85 → 0.95. À 0.85 on
+       compressait alors qu'il restait 15 % de fenêtre libre ; le contexte
+       utile était amputé bien avant d'en avoir besoin. */
+    if (utilises <= limite * 0.95 || msgs.length <= RECENTS_GARDES) return { messages: msgs, note: null, utilises: utilises, limite: limite };
     var systeme = msgs.filter(function (m) { return m && m.role === 'system'; });
-    var recents = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(-12);
-    var anciens = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(0, -12);
+    var tous = msgs.filter(function (m) { return !m || m.role !== 'system'; });
+    var recents = tous.slice(-RECENTS_GARDES);
+    var anciens = tous.slice(0, -RECENTS_GARDES);
     var resume = null;
     try {
       var cat = catalogue();
@@ -409,12 +435,16 @@
         }
       }
       if (eRes) {
-        var matiere = anciens.map(function (m) { return (m.role || '?') + ' : ' + String(m.content || ''); }).join('\n').slice(0, 24000);
+        var matiere = anciens.map(function (m) { return (m.role || '?') + ' : ' + String(m.content || ''); }).join('\n').slice(0, MATIERE_RESUME);
         var txt = await appelBorne(callModel(eRes, [
-          { role: 'system', content: 'Résume fidèlement en 25 lignes maximum : faits, décisions, contexte utile. Réponds UNIQUEMENT avec le résumé.' },
+          { role: 'system', content: 'Résume fidèlement et COMPLETEMENT, sans limite de lignes : '
+            + 'les faits établis, les fichiers lus, les bugs trouvés, les décisions prises, '
+            + 'ce qui reste à faire, et les commandes déjà exécutées. C\'est la mémoire de '
+            + 'travail du modèle : un résumé trop court fait perdre le travail. '
+            + 'Réponds UNIQUEMENT avec le résumé.' },
           { role: 'user', content: matiere },
-        ], signal), 70000);
-        if (txt && txt.trim()) resume = txt.trim().slice(0, 4000);
+        ], signal), 120000);
+        if (txt && txt.trim()) resume = txt.trim().slice(0, 24000);
       }
     } catch (e) {
       if (e && e.name === 'AbortError') throw e;
@@ -434,7 +464,19 @@
   /* v1.2 (audit) : plafond de sortie MAXIMAL par modèle — vérifié le
      2026-09-28 (top_provider.max_completion_tokens d'OpenRouter, docs
      providers sinon). Appliqué sauf payload explicite (NVIDIA, Bunny). */
+  /* v1.2 (pleine puissance) : plus AUCUNE borne de sortie envoyée. Les
+     plafonds max_tokens par modèle (2000/8000/32000/64000 selon l'effort,
+     16384 pour NVIDIA, 4096 par défaut) COUPAIENT la génération : le modèle
+     s'arrêtait à mi-récit et le flux SSE se terminait sans que ce soit une
+     erreur. On laisse le provider décider de sa propre limite — c'est lui qui
+     connaît sa fenêtre de sortie, et il tronque proprement (finish_reason
+     'length') au lieu de nous couper en silence. Le plafond réel, si besoin,
+     se règle côté fournisseur. */
   var MAX_SORTIE = {
+    /* Table volontairement VIDE et non plus appliquée : le plafond de sortie
+       est désormais délégué au provider (voir corpsPour). On garde la table
+       comme documentation des valeurs maximales connues, mais plus aucune
+       n'est injectée dans la requête. */
     'openrouter:google/gemma-4-31b-it:free': 32768, 'openrouter:google/gemma-4-26b-a4b-it:free': 32768,
     'openrouter:qwen/qwen3.8-27b:free': 235929,
     'openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 65536,
@@ -485,19 +527,43 @@
     /* v1.2 (anti-bâclage) : l'ancien texte disait « réponds UNIQUEMENT avec un bloc »
        ET le résultat n'était jamais rendu au modèle — une seule commande, puis le
        silence. La sortie revient désormais dans ton historique : enchaîne. */
+    /* v1.2 (pleine puissance) : explique pourquoi la sortie est bornée à
+       8000 caractères — sinon le modèle lit « tronqué » et conclut que la
+       commande a échoué (constaté : « réponses sans résultat exploitable »),
+       alors que c'est nous qui avons coupé. */
+    'Chaque résultat de commande arrive plafonné (les très grosses sorties ' +
+    'sont tronquées) : « sortie tronquée » veut dire NOUS avons coupé, pas ' +
+    'que la commande a échoué. Relis par pages (Select-Object -Skip N -First ' +
+    '150) au lieu de redemander la même sortie. ' +
     'APRÈS une commande, son stdout/stderr et son code de retour te sont renvoyés ' +
     'dans le message suivant, encadré par <resultat_commande>. Tu dois alors POURSUIVRE : ' +
     'enchaîne les commandes utiles ( explorations, lectures de fichiers, mesures) pour ' +
     'mener l\'analyse à son terme, puis livre ton verdict. Une seule commande suivie ' +
     'd\'un silence est un échec. Si le résultat est une erreur (commande refusée, agent ' +
     'injoignable), corrige et réessaie au lieu de t\'arrêter. N\'annonce pas une ' +
-    'commande à l\'avenir : elle part dès que tu écris le bloc. ' +
+    'commande à l\'avenir : elle part dès que tu écris le bloc. Ne termine JAMAIS '
+    + 'sur un plan (« je vais corriger, puis tester ») : si le travail reste à '
+    + 'faire, écris le bloc de commande DANS CETTE MÊME réponse ; si tu as fini, '
+    + 'donne le verdict complet (bugs trouvés, correctifs appliqués, tests). ' +
     'Le shell est PowerShell sous Windows : syntaxe PowerShell UNIQUEMENT (pas de cmd, pas ' +
     'de bash — `start "" prog` et `export X=y` échouent ; utilise Start-Process et ' +
     '$env:X=\'y\'). Si `python` est introuvable, réessaie avec `py`. Commandes en un ' +
     'seul passage, jamais interactives. Pour retrouver un fichier : Get-ChildItem ' +
     '-LiteralPath <dossier> -Recurse -Depth 3 -File (TOUJOURS -Depth + dossier ciblé : ' +
-    'la récursion sans borne sur $HOME/Desktop/Documents est refusée). Dans tous les ' +
+    'la récursion sans borne sur $HOME/Desktop/Documents est refusée). ' +
+    /* v1.2 (anti-dégénérescence) : le test réel a vu un modèle déverser un
+       fichier de 45 Ko d'un bloc, se faire tronquer à 4000 caractères, puis
+       produire `U+0044 U+006F…` pendant 10 commandes. Lecture par pages. */
+    'LIRE UN FICHIER PAR PAGES, JAMAIS en un bloc : ' +
+    'Get-Content -LiteralPath <f> | Select-Object -First 150 pour le début, ' +
+    'puis -Skip 150 -First 150 pour la suite (avance par pages de 150). ' +
+    'Un gros fichier déversé en entier est tronqué par le système et te perd : ' +
+    'tu ne vois plus que des fragments illisibles. Pour chercher un bug dans un ' +
+    'gros fichier, préfère cibler : Select-String -LiteralPath <f> ' +
+    '-Pattern "addEventListener|requestAnimationFrame|setInterval" puis ' +
+    'Get-Content -LiteralPath <f> | Select-Object -Skip <ligne> -First 40. ' +
+    'Après 2 ou 3 pages,ynthétise : de quoi s\'agit-il, quels bugs, et passe ' +
+    'à l\'action. Dans tous les ' +
     'cas, mène chaque réponse à son ' +
     'terme : aucun abrégé, aucun placeholder (« reste du code… », « etc. »), aucune ' +
     'fin expédiée, même pour les longues réponses.';
@@ -514,7 +580,25 @@
     '— par défaut celui de l\'agent) ou absolu ; les dossiers ' +
     'système sont refusés. Le fichier est enregistré AUTOMATIQUEMENT sur le poste (comme les ' +
     'commandes) et reste téléchargeable dans la conversation. N\'y mets que du contenu ' +
-    'légitime et sans danger ; si l\'agent est injoignable, dis-le simplement.';
+    'légitime et sans danger ; si l\'agent est injoignable, dis-le simplement.\n' +
+    /* v1.2 (dernier maillon) : le prompt ne parlait QUE de création. Sur un
+       run réel de 171 commandes, le modèle a inspecté un fichier ligne par
+       ligne, puis s'est arrêté en disant ne pas pouvoir produire de verdict —
+       faute de chemin documenté pour RÉÉCRIRE un fichier existant. */
+    'CORRIGER UN FICHIER EXISTANT (indispensable pour toute tâche de repair) : ' +
+    'le bloc athena-file accepte un chemin DÉJÀ présent et l\'écrase intégralement ' +
+    '— mais il faut donc y mettre le fichier ENTIER corrigé, jamais un fragment. ' +
+    'Deux méthodes, dans cet ordre :\n' +
+    '(1) PowerShell, la plus sûre et la plus économique : Copy-Item -LiteralPath ' +
+    '<f> -Destination <f.bak> pour la sauvegarde, puis ' +
+    '"[IO.File]::WriteAllText(\'<f>\', (Get-Content -LiteralPath <f> -Raw) ' +
+    '-replace \'<avant>\',\'<après>\')" pour un remplacement ciblé ; relis ensuite ' +
+    'le fichier pour VÉRIFIER. Si le correctif est long, écris-le dans un script ' +
+    '.ps1 puis powershell -NoProfile -File script.ps1.\n' +
+    '(2) athena-file avec le chemin existant et le contenu complet corrigé.\n' +
+    'Dans les deux cas, une correction non écrite n\'est PAS une correction : si ' +
+    'tu as trouvé des bugs, écris le fichier. Ne termine jamais sur un constat ' +
+    'sans avoir rien modifié.';
   var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_GENERAL + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER;
 
   async function agentLocalExec(payload, signal) {
@@ -695,12 +779,13 @@
       var c = {
         messages: messages,
         temperature: 0.6,
-        /* v1.2 (audit) : 1200 tokens coupaient toute réponse longue (code,
-           jeux) en plein milieu — 4096 par défaut, relevé au plafond du
-           modèle via MAX_SORTIE ; les payloads spécifiques (NVIDIA 16384,
-           Bunny par effort) restent prioritaires. */
-        max_tokens: 4096,
         stream: !!enFlux,
+        /* v1.2 (pleine puissance) : AUCUN max_tokens. 4096 par défaut puis
+           relevé par modèle — chaque plafond tronquait une réponse en pleine
+           phrase, et le flux SSE se terminait SANS erreur (donc sans que
+           l'utilisateur comprenne pourquoi le texte s'arrêtait net). Le
+           provider connaît sa propre fenêtre de sortie et signale
+           proprement une troncature (finish_reason 'length'). */
       };
       /* cadrage spécifique : provider (nvidia → kimi-k3 : temperature 1,
          seed 0, max_tokens 16384, reasoning_effort « max ») ; une entry
@@ -712,12 +797,10 @@
       if (opts) {
         Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
       }
-      /* v1.2 : plafond de sortie maximal du modèle (MAX_SORTIE) — sauf
-         payload explicite qui reste prioritaire. */
-      if ((!opts || opts.max_tokens === undefined)) {
-        var idm = (entry.providerKey || '') + ':' + (entry.model || '');
-        if (MAX_SORTIE[idm] !== undefined) c.max_tokens = MAX_SORTIE[idm];
-      }
+      /* v1.2 (pleine puissance) : AUCUN max_tokens injecté. Le plafond était
+         la source n°1 de réponses tronquées ; on délègue au provider. Les
+         payloads explicites d'une entry (NVIDIA : 16384, trad : 2048) restent
+         respectés — ce sont des valeurs propres au modèle, pas les nôtres. */
       /* v1.2 : température choisie dans les réglages — sauf réglage propre
          au modèle/provider (ex. NVIDIA temperature 1) qui reste prioritaire. */
       if (!opts || opts.temperature === undefined) {
@@ -735,12 +818,20 @@
       return JSON.stringify(c);
     }
 
-    function erreurHttp(r, t) {
-      var d = null;
-      try { d = JSON.parse(t); } catch (e) { d = null; }
-      var m = (d && d.error && d.error.message) || t.slice(0, 180) || ('HTTP ' + r.status);
-      var err = new Error(entry.provider + ' ' + r.status + ' : ' + m);
-      err.status = r.status;
+  function erreurHttp(r, t) {
+    var d = null;
+    try { d = JSON.parse(t); } catch (e) { d = null; }
+    var m = (d && d.error && d.error.message) || t.slice(0, 180) || ('HTTP ' + r.status);
+    var err = new Error(entry.provider + ' ' + r.status + ' : ' + m);
+    err.status = r.status;
+    /* v1.2 (pleine puissance) : le provider peut REFUSER un contexte que
+       nous pensions accepter (fenêtre réelle < notre estimation). On
+       marque l'erreur pour que l'appelant re-compresse au lieu d'abandonner
+       la tâche — l'utilisateur ne doit pas voir « erreur modèle » à cause
+       d'un contexte trop long, il doit voir la tâche reprendre. */
+    if (/context|token|tokens|too long|exceeds|maximum.*length|reduce/i.test(String(m))) {
+      err.contexteTropLong = true;
+    }
       if (d && d.error && d.error.metadata) {
         var md = d.error.metadata;
         err.retryAfter = md.retry_after_seconds
@@ -987,21 +1078,39 @@
        v20260926f (kimi, lags) : attentes COURTES (500/1500 ms) + reset
        plafonné à 8 s — au-delà on bascule au provider suivant au lieu de
        faire poireauter l'utilisateur une minute. */
+    /* v1.2 : sur un palier GRATUIT saturé (« Worker local total request limit
+       reached » côté OpenRouter/NVIDIA), la tâche NE DOIT PAS mourir : c'est une
+       saturation de capacité, pas un quota épuisé — elle retombe en quelques
+       secondes. On attend plus longtemps et on fait tourner le modèle gratuit
+       suivant. Le quota réel de la clé garde l'escalier court d'origine. */
     var delaisRetry = [500, 1500];
+    var delaisRetrySaturation = [500, 1500, 3000, 6000, 10000];
+    function saturation(err) {
+      if (!err) return false;
+      var ls = String(err.limitSource || '');
+      var msg = String(err.message || err.erreur || '');
+      return /ResourceExhausted|Worker local|free_tier|free-models-per-min|no available|Provider returned an empty response|empty response/i.test(ls + ' ' + msg);
+    }
     function avecRetry(n, liste) {
       return uneTentative(liste).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
         /* flux déjà diffusé en partie → re-POST interdit (étapes en double) */
         if (err && err.partiel) throw err;
         var st = err && err.status;
-        var retryable = st === 429 || st === 502 || st === 503;
-        if (retryable && n < delaisRetry.length && !(signal && signal.aborted)) {
+        var sat = saturation(err);
+        var ladder = sat ? delaisRetrySaturation : delaisRetry;
+        /* Saturation = réponse vide / upsteam exhausted : c'est transitoire,
+           on retente même si le statut HTTP n'est pas 429 (OpenRouter
+           sanitise parfois en 400). Sans cela, une tâche longue meurt sur un
+           simple pic de capacité. */
+        var retryable = st === 429 || st === 502 || st === 503 || sat;
+        if (retryable && n < ladder.length && !(signal && signal.aborted)) {
           var prochaine = liste;
           if (liste && liste.length > 1) {
             /* rotation : modèle rate-limité passe en fin de file */
             prochaine = liste.slice(1).concat(liste.slice(0, 1));
           }
-          var attente = delaisRetry[n];
+          var attente = ladder[n];
           /* quota OpenRouter free/min : on attend le reset SEULEMENT s'il est
              proche (≤ 8 s), sinon fail-fast → le provider suivant répond
              tout de suite (v20260926f, lags). */
@@ -1010,14 +1119,19 @@
             if (reste > 0 && reste < 8000) {
               attente = Math.min(reste + 250, 8000);
             } else if (reste >= 8000) {
-              throw err;
+              /* Saturation de capacité : on patiente jusqu'au reset (plafonné
+                 à 30 s) au lieu d'abandonner — sinon la tâche s'arrête net. */
+              if (sat && n < ladder.length) attente = Math.min(reste + 250, 30000);
+              else throw err;
             }
           } else if (err.retryAfter) {
             var ra = parseInt(err.retryAfter, 10);
             if (!isNaN(ra) && ra > 0 && ra < 8) attente = Math.min(ra * 1000, 5000);
           }
-          /* free-models-per-min : 1 seul cycle d'attente-reset puis on rend la main */
-          if (err.limitSource === 'openrouter_free_tier_per_minute' && n >= 1) {
+          /* free-models-per-min : 1 seul cycle d'attente-reset puis on rend la
+             main — SAUF en saturation, où le palier gratuit repartira tout
+             seul : on tient bon pour ne pas tuer une tâche en cours. */
+          if (err.limitSource === 'openrouter_free_tier_per_minute' && n >= 1 && !sat) {
             throw err;
           }
           return new Promise(function (res) { setTimeout(res, attente); })
@@ -1137,16 +1251,26 @@
       return wantStream ? ndjson([{ type: 'erreur', erreur: e2 }], 503) : json({ erreur: e2 }, 503);
     }
     /* v1.2 : compression automatique du contexte — le modèle ne reçoit
-       jamais plus de 85 % de sa limite (résumé LLM, repli troncature). */
+       jamais plus de 95 % de sa limite (résumé LLM, repli troncature).
+       v1.2 (pleine puissance) : `tente` permet de RÉESSAYER en compression
+       plus agressive si le provider refuse le contexte (erreur 400 context
+       length) — sinon une estimation de limite trop optimiste tuait la
+       tâche au lieu de la compresser. */
     var noteCompression = null;
-    try {
-      var comp = await compresserSiPlein(messages, plan.chaine[0], signal);
-      messages = comp.messages;
-      noteCompression = comp.note;
-    } catch (eComp) {
-      if (eComp && eComp.name === 'AbortError') throw eComp;
+    var compTente = 0;
+    async function compression(msgL) {
       noteCompression = null;
+      try {
+        var comp = await compresserSiPlein(msgL, plan.chaine[0], signal);
+        messages = comp.messages;
+        noteCompression = comp.note;
+        return false;
+      } catch (eComp) {
+        if (eComp && eComp.name === 'AbortError') throw eComp;
+        return true;
+      }
     }
+    await compression(messages);
 
     /* aboutissement d'une tentative réussie — commun aux 2 chemins */
     function assembler(entry, texte) {
@@ -1202,6 +1326,22 @@
           if (/timeout \d+ ms/.test(String((err && err.message) || '')) && !rejoues[pkEssai]) {
             rejoues[pkEssai] = true;
             i--;
+            continue;
+          }
+          /* v1.2 (pleine puissance) : le provider a refusé le contexte
+             (fenêtre réelle < notre estimation) → on compresse FORCÉMENT et
+             on retente le MÊME modèle. Sans cela, une estimation de limite
+             un peu trop large tuerait une tâche longue sur une erreur
+             évitable. */
+          if (err && err.contexteTropLong && compTente < 3) {
+            compTente += 1;
+            var force = messages.slice();
+            var sysF = force.filter(function (m) { return m && m.role === 'system'; });
+            var nonSysF = force.filter(function (m) { return !m || m.role !== 'system'; });
+            var gardeF = Math.max(4, Math.floor(nonSysF.length * 0.4));
+            messages = sysF.concat(nonSysF.slice(-gardeF));
+            noteCompression = 'contexte compressé d\'urgence ('
+              + (nonSysF.length - gardeF) + ' messages retirés, le provider a refusé la fenêtre)';
             continue;
           }
           dernierErr = err;
@@ -1299,6 +1439,23 @@
             if (e2 && e2.name === 'AbortError') {
               try { ctrl.error(e2); } catch (e3) {}
               return;
+            }
+            /* v1.2 (pleine puissance) : le provider a refusé le contexte.
+               AUCUN jeton n'est encore parti (sinon on le verrait plus bas),
+               on peut donc compresser d'urgence et retenter le MÊME modèle
+               sans risque de doublon. Mesuré : sans ce chemin, un 400
+               « context length » tuait net une tâche longue alors que la
+               compression la rendait faisable. */
+            if (e2 && e2.contexteTropLong && compTente < 3 && jetonsVus === 0) {
+              compTente += 1;
+              var sysS = messages.filter(function (m) { return m && m.role === 'system'; });
+              var nonSysS = messages.filter(function (m) { return !m || m.role !== 'system'; });
+              var gardeS = Math.max(3, Math.floor(nonSysS.length * 0.35));
+              messages = sysS.concat(nonSysS.slice(-gardeS));
+              emit({ type: 'progress', etape: 'contexte', message: 'Contexte trop long pour le modèle — compression (' + (nonSysS.length - gardeS) + ' messages retirés)' });
+              emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…' });
+              i--;
+              continue;
             }
             /* v20260926d (kimi) : des jetons sont déjà partis vers l'UI —
                on NE cascade PAS vers le modèle suivant (sinon texte A +

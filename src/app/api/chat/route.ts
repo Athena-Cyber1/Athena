@@ -35,8 +35,13 @@ const URL_SIDECAR_CHAT = "http://127.0.0.1:3010/chat";
 const URL_SIDECAR_SANTE = "http://127.0.0.1:3010/sante";
 const TIMEOUT_MS = 60_000;
 
-const MAX_MESSAGES = 100;
-const MAX_CONTENU = 60000;
+/* v1.2 (pleine puissance) : 100 messages / 60 000 car. rejetaient en 400 une
+   tâche longue, AVANT même que le shim puisse compresser le contexte. Le
+   relais doit donc laisser passer l'historique complet : la compression
+   intelligente est faite plus loin, une fois la fenêtre réelle du modèle
+   connue. Ces bornes restent de simples garde-fous anti-déni de service. */
+const MAX_MESSAGES = 400;
+const MAX_CONTENU = 400000;
 
 /* ------------------------------------------------------------------ */
 /* Schémas                                                            */
@@ -162,8 +167,13 @@ function versSidecar(corps: z.infer<typeof schemaCorps>) {
           .map((p) => p.name ?? p.file_id)
           .join(", ")}.`
       : "");
+  /* v1.2 (pleine puissance) : 8 000 car. amputaient la question — sur une
+     tâche technique, l'énoncé + les consignes + le contexte de fichiers
+     dépassent couramment cette borne, et la consigne de fin (la plus
+     importante) était la seule conservée. On suit la fenêtre réelle du
+     modèle ; le reste est Compute côté shim. */
   const question =
-    questionBrute.length > 8000 ? questionBrute.slice(-8000) : questionBrute;
+    questionBrute.length > MAX_CONTENU ? questionBrute.slice(-MAX_CONTENU) : questionBrute;
 
   if (!question) return null;
 
@@ -173,9 +183,13 @@ function versSidecar(corps: z.infer<typeof schemaCorps>) {
     ? propres.lastIndexOf(dernierUtilisateur)
     : propres.length;
   const avant = propres.slice(0, Math.max(0, idxQuestion));
+  /* v1.2 (pleine puissance) : .slice(-20) ne gardait que 20 messages — sur
+     une tâche de 100+ tours, le sidecar perdait le début du travail (le
+     fichier analysé, les bugs déjà trouvés). On laisse passer l'historique
+     entier : la compression se fait côté moteur, avec la fenêtre réelle. */
   const historique = avant
     .filter((m) => m.role !== "system")
-    .slice(-20)
+    .slice(-200)
     .map((m) => ({
       role: m.role === "assistant" ? "assistant" : "utilisateur",
       contenu: m.content,

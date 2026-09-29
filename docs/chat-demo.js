@@ -2174,7 +2174,21 @@ function creerBlocCode(langage, code) {
     executer.title = 'Exécuter via l’agent local (127.0.0.1:3020)';
     executer.setAttribute('aria-label', 'Exécuter la commande');
     executer.textContent = 'Exécuter';
-    executer.addEventListener('click', () => lancerCommandeLocale(code, executer, codeEl));
+    executer.addEventListener('click', async () => {
+      /* v1.2 (anti-bâclage) : le mode MANUEL est le DÉFAUT du produit — or
+         l'enchaînement ne vivait que dans le chemin auto. Résultat mesuré :
+         clic + modale + confirmation, puis PLUS RIEN (1 appel LLM) : le
+         modèle exécutait une commande et s'arrêtait, sans jamais lire la
+         sortie. Le consentement est déjà donné (l'utilisateur a validé la
+         modale) : on enchaîne donc aussi ici. */
+      const c = conversationOuverte();
+      if (c && c._budgetEpuise) {
+        notifier('Budget de commandes épuisé : réponds par ton verdict, plus aucune commande ne sera lancée.');
+        return;
+      }
+      const d = await lancerCommandeLocale(code, executer, codeEl);
+      if (d) enchainerApresExec(c, [d]);
+    });
     pre.appendChild(executer);
   }
   return pre;
@@ -2810,12 +2824,34 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
     try {
       terminal = creerTerminalExec(codeEl, brut);
       if (ctrlFlux) tFlux = setTimeout(() => { try { ctrlFlux.abort(); } catch {} }, BORNE_FLUX_MS);
-      const rf = await fetch('/api/exec', {
+      /* v1.2 : l'agent local peut tomber (redémarrage de la garde) au milieu
+         d'une tâche longue — la commande est alors perdue à jamais et la
+         chaîne s'arrête. On réessaie 3 fois avec attente : la garde le
+         relance en 20 s, la commande repart. Seul l'échec RÉEL est rendu. */
+      const posterExec = () => fetch('/api/exec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ commande: brut, confirme: true, flux: true }),
         signal: ctrlFlux ? ctrlFlux.signal : undefined,
       });
+      let rf = null;
+      let dernierErr = null;
+      for (let essai = 0; essai < 3; essai += 1) {
+        if (essai > 0) {
+          try { await new Promise((res) => { setTimeout(res, 3000); }); } catch {}
+          if (ctrlFlux && ctrlFlux.signal.aborted) break;
+        }
+        try { rf = await posterExec(); break; }
+        catch (e) {
+          dernierErr = e;
+          if (e && e.name === 'AbortError') break;
+        }
+      }
+      if (!rf) {
+        if (terminal && terminal.el) terminal.el.remove();
+        return echec('Agent local injoignable après 3 tentatives — '
+          + String((dernierErr && dernierErr.message) || dernierErr || '').slice(0, 200));
+      }
       const ctypeF = rf.headers.get('content-type') || '';
       if (rf.ok && ctypeF.includes('ndjson') && rf.body) {
         const dFin = await lireFluxExec(rf.body, terminal);
@@ -2866,6 +2902,10 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
 function autoExecBlocs(bulleEl) {
   const blocs = bulleEl ? [...bulleEl.querySelectorAll('.exec-bloc')] : [];
   if (!blocs.length) return Promise.resolve([]);
+  /* v1.2 : budget d'exécution épuisé → on ne lance plus rien (une commande
+     exécutée sans personne pour la lire ferait avancer le modèle à l'aveugle). */
+  const convo = conversationOuverte();
+  if (convo && convo._budgetEpuise) return Promise.resolve([]);
   /* v1.2 (anti-bâclage) : REND LES RÉSULTATS. Avant, le résultat de la
      commande partait dans le vide : le modèle emitait une commande,
      l'agent l'exécutait, la sortie s'affichait… et le tour s'arrêtait là
@@ -2892,10 +2932,20 @@ function autoExecBlocs(bulleEl) {
    On ajoute donc un tour de suite : sortie+code de chaque commande repart
    dans l'historique, le modèle continue (autre commande OU verdict). Plafond
    MAX_TOURS_EXEC + arrêt si l'utilisateur interrompt — jamais de boucle infinie. */
-const MAX_TOURS_EXEC = 6;
-const MAX_SORTIE_EXEC_MODELE = 4000;
+/* v1.2 : la chaîne ne s'arrête que sur l'arrêt NATUREL du modèle (une réponse
+   sans bloc de commande). Ces deux constantes ne servent plus à couper une
+   tâche : FENETRE_EXEC borne la MÉMOIRE du journal d'exécution, et
+   ABSOLU_TOURS_EXEC est un simple filet qui force le verdict final. */
+const FENETRE_EXEC = 4;
+const ABSOLU_TOURS_EXEC = 120;
+/* v1.2 (pleine puissance) : 8000 car. par sortie de commande, c'était trop
+   court pour un fichier (46 Ko = six pages tronquées) et le modèle en
+   concluait « résultat inexploitable ». On monte à 40 000 : une page de code
+   tient largement, la troncature est annoncée explicitement, et le journal
+   reste borné par FENETRE_EXEC + la compression du shim. */
+const MAX_SORTIE_EXEC_MODELE = 40000;
 
-function corpsPourModele(d) {
+function corpsPourModele(d, repete) {
   const sortie = String((d && d.stdout) || '');
   const err = String((d && d.stderr) || '');
   const coupe = (t) => (t.length > MAX_SORTIE_EXEC_MODELE
@@ -2903,41 +2953,139 @@ function corpsPourModele(d) {
       + '\n[…sortie tronquée : ' + t.length + ' caractères au total…]'
     : t);
   const corps = ['<resultat_commande>', 'commande : ' + String((d && d.commande) || '')];
-  corps.push('code : ' + ((d && d.code) == null ? 'n/c' : d.code));
+  corps.push('succes : ' + (d && d.ok ? 'oui' : 'non'));
+  corps.push('code : ' + ((d && d.code) == null ? 'n/c' : d.code)
+    + ((d && d.code) !== 0 && !err.trim() ? ' (code shell non nul MAIS aucune erreur affichée : sous PowerShell 5.1 un simple accès refusé suffit à le faire monter — la commande a donc réussi)' : ''));
   corps.push('duree_ms : ' + ((d && d.duree_ms) == null ? 'n/c' : d.duree_ms));
   if (sortie.trim()) corps.push('stdout :\n' + coupe(sortie));
   if (err.trim()) corps.push('stderr :\n' + coupe(err));
   if (!sortie.trim() && !err.trim()) corps.push('(aucune sortie)');
+  if (repete) corps.push('ATTENTION : tu as déjà lancé cette commande exacte — '
+    + 'elle est déjà exécutée, ne la réémet pas. Change d\'approche ou passe à la suite.');
+  if (sortie.length > MAX_SORTIE_EXEC_MODELE) {
+    corps.push('FIN DE SORTIE (tronquée). Cette sortie est probablement le DÉBUT d\'un '
+      + 'gros fichier : relis-le par pages (Select-Object -Skip N -First 150), '
+      + 'ne recommence pas à tout déverser.');
+  }
   corps.push('</resultat_commande>');
   return corps.join('\n');
 }
 
+/* v1.2 (dernier maillon) : le modèle peut terminer sur une PROMESSE au lieu
+   d'un acte. Constaté en run réel de 22 min / 196 commandes : après avoir lu
+   les 1734 lignes, il a répondu « je vais maintenant cibler les sections,
+   corriger, puis tester » — et s'est arrêté. Zéro fichier modifié.
+   On relance UNE fois, en lui donnant deux sorties possibles : agir tout de
+   suite (bloc de commande) ou donner le verdict. JAMAIS plus d'une relance par
+   conversation — sinon on recrée la boucle qu'on vient de supprimer. */
+/* Motif tolérant : on ne lit PAS le textContent de la bulle entière — le
+   panneau « Raisonnement · 1 s » y est collé à la réponse, ce qui donne
+   « …1 sJe vais… » et casse tout \b (mesuré : relance jamais déclenchée).
+   On isole donc la réponse avant de tester. */
+const PROMESSES = /\b(je vais|je poursuis|je continue|il me reste|prochainement|je dois (maintenant|encore)|je m['’]occupe)\b/i;
+function texteRepre(seul) {
+  try {
+    const copie = seul.cloneNode(true);
+    copie.querySelectorAll('details.raisonnement, .coupe-badge, .voie-modele')
+      .forEach((n) => { try { n.remove(); } catch (_) {} });
+    return String(copie.textContent || '').replace(/\s+/g, ' ');
+  } catch (_) { return String(seul && seul.textContent || ''); }
+}
+function relancerSiPromesse(convo, bulleEl) {
+  try {
+    if (!convo || convo._relanceFaite || convo._budgetEpuise) return;
+    if (!Number(convo._toursExec)) return;          // aucune tâche en cours
+    const b = bulleEl || null;
+    if (b && b.querySelector('.exec-bloc')) return; // il a agit : rien à relancer
+    const reponse = b ? texteRepre(b) : '';
+    if (!PROMESSES.test(reponse)) return;
+    convo._relanceFaite = true;
+    convo.messages.push({
+      role: 'user',
+      _exec: true,
+      content: 'Tu as ANNONCÉ une action mais tu ne l\'as pas faite. Deux sorties '
+        + 'possibles, et une seule réponse :\n'
+        + '1) Si le travail reste à faire, FAIS-LE MAINTENANT : écris le bloc '
+        + '```athena-exec avec la commande qui l\'exécute. Elle part dès que tu '
+        + 'écris le bloc — annoncer ne fait rien.\n'
+        + '2) Si tu as vraiment fini, donne ton VERDICT COMPLET et terminal : '
+        + 'les bugs trouvés (symptôme + cause + correction), les modifications '
+        + 'réellement appliquées, et les tests passés. Pas un plan, pas un '
+        + '« je vais… ».',
+    });
+    convo.maj = Date.now();
+    try { sauverConversations(); } catch (_) {}
+    notifier('Le modèle s\'est arrêté sur une promesse — relance pour qu\'agisse.');
+    genererReponse(convo).catch(() => {});
+  } catch (_) { /* relance = confort, jamais bloquant */ }
+}
+
 function enchainerApresExec(convo, resultats) {
-  if (!Array.isArray(resultats) || !resultats.length) return;
-  if (preferences.executionAuto === false) return;
-  /* Plafond porté par la CONVERSATION, pas par la pile d'appels : la
-     commande part APRÈS le retour de genererReponse, si bien qu'un compteur
-     global était déjà remis à zéro au tour suivant → boucle infinie
-     (97 appels LLM mesurés en test). Un nouvel envoi remet le compteur à
-     zéro (dans envoyer) : chaque demande repart avec un budget neuf. */
+  if (!convo || !Array.isArray(resultats) || !resultats.length) return;
+  /* v1.2 : la chaîne ne s'arrête que sur l'arrêt NATUREL du modèle (une réponse
+     sans bloc de commande) — plus de plafond arbitraire qui coupait une tâche
+     en cours. ABSOLU_TOURS_EXEC est le seul filet, et il force le verdict
+     final au lieu de simplement arrêter. */
   const deja = Number(convo._toursExec) || 0;
-  if (deja >= MAX_TOURS_EXEC) {
-    notifier('Analyse arrêtée après ' + MAX_TOURS_EXEC + ' commandes — relance si tu veux la suite.');
-    return;
-  }
-  /* Dédoublon : ne pas renvoyer deux fois le même résultat de suite. */
-  const rapport = resultats.map(corpsPourModele).join('\n\n');
-  const dernier = convo.messages[convo.messages.length - 1];
-  if (dernier && dernier._exec && dernier._execR === rapport) return;
-  convo._toursExec = deja + 1;
-  convo.messages.push({
-    role: 'user',
-    content: 'Résultat de la commande que tu viens d\'exécuter sur le PC :\n\n' + rapport
-      + '\n\nPoursuis : autre commande si elle sert la demande, sinon ton analyse '
-      + 'et ton verdict. Ne réponds pas UNIQUEMENT par une commande.',
-    _exec: true,
-    _execR: rapport,
+  /* Filet ABSOLU, atteint UNE seule fois. On n'enchaîne plus ensuite : sinon
+     un modèle qui réémet indéfiniment des commandes reboucle pour toujours
+     (mesuré : 86 appels et toujours pas d'arrêt avant correction). Un tour
+     final est offert pour rendre le verdict, puis plus rien. */
+  if (convo._budgetEpuise) return;
+  const presse = deja >= ABSOLU_TOURS_EXEC;
+  if (presse) convo._budgetEpuise = true;
+  if (!Array.isArray(convo._cmdExecutees)) convo._cmdExecutees = [];
+  const blocs = resultats.map((d) => {
+    const c = String((d && d.commande) || '').trim();
+    const repete = convo._cmdExecutees.indexOf(c) >= 0;
+    convo._cmdExecutees.push(c);
+    return corpsPourModele(d, repete);
   });
+  convo._toursExec = deja + 1;
+  /* MÉMOIRE BORNÉE : sans ça, chaque tour ajoutait 8 000 caractères et le
+     modèle oubliait le début de son propre travail (puis dérape — observé :
+     20 commandes de déversement, aucun verdict). On ne garde QUE les
+     FENETRE derniers résultats au mot, plus un relevé des commandes
+     anciennes : la tâche avance sans que le contexte n'explose. */
+  if (!Array.isArray(convo._fenetreExec)) convo._fenetreExec = [];
+  blocs.forEach((b) => convo._fenetreExec.push(b));
+  while (convo._fenetreExec.length > FENETRE_EXEC) convo._fenetreExec.shift();
+  const anciens = convo._toursExec - convo._fenetreExec.length;
+  const enonce = presse
+    ? 'BUDGET DE COMMANDES ATTEINT (' + ABSOLU_TOURS_EXEC + '). Tu ne peux plus lancer '
+      + 'de commande : RENDRE TON VERDICT MAINTENANT — ce que tu as trouvé, ce que '
+      + 'tu as corrigé, ce qui reste. Ne réponds pas par une nouvelle commande.'
+    : 'Poursuis : autre commande si elle sert la demande, sinon ton analyse et ton '
+      + 'verdict. Ne réponds pas UNIQUEMENT par une commande.';
+  /* v1.2 (association) : le DERNIER résultat est isolé et nommé. Sans ça les
+     6 résultats de la fenêtre formaient une seule liste indistincte et le
+     modèle ne retrouvait plus SA commande dans sa sortie — d'où son verdict
+     exact en fin de run réel (173 commandes) : « une série de réponses
+     successives sans résultat exploitable ». Il avait bien les sorties, il ne
+     pouvait plus savoir laquelle était la sienne. */
+  const dernier = convo._fenetreExec[convo._fenetreExec.length - 1] || '(aucun)';
+  const precedents = convo._fenetreExec.slice(0, -1);
+  let contenu = 'Commande(s) exécutée(s) : ' + convo._toursExec + '.'
+    + (anciens > 0 ? ' Les ' + anciens + ' plus anciennes ne sont plus en mémoire ; '
+      + 'elles étaient : ' + convo._cmdExecutees.slice(0, anciens).map((c) => c.slice(0, 90)).join(' | ') + '.'
+      : '') + '\n\n'
+    + '=== RÉSULTAT DE TA DERNIÈRE COMMANDE (c\'est celui-là qui compte) ===\n' + dernier
+    + (precedents.length
+      ? '\n\n=== RÉSULTATS PRÉCÉDENTS (contexte, pas la dernière commande) ===\n'
+        + precedents.join('\n\n')
+      : '')
+    + '\n\n' + enonce;
+  if (Number.isInteger(convo._msgExec) && convo.messages[convo._msgExec]
+      && convo.messages[convo._msgExec]._exec) {
+    /* Message unique réécrit à chaque tour : l'historique ne grossit pas.
+       L'INDICE du dernier résultat voyage avec, sinon le modèle ne peut plus
+       faire le lien commande → sortie sur les tours suivants. */
+    convo.messages[convo._msgExec]._dernierIdx = blocs.length - 1;
+    convo.messages[convo._msgExec].content = contenu;
+  } else {
+    convo._msgExec = convo.messages.length;
+    convo.messages.push({ role: 'user', content: contenu, _exec: true });
+  }
   convo.maj = Date.now();
   try { sauverConversations(); } catch (_) {}
   try { rendreConversations(); } catch (_) {}
@@ -3545,8 +3693,12 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
    bâclées par manque d'infos. Les modèles actuels avalent 10× plus : on ne
    coupe qu'au-delà de 100 messages / 60000 car., et la compression auto du
    shim (85 % de la limite) prend le relais proprement par résumé. */
-const FENETRE_API = 100;
-const MAX_CONTENU_API = 60000;
+/* v1.2 (pleine puissance) : 100 messages / 60 000 car. bridaient le contexte
+   bien avant saturation. Le shim sait compresser intelligemment (résumé LLM
+   à 95 % de la fenêtre réelle) : on lui laisse le travail et on ne multiplie
+   plus les seuils arbitraires. Fenêtre large + compression par le shim. */
+const FENETRE_API = 400;
+const MAX_CONTENU_API = 400000;
 const MARQUEUR_COUPURE = '\n\n[… tronqué …]';
 
 function preparerHistorique(messages) {
@@ -4231,6 +4383,9 @@ async function envoyer(texte) {
      sans cette remise à zéro, une conversation déjà à 6 commandes ne
      pourrait plus jamais enchaîner. */
   convo._toursExec = 0;
+  convo._cmdExecutees = [];
+  convo._fenetreExec = [];
+  convo._msgExec = null;
   await genererReponse(convo);
 }
 
@@ -4402,6 +4557,7 @@ async function genererReponse(convo) {
         }
         /* v20260926b (direct) : idem pour les fichiers créés par le modèle. */
         if (preferences.executionAuto !== false) autoFileBlocs(bAssist);
+        relancerSiPromesse(convo, bAssist);
       } else {
         notifier('Réponse prête dans « ' + convo.titre + ' »', { label: 'Ouvrir', action: () => ouvrirConversation(convo.id) });
       }
