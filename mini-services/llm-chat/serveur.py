@@ -61,6 +61,9 @@ class RequeteChat(BaseModel):
     # v10.9.4 (HUD) : modèle choisi côté UI (id complet « genre:nom »).
     # Optionnel : absent/vide/"auto" → cascade par défaut inchangée.
     model_id: str | None = Field(default=None, max_length=120)
+    # v1.2 (anti-bâclage, item 12) : température préférée de l'UI (0..2).
+    # None = défauts raisonnés du moteur. Validée ici, transmise au moteur.
+    temperature: float | None = Field(default=None)
     # v10.10 — skill forcé (id court, ex. « math-exact »). Absent/vide →
     # sélection automatique par type de tâche / motifs.
     skill: str | None = Field(default=None, max_length=64)
@@ -120,7 +123,9 @@ def chat(req: RequeteChat) -> dict:
             max_etapes = 14
         max_etapes = max(1, min(32, max_etapes))
         mode = req.options.get("mode", "auto")
-        historique = [{"role": m.role, "contenu": m.contenu} for m in req.historique][:20]
+        # v1.2 (anti-bâclage, item 18) : les 20 DERNIERS (avant : les 20
+        # premiers — piège pour tout appelant hors route.ts).
+        historique = [{"role": m.role, "contenu": m.contenu} for m in req.historique][-20:]
         pieces = [{"file_id": p.file_id, "name": p.name} for p in req.attachments][:10]
         # v10.6 (F15) : un file_id FANTÔME n'est plus accepté en silence —
         # l'utilisateur croyait le fichier joint alors qu'il n'existait pas.
@@ -132,10 +137,20 @@ def chat(req: RequeteChat) -> dict:
                           + ", ".join(inconnus),
                 "fichiers_inconnus": inconnus,
             })
+        # v1.2 (anti-bâclage, item 12) : température UI validée (0..2).
+        temperature = req.temperature
+        if temperature is not None:
+            try:
+                temperature = float(temperature)
+            except (TypeError, ValueError):
+                temperature = None
+            if temperature is not None and not (0.0 <= temperature <= 2.0):
+                temperature = None
         return run_agent(req.question, historique=historique, fil_id=req.fil_id,
                          max_etapes=max_etapes, mode=mode, attachments=pieces,
                          model_id=(req.model_id or None),
-                         skill=(req.skill or None))
+                         skill=(req.skill or None),
+                         temperature=temperature)
     except Exception as e:  # jamais de crash silencieux : échec honnête
         # v10.9.2 (P0) : le DÉTAIL (type + message d'exception) reste dans le
         # log serveur (uvicorn/console). Le corps HTTP n'emporte qu'une phrase

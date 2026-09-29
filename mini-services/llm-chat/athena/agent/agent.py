@@ -110,11 +110,25 @@ def _bloc_fil_recent(state: AgentState) -> tuple[str, bool]:
     significatif (≥ 2 jetons de contenu) avec le dernier tour utilisateur.
     Une question NOUVELLE (ex. VPN après Athéna) ne reçoit AUCUN fil récent.
 
+    v1.2 (anti-bâclage) : source = state.historique (tours complets du
+    client) d'abord, repli sur le fil mémoire ; ~1200 caractères par tour
+    (avant : 200 — les fins de tâche perdaient leur matière).
+
     Retourne (bloc, anaphore) : anaphore=True si la reprise vient d'un marqueur
     d'anaphore (CLASSE 4 — le prompt ajoute alors l'instruction de résolution
     d'antécédent, et le fil s'étend à 6 tours pour couvrir N-1 ET N-2)."""
-    fil = state.contextes_memoire.get("fil") or []
-    tours = [t for t in fil if (t.get("contenu") or "").strip()]
+    tours: list[dict[str, str]] = []
+    for m in (state.historique or [])[-8:]:
+        if not isinstance(m, dict):
+            continue
+        contenu = str(m.get("contenu") or m.get("content") or "").strip()
+        role = str(m.get("role") or "")
+        if contenu:
+            tours.append({"role": "utilisateur" if role == "user" else role,
+                          "contenu": contenu})
+    if not tours:
+        fil = state.contextes_memoire.get("fil") or []
+        tours = [t for t in fil if (t.get("contenu") or "").strip()]
     if not tours:
         return "", False
     question = state.but
@@ -136,7 +150,7 @@ def _bloc_fil_recent(state: AgentState) -> tuple[str, bool]:
     lignes = []
     for t in tours:
         role = "Utilisateur" if t.get("role") == "utilisateur" else "Assistant"
-        lignes.append(f"- {role} : {(t['contenu'] or '')[:200]}")
+        lignes.append(f"- {role} : {(t['contenu'] or '')[:1200]}")
     return "\n".join(lignes), par_anaphore
 
 
@@ -213,13 +227,22 @@ def run_agent(question: str, historique: list[dict[str, str]] | None = None,
               fil_id: str | None = None, max_etapes: int = 14,
               mode: str = "auto", emetteur: Emitter | None = None,
               attachments: list[dict[str, str]] | None = None,
-              model_id: str | None = None, skill: str | None = None) -> dict[str, Any]:
+              model_id: str | None = None, skill: str | None = None,
+              temperature: float | None = None) -> dict[str, Any]:
     debut = time.time()
     fil_id = fil_id or f"fil-{uuid.uuid4().hex[:8]}"
     historique = historique or []
+    # v1.2 (anti-bâclage) : température UI validée (0..2), None = défauts.
+    try:
+        temperature = float(temperature) if temperature is not None else None
+    except (TypeError, ValueError):
+        temperature = None
+    if temperature is not None and not (0.0 <= temperature <= 2.0):
+        temperature = None
 
     state = AgentState(but=question.strip(), historique=historique, fil_id=fil_id,
-                       max_etapes=max_etapes, model_id=model_id)
+                       max_etapes=max_etapes, model_id=model_id,
+                       temperature=temperature)
 
     # v10.8 — CLASSE 7 : garde d'injection DÉTERMINISTE avant toute planification
     # (prise de contrôle « SYSTEM: » → refus poli + alternative ; « répète : X »
@@ -510,5 +533,10 @@ def _paquet_final(state: AgentState, fil_id: str, debut: float) -> dict[str, Any
         # neutre (aucun nom de provider, aucune erreur HTTP — N4) ; l'UI lèvera
         # un toast discret « repli sur le modèle auto ».
         "modele_repli": bool(getattr(state, "mode_repli", False)),
+        # v1.2 (anti-bâclage, items 9/10) : fin coupée + modèle réellement
+        # servi — l'UI affiche le badge « tronquée » et la voie utilisée.
+        "tronquee": (state.derniere_fin or "") == "length",
+        "provider": state.dernier_provider,
+        "model": state.dernier_modele,
         "version": f"athena {__version__}",
     }

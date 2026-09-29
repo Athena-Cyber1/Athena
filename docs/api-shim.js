@@ -386,10 +386,14 @@
   async function compresserSiPlein(msgs, entry, signal) {
     var limite = limiteModele(entry);
     var utilises = jetonsEstimes(msgs);
-    if (utilises <= limite * 0.85 || msgs.length <= 8) return { messages: msgs, note: null, utilises: utilises, limite: limite };
+    /* v1.2 (anti-bâclage) : 12 messages récents + résumé de 25 lignes sur
+       24 000 caractères de matière (avant : 6 / 12 lignes / 8000 car. —
+       trop de perte). LIMITE_DEFAUT = 32768 vérifiée : simple repli pour les
+       modèles sans limite connue (openrouter générique, autres). */
+    if (utilises <= limite * 0.85 || msgs.length <= 14) return { messages: msgs, note: null, utilises: utilises, limite: limite };
     var systeme = msgs.filter(function (m) { return m && m.role === 'system'; });
-    var recents = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(-6);
-    var anciens = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(0, -6);
+    var recents = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(-12);
+    var anciens = msgs.filter(function (m) { return !m || m.role !== 'system'; }).slice(0, -12);
     var resume = null;
     try {
       var cat = catalogue();
@@ -405,12 +409,12 @@
         }
       }
       if (eRes) {
-        var matiere = anciens.map(function (m) { return (m.role || '?') + ' : ' + String(m.content || ''); }).join('\n').slice(0, 8000);
+        var matiere = anciens.map(function (m) { return (m.role || '?') + ' : ' + String(m.content || ''); }).join('\n').slice(0, 24000);
         var txt = await appelBorne(callModel(eRes, [
-          { role: 'system', content: 'Résume fidèlement en 12 lignes maximum : faits, décisions, contexte utile. Réponds UNIQUEMENT avec le résumé.' },
+          { role: 'system', content: 'Résume fidèlement en 25 lignes maximum : faits, décisions, contexte utile. Réponds UNIQUEMENT avec le résumé.' },
           { role: 'user', content: matiere },
         ], signal), 70000);
-        if (txt && txt.trim()) resume = txt.trim().slice(0, 2000);
+        if (txt && txt.trim()) resume = txt.trim().slice(0, 4000);
       }
     } catch (e) {
       if (e && e.name === 'AbortError') throw e;
@@ -464,6 +468,12 @@
      mini-services/local-agent (127.0.0.1). Absent → erreur honnête. */
   var LOCAL_AGENT = 'http://127.0.0.1:3020';
 
+  /* v1.2 (anti-bâclage) : préambule général — le prompt système ne parlait
+     que d'outils ; le modèle n'avait aucune consigne de complétude globale. */
+  var ATHENA_SYSTEM_GENERAL =
+    'Athéna, assistant utile : réponds complètement à la question, sans ' +
+    'abréger ni bâcler ; adapte la longueur de ta réponse à la question ' +
+    '(courte si simple, complète et menée à son terme si complexe).';
   var ATHENA_SYSTEM_EXEC =
     'Athéna · outil local : pour exécuter une commande sur le PC de l\'utilisateur, ' +
     'réponds UNIQUEMENT avec un bloc de code fenced avec le langage exact athena-exec ' +
@@ -492,7 +502,7 @@
     'système sont refusés. Le fichier est enregistré AUTOMATIQUEMENT sur le poste (comme les ' +
     'commandes) et reste téléchargeable dans la conversation. N\'y mets que du contenu ' +
     'légitime et sans danger ; si l\'agent est injoignable, dis-le simplement.';
-  var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER;
+  var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_GENERAL + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER;
 
   async function agentLocalExec(payload, signal) {
     try {
@@ -1084,7 +1094,9 @@
        /api/exec + /api/write → local-agent, ou bouton UI + modale si
        executionAuto est off. */
     var aSystem = messages.some(function (m) { return m.role === 'system'; });
-    if (!aSystem) {
+    /* v1.2 (anti-bâclage) : outils désactivés (outils === false) = pas de
+       prompt d'outils — avant, il s'injectait quand même sans system. */
+    if (!aSystem && body.outils !== false) {
       messages = [{ role: 'system', content: ATHENA_SYSTEM_OUTILS }].concat(messages);
     } else if (body.outils !== false) {
       messages = messages.map(function (m, idx) {
@@ -1141,6 +1153,11 @@
           modele_repli: repli || undefined,
           compression: noteCompression || undefined,
           tronquee: entry._fin === 'length' || undefined,
+          /* v1.2 (anti-bâclage, item 10) : voie réellement servie — le
+             pont local la calcule ; ici on expose la clé provider + le
+             modèle constaté (d.model) pour le même affichage UI. */
+          provider: entry.providerKey || null,
+          model: modeleReel || null,
         },
       };
     }
@@ -1230,6 +1247,8 @@
               raisonnement: null,
               modele_repli: fin.payload.modele_repli,
               tronquee: fin.payload.tronquee,
+              provider: fin.payload.provider,
+              model: fin.payload.model,
             });
             try { ctrl.close(); } catch (e) {}
             return;

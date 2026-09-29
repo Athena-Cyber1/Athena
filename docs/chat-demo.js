@@ -331,14 +331,20 @@ function afficherFichiers() {
     if (fichier.status === 'failed') chip.classList.add('echec');
     const nom = document.createElement('span');
     nom.className = 'file-chip-name';
+    /* v1.2 (anti-bâclage) : binaire indexé mais sans texte lisible côté
+       navigateur (PDF/image) — sur Pages, sans sidecar, le modèle n'a rien
+       à lire et invente : on l'affiche dans la puce au lieu de le taire. */
+    const sansTexte = fichier.status === 'indexed' && fichier.file_id
+      && !contenusFichiers.get(fichier.file_id);
     const etat = fichier.status === 'indexed'
-      ? '✓ indexé · ' + (fichier.chunks || 0) + ' seg.'
+      ? '✓ indexé · ' + (fichier.chunks || 0) + ' seg.' + (sansTexte ? ' · ⚠ texte non lisible' : '')
       : fichier.status === 'failed'
       ? 'échec : ' + (fichier.erreur || 'extraction impossible')
       : '… ' + (fichier.status === 'uploading' ? 'envoi' : 'indexation');
     nom.textContent = fichier.name + ' · ' + tailleFichier(fichier.size || 0) + ' · ' + etat;
     if (fichier.status === 'indexed') {
-      chip.title = 'Fichier indexé côté serveur — les segments pertinents seront fournis au modèle (FILE_DATA).';
+      chip.title = 'Fichier indexé côté serveur — les segments pertinents seront fournis au modèle (FILE_DATA).'
+        + (sansTexte ? ' Sans texte lisible côté navigateur (binaire ou volumineux) : en mode Pages le modèle ne pourra pas le lire.' : '');
     } else if (fichier.status === 'failed') {
       chip.title = (fichier.erreur || 'Extraction impossible') + ' — ce fichier ne sera pas transmis.';
     }
@@ -1505,7 +1511,7 @@ publierHooks('__atelierProjets', {
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
 
-const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: true, dossierTravail: '', theme: 'dark', temperature: 0.6 };
+const preferencesParDefaut = { animationsReduites: false, densiteCompacte: false, defilementAuto: true, confirmationEnvoi: false, sidebarVisible: true, outilsWeb: true, raisonnementVisible: true, executionAuto: false, dossierTravail: '', theme: 'dark', temperature: 0.6, contexteLocal: 32768 };
 let preferences = { ...preferencesParDefaut };
 try {
   preferences = { ...preferencesParDefaut, ...JSON.parse(localStorage.getItem('chat-preferences') || '{}') };
@@ -1602,6 +1608,26 @@ function creerCurseurTemperature() {
   zone.append(curseur, pastille);
   return creerLigneOption('Température', 'Créativité des réponses : 0 précis, 0,6 équilibré, 2 audacieux. Certains modèles gardent leur réglage.', zone);
 }
+/* v1.2 (anti-bâclage, item 15) : ligne de réglage numérique (contexte local). */
+function creerLigneNombre(cle, titre, description) {
+  const champ = document.createElement('input');
+  champ.type = 'number';
+  champ.className = 'setting-champ';
+  champ.min = '1024';
+  champ.max = '1000000';
+  champ.step = '1024';
+  const v = parseInt(preferences[cle], 10);
+  champ.value = Number.isFinite(v) && v > 0 ? String(v) : '';
+  champ.placeholder = '32768';
+  champ.setAttribute('aria-label', titre);
+  champ.spellcheck = false;
+  champ.addEventListener('change', () => {
+    const n = parseInt(champ.value, 10);
+    enregistrerPreference(cle, Number.isFinite(n) && n > 0 ? Math.min(n, 1000000) : 32768);
+    majBadgeContexte();
+  });
+  return creerLigneOption(titre, description, champ);
+}
 /* v20260926e : ligne de réglage avec champ texte (ex. dossier de travail). */
 function creerLigneChamp(cle, titre, description, placeholder) {
   const champ = document.createElement('input');
@@ -1661,6 +1687,7 @@ function afficherParametres(ongletActif = 'Apparence') {
         creerInterrupteur('executionAuto', 'Exécution automatique des commandes', 'Les blocs athena-exec partent seuls sur l’agent local (127.0.0.1:3020) — sans modale « Exécuter sur ce PC ? ». Décocher pour reprendre la confirmation manuelle.'),
         creerLigneChamp('dossierTravail', 'Dossier de travail (fichiers créés)', 'Dossier du PC où le modèle enregistre les fichiers (chemins relatifs). Vide = dossier de l’agent. Ex. C:\\Users\\moi\\Documents\\Athena',
           'C:\\Users\\moi\\Documents\\Athena'),
+        creerLigneNombre('contexteLocal', 'Contexte des modèles locaux (tokens)', 'num_ctx RÉEL de votre modèle local (Ollama stock = 4096 ; 16384 si configuré). Sert la jauge et la compression auto.'),
       );
     } else if (nom === 'Confidentialité') {
       description.textContent = 'Les données de cette démo restent sur cet appareil.';
@@ -3532,6 +3559,8 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
            corrélation logs, format canonique « fil-xxxxxxxx »). */
         body: JSON.stringify({ messages: historique, outils: preferences.outilsWeb !== false,
           conversation_id: idConversation,
+          /* v1.2 (anti-bâclage, item 12) : température préférée → route.ts → moteur. */
+          temperature: temperatureChoisie(),
           /* v10.9.4 (HUD) : modèle choisi (sinon cascade par défaut) */
           ...(modeleChoisi ? { model_id: modeleChoisi.id } : {}),
           ...(attachments.length ? { attachments } : {}) }),
@@ -3542,7 +3571,7 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
         const d = JSON.parse(texte);
         if (!r.ok) return { ok: false, erreur: humaniserErreur(d.erreur, r.status), statut: r.status };
         if (d.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
-        return { ok: true, reponse: d.reponse || '(réponse vide)', outil: d.outil || null, correction: Boolean(d.correction), verification: d.verification || null, rag: d.rag || null, tache: d.tache || null, raisonnement: d.raisonnement || null, tronquee: Boolean(d.tronquee) };
+        return { ok: true, reponse: d.reponse || '(réponse vide)', outil: d.outil || null, correction: Boolean(d.correction), verification: d.verification || null, rag: d.rag || null, tache: d.tache || null, raisonnement: d.raisonnement || null, tronquee: Boolean(d.tronquee), provider: typeof d.provider === 'string' ? d.provider : null, model: typeof d.model === 'string' ? d.model : null, modele_repli: Boolean(d.modele_repli) };
       } catch { cause = 'reponse'; /* corps non JSON -> réessai */ }
     } catch (err) {
       if (err && err.name === 'AbortError') throw err;  // stop demandé : ne pas réessayer
@@ -3572,6 +3601,8 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: historique, outils: preferences.outilsWeb !== false, stream: true,
         conversation_id: idConversation,
+        /* v1.2 (anti-bâclage, item 12) : température préférée → route.ts → moteur. */
+        temperature: temperatureChoisie(),
         /* v10.9.4 (HUD) : modèle choisi (sinon cascade par défaut) */
         ...(modeleChoisi ? { model_id: modeleChoisi.id } : {}),
         ...(attachments.length ? { attachments } : {}) }),
@@ -3619,7 +3650,7 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
         if (final.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
         /* v20260926d : final PARTIEL (reponse null) — pas de '(réponse vide)'
            ici, genererReponse reprend la frappe déjà diffusée. */
-        return { ok: true, reponse: final.reponse || (final.partiel ? '' : '(réponse vide)'), outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus, partiel: Boolean(final.partiel), tronquee: Boolean(final.tronquee) };
+        return { ok: true, reponse: final.reponse || (final.partiel ? '' : '(réponse vide)'), outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus, partiel: Boolean(final.partiel), tronquee: Boolean(final.tronquee), provider: typeof final.provider === 'string' ? final.provider : null, model: typeof final.model === 'string' ? final.model : null, modele_repli: Boolean(final.modele_repli) };
       }
       return { ok: false, erreur: 'Le flux de raisonnement a été interrompu avant la réponse — renvoyez votre message.' };
     }
@@ -4133,13 +4164,26 @@ async function genererReponse(convo) {
   if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
   controleurEnCours = new AbortController();
   let r = null;
-  /* v9.5 : les fichiers joints au DERNIER message utilisateur (s'il y en a)
-     accompagnent cet appel — « Régénérer » les renvoie donc à l'identique. */
-  const dernierUser = [...convo.messages].reverse().find((m) => m.role === 'user');
+  /* v1.2 (anti-bâclage) : les pièces de TOUS les messages utilisateur
+     accompagnent l'appel (dédoublonnées par file_id, 10 au plus) — avant,
+     seul le dernier message comptait et une question de suivi perdait le
+     fichier. « Régénérer » rejoue à l'identique. */
+  const piecesTour = [];
+  const vusTour = new Set();
+  for (const m of convo.messages) {
+    if (!m || m.role !== 'user' || !Array.isArray(m.attachments)) continue;
+    for (const a of m.attachments) {
+      if (!a || !a.file_id || vusTour.has(a.file_id)) continue;
+      vusTour.add(a.file_id);
+      piecesTour.push(a);
+      if (piecesTour.length >= MAX_PIECES) break;
+    }
+    if (piecesTour.length >= MAX_PIECES) break;
+  }
   /* v20260926a : le contenu TEXTUEL lu à l'ajout (mémoire de session) est
      ajouté ici, au moment de l'appel — les conversations stockent file_id,
      name et des métadonnées d'affichage, jamais le contenu. */
-  const attachesTour = enrichirPieces((dernierUser && dernierUser.attachments) || []);
+  const attachesTour = enrichirPieces(piecesTour);
   try {
     r = await appelerApi(preparerHistorique(convo.messages), controleurEnCours.signal,
       panneau ? (ev) => panneau.ajouter(ev) : null, attachesTour,
@@ -4235,6 +4279,15 @@ async function genererReponse(convo) {
           bAssist.appendChild(badge);
           notifier('Réponse coupée par la limite du modèle (pas un bâclage).');
         }
+        /* v1.2 (anti-bâclage, item 10) : voie réellement servie — discret,
+           sous la réponse (ni provider techniques, juste le modèle). */
+        if (r.model || r.provider) {
+          const voie = document.createElement('div');
+          voie.className = 'voie-modele';
+          voie.textContent = 'via ' + (r.model || r.provider)
+            + (r.modele_repli ? ' · repli' : '');
+          bAssist.appendChild(voie);
+        }
         /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
            (préférence executionAuto, ON par défaut) — la commande part
            seule sur l'agent local 127.0.0.1:3020, sans modale : c'est le
@@ -4271,8 +4324,8 @@ async function genererReponse(convo) {
     if (vueOuverte()) saisieEl.focus();
   }
 }
-/* v9.4 — limite de saisie (audit : aucune borne) : 4 000 caractères, côté
-   client (la borne serveur est 8 000 par message avec pièces jointes). Le
+/* v9.4 — limite de saisie (audit : aucune borne) : 8 000 caractères, côté
+   client (= borne `question` du sidecar). Le
    compteur n'apparaît qu'à l'approche de la limite — sobre par défaut. */
 function majMirrorSaisie() {
   if (!saisieMirrorEl) return;
@@ -4305,7 +4358,9 @@ function ajusterSaisie() {
      champ défile sous un miroir figé — caret détaché du texte). */
   if (saisieMirrorEl) saisieMirrorEl.scrollTop = saisieEl.scrollTop;
 }
-const MAX_SAISIE = 4000;
+/* v1.2 (anti-bâclage, item 17) : 8000 = borne `question` du sidecar (au-delà,
+   la passerelle garde la queue). */
+const MAX_SAISIE = 8000;
 saisieEl.maxLength = MAX_SAISIE;
 function majCompteurSaisie() {
   if (!compteurSaisieEl) return;
@@ -4525,14 +4580,38 @@ publierHooks('__atelierRegenerer', { regenerer: regenererDerniereReponse, visibl
    Badge compact dans le header (modèle actif) + panneau overlay (sections
    Actif / Cloud / Local). Sélection persistée (localStorage
    « athena_selected_model ») et envoyée en `model_id` à /api/chat.
-   - « auto » = cascade par défaut (gratuit → zai) — jamais un chemin parallèle ;
+   - « auto » = meilleur disponible, sans relais — jamais un chemin parallèle ;
    - item down → grisé + title neutre (aucune erreur HTTP, N4) ;
-   - si le modèle choisi échoue, le moteur sert la cascade et lève un toast
-     discret (« repli sur le modèle auto ») via les chemins d'appel ;
+   - si le modèle choisi échoue, son erreur honnête remonte (plus de repli
+     silencieux) via les chemins d'appel ;
    - si aucun modèle local n'est détecté, la section Local n'est pas rendue ;
    - ↻ = rafraîchissement manuel (re-catalogue cloud + re-scan serveurs locaux
      Ollama / LM Studio / llama.cpp côté pont). */
 const CLE_MODELE = 'athena_selected_model';
+/* v1.2 (anti-bâclage, item 11) : efforts connus par modèle (remplis à chaque
+   rendu du HUD) — pour griser le sélecteur d'effort quand il est sans effet.
+   false tant que le catalogue n'a jamais chargé (on ne grise pas à l'aveugle). */
+let effortsConnus = {};
+let catalogueEffortsCharge = false;
+/* v1.2 (anti-bâclage) : EFFORTS lus par majBadgeEffort() dès l'init
+   (initHudModele) — déclarés ici, AVANT tout usage (même piège TDZ que
+   LIMITES_CTX : une const lue trop tôt tue tout le chargement). */
+const CLE_EFFORT = 'athena_effort';
+const EFFORTS = [
+  { v: 'low', nom: 'low', aide: 'Rapide — raisonnement court' },
+  { v: 'medium', nom: 'medium', aide: 'Équilibré — raisonnement moyen' },
+  { v: 'high', nom: 'high', aide: 'Approfondi — raisonnement long' },
+  { v: 'max', nom: 'max', aide: 'Maximal — le plus profond (défaut)' },
+];
+const EFFORT_DEFAUT = 'max';
+let effortChoisi = EFFORT_DEFAUT;
+
+try {
+  const brutEffort = localStorage.getItem(CLE_EFFORT);
+  if (typeof brutEffort === 'string' && EFFORTS.some((e) => e.v === brutEffort)) {
+    effortChoisi = brutEffort;
+  }
+} catch { /* stockage optionnel — « max » par défaut */ }
 /* v1.2 : limites de contexte PARTOUT avant tout usage — ces consts sont lues
    par majBadgeContexte() dès l'init (initHudModele) ; déclarées après, c'est
    une TDZ qui tue tout le chargement (boutons morts, sidebar vide). */
@@ -4563,7 +4642,9 @@ try {
     /* v20260928 : tokenrouter retiré (quota épuisé) — un vieux choix
        mémorisé ne doit plus être rejoué (403 à chaque message). */
     if (!brut.id.startsWith('tokenrouter:')) {
-      modeleChoisi = { id: brut.id, name: brut.name.slice(0, 80) };
+      /* v1.2 (anti-bâclage, item 15) : le drapeau local est conservé pour
+         la jauge de contexte (num_ctx du modèle local). */
+      modeleChoisi = { id: brut.id, name: brut.name.slice(0, 80), local: brut.local === true };
     } else {
       try { localStorage.removeItem(CLE_MODELE); } catch {}
     }
@@ -4581,6 +4662,7 @@ function majBadgeModele() {
       : 'Modèle de langue - auto = meilleur dispo, sans relais';
   }
   majBadgeContexte();
+  majBadgeEffort();
 }
 
 function fermerHud() {
@@ -4599,7 +4681,7 @@ function itemModeleHud(m, selectionCourante) {
   const item = document.createElement('button');
   item.type = 'button';
   item.className = 'hud-item' + (m.id === selectionCourante ? ' actif' : '') + (m.up ? '' : ' down');
-  if (!m.up) item.title = 'Momentanément indisponible — la cascade couvrira ce modèle.';
+  if (!m.up) item.title = 'Momentanément indisponible.';
   const point = document.createElement('span');
   point.className = 'hud-point';
   point.setAttribute('aria-hidden', 'true');
@@ -4633,7 +4715,7 @@ function itemModeleHud(m, selectionCourante) {
       modeleChoisi = null;
       try { localStorage.removeItem(CLE_MODELE); } catch { /* stockage optionnel */ }
     } else {
-      modeleChoisi = { id: m.id, name: m.name || m.id };
+      modeleChoisi = { id: m.id, name: m.name || m.id, local: m.local === true };
       try { localStorage.setItem(CLE_MODELE, JSON.stringify(modeleChoisi)); } catch { /* stockage optionnel */ }
     }
     majBadgeModele();
@@ -4646,6 +4728,14 @@ function rendreHud(modeles, dispo) {
   const panneau = document.getElementById('hud-modeles');
   if (!panneau) return;
   panneau.replaceChildren();
+  /* v1.2 (anti-bâclage, item 11) : mémorise les efforts par modèle pour
+     le grisage du sélecteur d'effort. */
+  effortsConnus = {};
+  (Array.isArray(modeles) ? modeles : []).forEach((m) => {
+    if (m && typeof m.id === 'string') effortsConnus[m.id] = Array.isArray(m.efforts) ? m.efforts : null;
+  });
+  catalogueEffortsCharge = true;
+  majBadgeEffort();
   const selectionCourante = modeleChoisi ? modeleChoisi.id : 'auto';
 
   const titreActif = document.createElement('div');
@@ -4683,7 +4773,7 @@ function rendreHud(modeles, dispo) {
   actions.className = 'hud-actions';
   const note = document.createElement('span');
   note.className = 'hud-note';
-  note.textContent = 'Si le modèle choisi échoue : repli auto.';
+  note.textContent = 'Si le modèle choisi échoue : erreur honnête, sans relais.';
   const rafraichir = document.createElement('button');
   rafraichir.type = 'button';
   rafraichir.className = 'hud-rafraichir';
@@ -4746,22 +4836,7 @@ async function chargerModelesHud(rafraichir = false) {
    - persisté comme la sélection de modèle (localStorage « athena_effort »).
    Un choix n'a d'effet que sur les chemins NVIDIA sans cadrage propre
    (llama-vision / content-safety refusent l'option). */
-const CLE_EFFORT = 'athena_effort';
-const EFFORTS = [
-  { v: 'low', nom: 'low', aide: 'Rapide — raisonnement court' },
-  { v: 'medium', nom: 'medium', aide: 'Équilibré — raisonnement moyen' },
-  { v: 'high', nom: 'high', aide: 'Approfondi — raisonnement long' },
-  { v: 'max', nom: 'max', aide: 'Maximal — le plus profond (défaut)' },
-];
-const EFFORT_DEFAUT = 'max';
-let effortChoisi = EFFORT_DEFAUT;
-
-try {
-  const brutEffort = localStorage.getItem(CLE_EFFORT);
-  if (typeof brutEffort === 'string' && EFFORTS.some((e) => e.v === brutEffort)) {
-    effortChoisi = brutEffort;
-  }
-} catch { /* stockage optionnel — « max » par défaut */ }
+/* EFFORTS et effortChoisi déclarés près de CLE_MODELE (anti-TDZ, voir ci-dessus). */
 
 function majBadgeEffort() {
   const el = document.getElementById('effort-actif-nom');
@@ -4769,7 +4844,17 @@ function majBadgeEffort() {
   const bouton = document.getElementById('btn-effort');
   if (bouton) {
     const courant = EFFORTS.find((e) => e.v === effortChoisi);
-    bouton.title = `Effort de raisonnement : ${effortChoisi} — ${courant ? courant.aide : ''} (clic pour changer)`;
+    /* v1.2 (anti-bâclage, item 11) : l'effort ne sert qu'aux modèles qui
+       l'acceptent (NVIDIA, entrées avec `efforts`) — sinon sélecteur grisé
+       avec « sans effet » (plus de réglage mort). En auto ou catalogue
+       inconnu : on laisse actif (la cascade peut viser un tel modèle). */
+    const eff = modeleChoisi ? effortsConnus[modeleChoisi.id] : undefined;
+    const sansEffet = Boolean(modeleChoisi) && catalogueEffortsCharge
+      && !String(modeleChoisi.id).startsWith('nvidia:')
+      && !(Array.isArray(eff) && eff.length);
+    bouton.disabled = sansEffet;
+    bouton.title = `Effort de raisonnement : ${effortChoisi} — ${courant ? courant.aide : ''} (clic pour changer)`
+      + (sansEffet ? ' — sans effet sur ce modèle' : '');
   }
 }
 
@@ -4927,6 +5012,12 @@ function limiteDiscussion() {
   if (!modeleChoisi) return null;
   if (LIMITES_CTX[modeleChoisi.id] !== undefined) return LIMITES_CTX[modeleChoisi.id];
   if (String(modeleChoisi.id).startsWith('nvidia:')) return 131072;
+  /* v1.2 (anti-bâclage, item 15) : modèles locaux → num_ctx RÉEL réglé par
+     l'utilisateur (Ollama stock = 4096, pas 32768 — la jauge mentait). */
+  if (modeleChoisi.local) {
+    const n = parseInt(preferences.contexteLocal, 10);
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 1000000) : LIMITE_DEFAUT_CTX;
+  }
   return LIMITE_DEFAUT_CTX;
 }
 function formatK(n) {

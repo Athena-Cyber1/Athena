@@ -63,6 +63,14 @@ const POLLINATIONS_BASE = 'https://text.pollinations.ai/openai';
 const POLLINATIONS_MODEL = 'openai-fast';
 const POLLINATIONS_TIMEOUT_MS = 40_000;
 const ZAI_TIMEOUT_MS = 45_000;
+// v1.2 (anti-bâclage, item 14) : délai d'appel LOCAL configurable — les CPU
+// lents/quantifiés dépassent 55 s sans recompiler :
+// ATHENA_LOCAL_TIMEOUT_MS=120000. (Le streaming + délai d'inactivité reste
+// l'alternative si un serveur local ne répond qu'en JSON lent.)
+const LOCAL_TIMEOUT_MS = (() => {
+  const n = Number(Bun.env.ATHENA_LOCAL_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 600_000) : 55_000;
+})();
 
 // ---- HUD modèles (v2.2.0) ---------------------------------------------------
 type ModeleInfo = { id: string; name: string; provider: string; active: boolean; local: boolean; up: boolean };
@@ -435,7 +443,7 @@ async function appelPollinations(
   max_tokens: number,
   timeout_ms: number,
   modele: string = POLLINATIONS_MODEL,
-): Promise<{ ok: true; texte: string } | { ok: false; code: string; detail: string }> {
+): Promise<{ ok: true; texte: string; fin: string | null } | { ok: false; code: string; detail: string }> {
   try {
     const reponse = await fetch(`${POLLINATIONS_BASE}/chat/completions`, {
       method: 'POST',
@@ -450,13 +458,15 @@ async function appelPollinations(
       return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: `pollinations : statut ${reponse.status}` };
     }
     const data = (await reponse.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
     };
     const texte = data?.choices?.[0]?.message?.content ?? '';
+    // v1.2 (anti-bâclage, item 9) : motif de fin remonté (length = tronquée).
+    const fin = data?.choices?.[0]?.finish_reason ?? null;
     if (typeof texte !== 'string' || texte.trim().length === 0) {
       return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: 'pollinations : réponse vide' };
     }
-    return { ok: true, texte };
+    return { ok: true, texte, fin };
   } catch (e: unknown) {
     const brut = e instanceof Error ? e.message : String(e);
     if (/abort|timeout/i.test(brut)) {
@@ -472,7 +482,7 @@ async function appelZai(
   messages: Message[],
   temperature: number,
   max_tokens: number,
-): Promise<{ ok: true; texte: string } | { ok: false; code: string; detail: string }> {
+): Promise<{ ok: true; texte: string; fin: string | null } | { ok: false; code: string; detail: string }> {
   try {
     const zai = await getZai();
     const completion = await avecDelai(
@@ -486,10 +496,11 @@ async function appelZai(
       provider.timeout_ms,
     );
     const texte: string = completion?.choices?.[0]?.message?.content ?? '';
+    const fin = (completion?.choices?.[0] as { finish_reason?: string } | undefined)?.finish_reason ?? null;
     if (typeof texte !== 'string' || texte.trim().length === 0) {
       return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: `${provider.id} : réponse SDK vide ou invalide` };
     }
-    return { ok: true, texte };
+    return { ok: true, texte, fin };
   } catch (e: unknown) {
     const brut = e instanceof Error ? e.message : String(e);
     if (/status 429/i.test(brut) || /too many requests/i.test(brut)) {
@@ -509,7 +520,7 @@ async function appelLocal(
   messages: Message[],
   temperature: number,
   max_tokens: number,
-): Promise<{ ok: true; texte: string } | { ok: false; code: string; detail: string }> {
+): Promise<{ ok: true; texte: string; fin: string | null } | { ok: false; code: string; detail: string }> {
   // Le nom de modèle local est "genre:nom" → l'API locale attend juste "nom".
   const nomLocal = modele.slice(modele.indexOf(':') + 1);
   try {
@@ -517,17 +528,18 @@ async function appelLocal(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: nomLocal, messages, temperature, max_tokens }),
-      signal: AbortSignal.timeout(55_000), // les modèles locaux peuvent être lents (CPU)
+      signal: AbortSignal.timeout(LOCAL_TIMEOUT_MS), // configurable (item 14)
     });
     if (!reponse.ok) {
       return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: 'serveur local : réponse non valide' };
     }
-    const data = (await reponse.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const data = (await reponse.json()) as { choices?: Array<{ message?: { content?: string }; finish_reason?: string }> };
     const texte = data?.choices?.[0]?.message?.content ?? '';
+    const fin = data?.choices?.[0]?.finish_reason ?? null;
     if (typeof texte !== 'string' || texte.trim().length === 0) {
       return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: 'serveur local : réponse vide' };
     }
-    return { ok: true, texte };
+    return { ok: true, texte, fin };
   } catch (e: unknown) {
     const brut = e instanceof Error ? e.message : String(e);
     if (/abort|timeout/i.test(brut)) {
@@ -545,12 +557,12 @@ async function modeleDirect(
   messages: Message[],
   temperature: number,
   max_tokens: number,
-): Promise<{ ok: true; texte: string; provider: string } | { ok: false; code: string; detail: string }> {
+): Promise<{ ok: true; texte: string; provider: string; fin: string | null } | { ok: false; code: string; detail: string }> {
   if (model.startsWith('pollinations:')) {
     const r = await appelPollinations(messages, temperature, max_tokens, POLLINATIONS_TIMEOUT_MS, model.slice('pollinations:'.length));
     if (r.ok) noterSucces('pollinations');
     else noterEchec('pollinations', r.code);
-    return r;
+    return r.ok ? { ...r, provider: 'pollinations' } : r;
   }
   if (model === 'zai-principal' || model === 'zai-alternatif') {
     const p = PROVIDERS.find((x) => x.id === model);
@@ -560,7 +572,7 @@ async function modeleDirect(
     const r = await appelZai(p, messages, temperature, max_tokens);
     if (r.ok) noterSucces(p.id);
     else noterEchec(p.id, r.code);
-    return r;
+    return r.ok ? { ...r, provider: p.id } : r;
   }
   const idx = model.indexOf(':');
   if (idx > 0) {
@@ -568,14 +580,14 @@ async function modeleDirect(
     const base = locauxDetectes.get(genre)?.base ?? (itemsLocaux.some((m) => m.id === model) ? LOCAUX[genre] : undefined);
     if (base) {
       const r = await appelLocal(base, model, messages, temperature, max_tokens);
-      return r;
+      return r.ok ? { ...r, provider: genre } : r;
     }
   }
   return { ok: false, code: CODE.REQUETE_INVALIDE, detail: `modèle choisi inconnu (${model.length} car.)` };
 }
 
 // ---- Cascade multi-provider avec retries ------------------------------------------
-type Resultat = { ok: true; texte: string; provider: string; duree_ms: number } | { ok: false; code: string; detail: string };
+type Resultat = { ok: true; texte: string; provider: string; duree_ms: number; fin: string | null; model: string | null } | { ok: false; code: string; detail: string };
 
 async function cascadeComplete(
   messages: Message[],
@@ -620,7 +632,7 @@ async function cascadeComplete(
             : await appelZai(provider, messages, temperature, max_tokens);
         if (resultat.ok) {
           noterSucces(provider.id);
-          return { ok: true, texte: resultat.texte, provider: provider.id, duree_ms: Date.now() - budgetDebut };
+          return { ok: true, texte: resultat.texte, provider: provider.id, duree_ms: Date.now() - budgetDebut, fin: resultat.fin, model: provider.model ?? null };
         }
         dernierCode = resultat.code;
         dernierDetail = resultat.detail;
@@ -646,21 +658,23 @@ async function cascadeComplete(
 }
 
 // ---- Cache LRU des dernières bonnes réponses -------------------------------------
-const cache = new Map<string, { texte: string; ts: number }>();
+// v1.2 (anti-bâclage) : fin/provider/model conservés avec le texte — un
+// cache-hit porte les mêmes métadonnées qu'une réponse fraîche.
+const cache = new Map<string, { texte: string; fin: string | null; provider: string; model: string | null; ts: number }>();
 
-function cacheGet(cle: string): string | null {
+function cacheGet(cle: string): { texte: string; fin: string | null; provider: string; model: string | null } | null {
   const entree = cache.get(cle);
   if (!entree) return null;
   if (Date.now() - entree.ts > CACHE_TTL_MS) {
     cache.delete(cle);
     return null;
   }
-  return entree.texte;
+  return { texte: entree.texte, fin: entree.fin, provider: entree.provider, model: entree.model };
 }
 
-function cachePut(cle: string, texte: string): void {
+function cachePut(cle: string, texte: string, fin: string | null, provider: string, model: string | null): void {
   if (cache.has(cle)) cache.delete(cle);
-  cache.set(cle, { texte, ts: Date.now() });
+  cache.set(cle, { texte, fin, provider, model, ts: Date.now() });
   while (cache.size > CACHE_TAILLE) {
     const plusAncienne = cache.keys().next().value;
     if (plusAncienne === undefined) break;
@@ -779,7 +793,7 @@ const serveur = Bun.serve({
           if (enCache !== null) {
             compteurs.complete_cache_servi += 1;
             statut = 200;
-            return json({ texte: enCache, duree_ms: Math.round(performance.now() - debut), code: CODE.CACHE_SERVI }, statut);
+            return json({ texte: enCache.texte, duree_ms: Math.round(performance.now() - debut), code: CODE.CACHE_SERVI, provider: enCache.provider, model: enCache.model, repli: false, fin: enCache.fin }, statut);
           }
           compteurs.complete_circuit_ouvert += 1;
           compteurs.derniere_erreur_ts = Date.now();
@@ -796,9 +810,9 @@ const serveur = Bun.serve({
             compteurs.complete_ok += 1;
             compteurs.dernier_succes_ts = Date.now();
             compteurs.dernier_provider_succes = direct.provider;
-            cachePut(cle, direct.texte);
+            cachePut(cle, direct.texte, direct.fin, direct.provider, modeleChoisi);
             statut = 200;
-            return json({ texte: direct.texte, duree_ms: Math.round(performance.now() - debut), provider: direct.provider, model: modeleChoisi, repli: false }, statut);
+            return json({ texte: direct.texte, duree_ms: Math.round(performance.now() - debut), provider: direct.provider, model: modeleChoisi, repli: false, fin: direct.fin }, statut);
           }
           console.error(`[llm-bridge] ${chemin} modèle choisi indisponible → cascade (détail interne : ${direct.code})`);
           const resultatCascade = await cascadeComplete(msgs, temperature, max_tokens);
@@ -806,9 +820,9 @@ const serveur = Bun.serve({
             compteurs.complete_ok += 1;
             compteurs.dernier_succes_ts = Date.now();
             compteurs.dernier_provider_succes = resultatCascade.provider;
-            cachePut(cle, resultatCascade.texte);
+            cachePut(cle, resultatCascade.texte, resultatCascade.fin, resultatCascade.provider, resultatCascade.model);
             statut = 200;
-            return json({ texte: resultatCascade.texte, duree_ms: resultatCascade.duree_ms, provider: resultatCascade.provider, repli: true }, statut);
+            return json({ texte: resultatCascade.texte, duree_ms: resultatCascade.duree_ms, provider: resultatCascade.provider, model: resultatCascade.model, repli: true, fin: resultatCascade.fin }, statut);
           }
           // La cascade aussi a échoué : erreur structurée neutre habituelle.
           compteurs.derniere_erreur_ts = Date.now();
@@ -823,9 +837,9 @@ const serveur = Bun.serve({
           compteurs.complete_ok += 1;
           compteurs.dernier_succes_ts = Date.now();
           compteurs.dernier_provider_succes = resultat.provider;
-          cachePut(cle, resultat.texte);
+          cachePut(cle, resultat.texte, resultat.fin, resultat.provider, resultat.model);
           statut = 200;
-          return json({ texte: resultat.texte, duree_ms: resultat.duree_ms, provider: resultat.provider, repli: false }, statut);
+          return json({ texte: resultat.texte, duree_ms: resultat.duree_ms, provider: resultat.provider, model: resultat.model, repli: false, fin: resultat.fin }, statut);
         }
 
         compteurs.derniere_erreur_ts = Date.now();

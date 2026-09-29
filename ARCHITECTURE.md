@@ -1,6 +1,6 @@
 ﻿# Athéna — Architecture complète du système
 
-> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925bt`
+> Dernière mise à jour : 2026-09-26 · pipeline v10.9.4 · Pages `?v=20260925bu`
 
 ---
 
@@ -298,6 +298,15 @@ Endpoint : `https://text.pollinations.ai/openai/chat/completions`
 | Ollama | `127.0.0.1:11434` | `ollama:<tag>` |
 | LM Studio | `127.0.0.1:1234` | `lmstudio:<id>` |
 | llama.cpp | `127.0.0.1:8080` | `llamacpp:<id>` |
+
+> **Contexte Ollama (v1.2, anti-bâclage)** : sans réglage, Ollama tronque à
+> son `num_ctx` stock (**4096**) sans aucun signal — prompt coupé, réponse
+> bâclée. Définis `OLLAMA_CONTEXT_LENGTH=16384` dans l'environnement
+> d'Ollama, ou `PARAMETER num_ctx 16384` dans un Modelfile, **puis**
+> reporte la même valeur dans Paramètres → Discussion → « Contexte des
+> modèles locaux » (la jauge et la compression auto s'alignent dessus).
+> Appels lents (CPU) : `ATHENA_LOCAL_TIMEOUT_MS` (ms, défaut 55000) côté
+> pont ; sur modèle très lent, préférer un `max_tokens` modeste (~1200).
 
 ---
 

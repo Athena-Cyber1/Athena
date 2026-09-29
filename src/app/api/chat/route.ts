@@ -35,8 +35,8 @@ const URL_SIDECAR_CHAT = "http://127.0.0.1:3010/chat";
 const URL_SIDECAR_SANTE = "http://127.0.0.1:3010/sante";
 const TIMEOUT_MS = 60_000;
 
-const MAX_MESSAGES = 40;
-const MAX_CONTENU = 8000;
+const MAX_MESSAGES = 100;
+const MAX_CONTENU = 60000;
 
 /* ------------------------------------------------------------------ */
 /* Schémas                                                            */
@@ -71,6 +71,9 @@ const schemaCorpsDemo = z.object({
     .max(120)
     .regex(/^[A-Za-z0-9._\-:]+$/)
     .optional(),
+  // v1.2 (anti-bâclage, item 12) : température préférée de l'UI (0..2),
+  // transmise au sidecar (RequeteChat.temperature → moteur).
+  temperature: z.number().min(0).max(2).optional(),
   // v10.10 — skill forcé côté UI (id court, ex. « math-exact »).
   // Absent / vide → sélection automatique par type de tâche / motifs.
   skill: z
@@ -149,13 +152,18 @@ function versSidecar(corps: z.infer<typeof schemaCorps>) {
   }
 
   const piecesJointes = corps.attachments ?? [];
-  const question =
+  // v1.2 (anti-bâclage, item 16) : le sidecar n'accepte que 8000 car. en
+  // `question` — on garde la QUEUE (la vraie question est en fin de message,
+  // ex. code collé + « que fait ceci ? »), jamais la tête seule.
+  const questionBrute =
     dernierUtilisateur?.content?.trim() ||
     (piecesJointes.length
       ? `Analyse ${piecesJointes.length > 1 ? "les fichiers joints" : "le fichier joint"} : ${piecesJointes
           .map((p) => p.name ?? p.file_id)
           .join(", ")}.`
       : "");
+  const question =
+    questionBrute.length > 8000 ? questionBrute.slice(-8000) : questionBrute;
 
   if (!question) return null;
 
@@ -188,6 +196,10 @@ function versSidecar(corps: z.infer<typeof schemaCorps>) {
   // v10.10 — skill forcé (playbook du planner) transmis au sidecar.
   const skillId = (corps as { skill?: string }).skill;
   if (skillId) payload.skill = skillId;
+  // v1.2 (anti-bâclage, item 12) : température préférée de l'UI (0..2,
+  // validée par le schéma) → RequeteChat.temperature → moteur.
+  const temperature = (corps as { temperature?: number }).temperature;
+  if (typeof temperature === "number") payload.temperature = temperature;
   // v10.6 (F12) : `outils` (bool OU liste) n'a pas d'équivalent sidecar —
   // les outils sont choisis par le planificateur ; le drapeau est accepté,
   // jamais simulé. `options` reste vide pour le contrat démo.
@@ -352,6 +364,11 @@ type ReponseSidecar = {
   // v10.9.4 (HUD) : le modèle choisi a échoué → cascade servie (booléen
   // NEUTRE émis par le sidecar ; jamais de nom de provider — N4).
   modele_repli?: boolean;
+  // v1.2 (anti-bâclage, items 9/10) : réponse coupée par le budget +
+  // voie réellement servie — transmis tels quels au client.
+  tronquee?: boolean;
+  provider?: string | null;
+  model?: string | null;
 };
 
 function versFormatDemo(api: ReponseSidecar) {
@@ -371,6 +388,11 @@ function versFormatDemo(api: ReponseSidecar) {
     statut: api.statut ?? null,
     // v10.9.4 (HUD) : drapeau neutre pour le toast discret côté client.
     modele_repli: api.modele_repli === true,
+    // v1.2 (anti-bâclage, items 9/10) : l'UI affiche le badge « tronquée »
+    // et la voie (déjà gérés côté chat-demo).
+    tronquee: api.tronquee === true,
+    provider: typeof api.provider === "string" ? api.provider : null,
+    model: typeof api.model === "string" ? api.model : null,
   };
 }
 
@@ -432,7 +454,7 @@ export async function POST(req: Request) {
     return Response.json(
       {
         erreur:
-          "Corps de requête invalide : « question » ou « messages[] » (avec au moins un contenu) requis — 8000 caractères max par message.",
+          "Corps de requête invalide : « question » ou « messages[] » (avec au moins un contenu) requis — 60000 caractères max par message.",
       },
       { status: 400 }
     );
@@ -532,6 +554,9 @@ export async function POST(req: Request) {
       conversation_id: demo.conversation_id,
       raisonnement: demo.raisonnement,
       modele_repli: demo.modele_repli,
+      tronquee: demo.tronquee,
+      provider: demo.provider,
+      model: demo.model,
     });
     return fluxNdjson(evenements);
   }

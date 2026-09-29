@@ -970,7 +970,12 @@ button.dot:focus-visible,
   color: var(--ambre-texte);
   font-size: 0.76rem;
 }
-
+/* v1.2 (anti-bâclage, item 10) : voie réellement servie — discret. */
+.voie-modele {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: var(--texte-doux);
+}
 .outil-badge {
   display: inline-block;
   margin: 10px 6px 0 0;

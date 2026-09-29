@@ -82,7 +82,10 @@ class MoteurLLM:
         v10.9.4 (HUD) : `model_id` (id choisi dans le HUD) est transmis au pont
         qui route DIRECTEMENT vers ce modèle ; en cas d'échec le pont retombe
         sur la cascade et met "repli": true — drapeau NEUTRE qui remonte tel
-        quel (jamais de nom de provider ni d'erreur HTTP dans ce champ)."""
+        quel (jamais de nom de provider ni d'erreur HTTP dans ce champ).
+        v1.2 (anti-bâclage) : le dict du pont traverse tel quel — `fin`
+        (finish_reason), `provider`, `model`, `repli` inclus quand présents ;
+        `temperature` vient de l'appelant (préférence UI via run_agent)."""
         if not messages:
             return None
         corps_envoye: dict[str, Any] = {"messages": messages, "temperature": temperature,

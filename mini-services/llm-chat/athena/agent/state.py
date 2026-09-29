@@ -132,6 +132,16 @@ class AgentState:
     # provider). None = cascade par défaut. Porté par le state (créé par
     # requête → thread-safe) et transmis à raisonner_llm → MOTEUR.complete.
     model_id: str | None = None
+    # v1.2 (anti-bâclage) : température préférée de l'UI (None = défauts
+    # raisonnés : 0.5 sauf override explicite ; critique toujours 0.1).
+    # Chaîne : route.ts → RequeteChat → run_agent → raisonner_llm.
+    temperature: float | None = None
+    # v1.2 (anti-bâclage) : dernier appel LLM — motif de fin (finish_reason
+    # du pont), provider et modèle réellement servis. Sert `tronquee` et
+    # l'affichage UI (items 9/10). None = réponse déterministe, pas de LLM.
+    derniere_fin: str | None = None
+    dernier_provider: str | None = None
+    dernier_modele: str | None = None
     # v10.9.4 (HUD) : le modèle choisi a échoué → le pont a servi la cascade.
     # Drapeau NEUTRE (booléen) — remonte à l'UI pour un toast discret ; jamais
     # de nom de provider ni d'erreur HTTP (N4).

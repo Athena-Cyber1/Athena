@@ -53,13 +53,16 @@ def observer(obs: Observation, state: AgentState) -> None:
 
 
 def raisonner_llm(state: AgentState, prompt_messages: list[dict[str, str]], phase: str = "raisonnement",
-                  temperature: float = 0.5, max_tokens: int = 900) -> Observation:
+                  temperature: float | None = None, max_tokens: int = 900) -> Observation:
     """Action « reason » : le LLM produit une PROPOSITION, jamais une autorité.
 
     v10.7 — diagnostic §3.1/§3.2 : température > 0 (0.5, léger : évite la
     platitude du greedy sans casser la cohérence) et budget généreux
     (max_tokens 900 ≥ 512) pour laisser des chaînes multi-étapes respirer.
-    Le sous-agent juge reste à 0.1/520 (déterminisme de la critique)."""
+    Le sous-agent juge reste à 0.1/520 (déterminisme de la critique).
+    v1.2 (anti-bâclage, item 12) : temperature explicite > préférence UI
+    (state.temperature, 0..2 validée) > défaut 0.5. Le motif de fin et la
+    voie réelle (provider/model du pont) sont versés dans le state (item 9)."""
     debut = __import__("time").time()
     obs = Observation(action=None, outil="llm_raisonnement", succes=False, id=f"L-{state.etape_courante:02d}")
     # v10.9.2 (P0) : PLUS AUCUNE chaîne technique (HTTP 502/429, corps du pont)
@@ -72,7 +75,10 @@ def raisonner_llm(state: AgentState, prompt_messages: list[dict[str, str]], phas
                         "detail_interne": "circuit modèle ouvert ou pont injoignable"}
         state.erreurs.append({"type": "outil_indisponible", "outil": "llm"})
         return obs
-    reponse = MOTEUR.complete(prompt_messages, temperature=temperature, max_tokens=max_tokens,
+    reponse = MOTEUR.complete(prompt_messages, temperature=temperature
+                              if temperature is not None
+                              else (state.temperature if state.temperature is not None else 0.5),
+                              max_tokens=max_tokens,
                               model_id=getattr(state, "model_id", None))
     if not reponse or "erreur" in reponse:
         code = str((reponse or {}).get("code") or "INCONNU")
@@ -80,6 +86,14 @@ def raisonner_llm(state: AgentState, prompt_messages: list[dict[str, str]], phas
         obs.resultat = {"statut": "UNKNOWN", "texte": "",
                         "detail_interne": f"code moteur : {code}"}
         return obs
+    # v1.2 (anti-bâclage, items 9/10) : voie réelle + motif de fin dans le
+    # state — le final portera `tronquee`, `provider`, `model`.
+    if isinstance(reponse.get("fin"), str):
+        state.derniere_fin = reponse["fin"]
+    if isinstance(reponse.get("provider"), str):
+        state.dernier_provider = reponse["provider"]
+    if isinstance(reponse.get("model"), str):
+        state.dernier_modele = reponse["model"]
     # v10.9.4 (HUD) : le modèle choisi a échoué, le pont a servi la cascade →
     # drapeau NEUTRE porté par le state (l'UI lèvera un toast discret ; aucun
     # nom de provider ni d'erreur HTTP ne traverse, N4 inchangé).

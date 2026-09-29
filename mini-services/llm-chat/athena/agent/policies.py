@@ -138,7 +138,7 @@ def _hedge(state: AgentState) -> str:
     if MOTEUR.disponible():
         msgs = prompts.prompt_hedge(state.but, _voisinage_resume(state),
                                     anaphore=marqueurs_anaphore(state.but))
-        obs = observer.raisonner_llm(state, msgs, phase="reponse", temperature=0.4, max_tokens=700)
+        obs = observer.raisonner_llm(state, msgs, phase="reponse", max_tokens=700)
         if obs.succes:
             brut = (obs.resultat.get("texte") or "").strip()
             if brut and not canari.detecter_non_reponse(brut):
