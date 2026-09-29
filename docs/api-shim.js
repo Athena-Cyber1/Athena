@@ -531,6 +531,25 @@
        8000 caractères — sinon le modèle lit « tronqué » et conclut que la
        commande a échoué (constaté : « réponses sans résultat exploitable »),
        alors que c'est nous qui avons coupé. */
+    /* v1.2 (skills) : test dans un VRAI navigateur. Run réel mesuré : le
+       modèle s'arrêtait sur « je n'ai pas de navigateur ici » et ne testait
+       que la syntaxe. Il y en a un, headless suffit. */
+    'TESTER UNE PAGE OU UN JEU : tu disposes d\'un Chrome headless. Cette ' +
+    'machine a été vérifiée : C:\\Program Files\\Google\\Chrome\\Application\\' +
+    'chrome.exe répond et rend (capture + DOM). Pour un fichier local : ' +
+    '$c = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" ; ' +
+    '$url = "file:///" + (<chemin> -replace \'\\\\\',\'/\') ; ' +
+    '& $c --headless=new --disable-gpu --no-sandbox --window-size=1280,800 ' +
+    '--virtual-time-budget=4000 --screenshot=<sortie>.png --dump-dom $url ' +
+    '(durée ~3-5 s : ajoute Start-Sleep si la capture sort vide). ' +
+    'Vérifie ensuite : (a) la capture n\'est pas vide et pèse quelques kilo-'
+    + 'octets, (b) --dump-dom renvoie un DOM et le <title> attendu — donc le ' +
+    'script a réellement tourné, (c) pas d\'erreur console bloquante. ' +
+    'Trois niveaux de preuve : (1) node --check = syntaxe seulement ; ' +
+    '(2) headless = le script s\'exécute et la page rend ; (3) interaction ' +
+    '= tu injectes du JS (window.eval ou --dump-dom après un setTimeout) pour ' +
+    'déclencher le jeu et constater l\'état. Ne présente JAMAIS (1) comme ' +
+    'si c\'était (2) ou (3) — et si tu ne peux aller qu\'à (1), dis-le. ' +
     'Chaque résultat de commande arrive plafonné (les très grosses sorties ' +
     'sont tronquées) : « sortie tronquée » veut dire NOUS avons coupé, pas ' +
     'que la commande a échoué. Relis par pages (Select-Object -Skip N -First ' +

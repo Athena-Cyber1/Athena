@@ -85,24 +85,196 @@ def selectionner(type_tache: str, question: str,
     """Choisit le skill pour ce tour.
 
     1. skill_force (id fourni par l'API/UI) s'il existe et est actif ;
-    2. premier skill actif dont `types` contient type_tache ;
-    3. premier skill actif dont motifs matchent la question.
+    2. les MOTIFS : un skill qui reconnaît une intention explicite l'emporte —
+       « cherche des bugs » doit partir en repair-code, pas en code-simule
+       (v10.11) ;
+    3. le premier skill actif dont `types` contient type_tache.
+
+    v10.11 : les motifs passent DEVANT le routage par type. Sans ça, tout skill
+    long déclaré types=("CODE",) captait toutes les questions de code, et le
+    modèle partait en mode tâche longue sur « que va afficher ce code ? ».
     """
     if skill_force:
         s = SKILLS.get(skill_force)
         if s and s.actif:
             return s
     for s in SKILLS.values():
-        if s.actif and type_tache in s.types:
+        if s.actif and s.correspond(question):
             return s
     for s in SKILLS.values():
-        if s.actif and s.correspond(question):
+        if s.actif and type_tache in s.types:
             return s
     return None
 
 
 def plan_de(s: Skill, question: str, niveau: str) -> list[Action]:
     return s.construire_plan(question, niveau)
+
+
+# ---------------------------------------------------------------------------
+# SKILLS « LONGUE TÂCHE » (v10.11) — goals, superpower, repair, navigateur
+# ---------------------------------------------------------------------------
+# SKILLS « LONGUE TÂCHE » (v10.11) — goals, superpower, repair, navigateur
+# ---------------------------------------------------------------------------
+#
+# Les skills historiques répondent à UNE question. Les quatre suivants
+# couvrent le tout autre régime : une tâche qui se déploie en dizaines de
+# tours, où le modèle agit sur une machine (commandes, fichiers, navigateur)
+# et doit LIVRER, pas décrire.
+#
+# ORDRE D'ENREGISTREMENT = ordre de PRIORITÉ de routage (SKILLS est un dict
+# parcouru dans l'ordre d'insertion, et le premier type/motif qui matche
+# gagne). Donc : repair et browser AVANT le plan générique, sinon « cherche
+# des bugs » serait capté par goal-longue-tache au lieu de repair-code.
+
+@skill(
+    "goal-longue-tache",
+    "TÂCHE LONGUE : transformer une demande en objectif mesurable, avancer par "
+    "pas vérifiables, et ne livrer qu'un résultat constaté. Utilise les commandes "
+    "(agent local) et le skill browser-rendu pour prouver.",
+    # types VIDE, volontairement : ce plan est un filet de dernier recours
+    # (tâche large sans signal précis). Avec types=("CODE",…) il captait TOUT
+    # — « combien fait 2+2 ? » partait en tâche longue au lieu de math-exact.
+    types=(),
+    outils=("agent_local",),
+    motifs=(r"\b(refais|nettoie|complète|termine)\b",
+            r"\b(fais|exécute|lance)\s+(?:une\s+)?(?:migration|upgrade|release)\b"),
+)
+def _plan_goal_longue_tache(question: str, niveau: str) -> list[Action]:
+    return [
+        Action("raisonner",
+               "OBJECTIF : reformuler la demande en un résultat vérifiable "
+               "(un fichier modifié + relu, un test qui passe). Écris-le en une "
+               "phrase, avec le critère de fin. Ne commence pas les commandes "
+               "avant d'avoir cet objectif.", "", {}, "raisonnement", False),
+        Action("outil",
+               "état des lieux : lister les fichiers concernés et mesurer leur "
+               "taille avant toute lecture massive",
+               "agent_local", {"requete": question}, "decision_outil", True),
+        Action("raisonner",
+               "PLAN : choisir un seul sous-objectif à chaque tour (pas les dix), "
+               "et dire la commande qui l'accomplit. Tu as droit à un seul bug "
+               "corrigé et vérifié plutôt qu'à dix bugs supposés.",
+               "", {}, "raisonnement", False),
+        Action("verifier",
+               "Vérifier par l'EXÉCUTION : le fichier a-t-il changé ? la "
+               "commande de test passe-t-elle ? Un correctif non relu n'est pas "
+               "un correctif.", "code", {}, "verification", True),
+        Action("final",
+               "VERDICT TERMINAL : ce qui a été trouvé, ce qui a été réellement "
+               "modifié (chemin + lignes), ce qui a été testé et son résultat, "
+               "et ce qui reste hors de portée. Aucune promesse d'action future.",
+               "", {}, "reponse", True),
+    ]
+
+
+@skill(
+    "superpower",
+    "SUPERPOWER : mode pleine puissance. Aucun plafond de tokens, contexte large, "
+    "compression seulement en dernier recours, et interdiction de s'arrêter sur "
+    "une intention ou une rétro-analyse. Pour les travaux longs et techniques.",
+    types=("CODE",),
+    outils=("agent_local",),
+    motifs=(r"\bsuperpower\b", r"\bpleine puissance\b", r"\bmode (?:max|maximum)\b"),
+)
+def _plan_superpower(question: str, niveau: str) -> list[Action]:
+    return [
+        Action("raisonner",
+               "SUPERPOWER : pas de plan, que de l'exécution. À chaque tour : "
+               "une commande, un résultat, la suivante. Aucune réponse d'intention, "
+               "aucune re-analyse du même point : si tu hésites entre deux "
+               "hypothèses, tranche et teste — le test tranche pour toi.",
+               "", {}, "raisonnement", False),
+        Action("outil",
+               "exécuter la prochaine étape réelle (lecture ciblée, test, "
+               "correction, sauvegarde)",
+               "agent_local", {"requete": question}, "decision_outil", True),
+        Action("verifier",
+               "constater par la machine, jamais par affirmation : relire le "
+               "fichier, relancer le test, comparer avant/après",
+               "code", {}, "verification", True),
+        Action("final",
+               "bilan factuel et complet. Si une partie n'a pas été faite, dis-le "
+               "explicitement plutôt que de l'annoncer comme acquise.",
+               "", {}, "reponse", True),
+    ]
+
+
+@skill(
+    "repair-code",
+    "REPAIR : trouver de VRAIS bugs de fonctionnement (pas des vulnérabilités, "
+    "pas du style), corriger à Surgical avec sauvegarde, et prouver par exécution.",
+    types=("CODE",),
+    outils=("agent_local", "simulateur_code"),
+    genre_verificateur="code",
+    motifs=(r"\bbugs?\b", r"\bbogue?s?\b", r"\bne (?:marche|joue|funcionne) pas\b",
+            r"\bplante\b", r"\bcrash", r"\bne (?:se|l') (?:déplace|ouvre|charge)"),
+)
+def _plan_repair_code(question: str, niveau: str) -> list[Action]:
+    return [
+        Action("raisonner",
+               "chercher des DÉFAUTS DE FONCTIONNEMENT : conditions d'arrêt, "
+               "limites de tableau hors bornes, divisions par zéro, gestion "
+               "d'erreur manquante, vecteurs mal normalisés, état non réinitialisé. "
+               "PAS de style, PAS de sécurité — l'utilisateur les a exclus.",
+               "", {}, "raisonnement", False),
+        Action("outil",
+               "sauvegarder AVANT toute modification : "
+               "Copy-Item -LiteralPath <f> -Destination <f.bak>", "agent_local",
+               {"requete": question}, "decision_outil", True),
+        Action("outil",
+               "corriger au plus juste (une ligne si possible), puis relire le "
+               "fichier pour confirmer l'écriture",
+               "agent_local", {"requete": question}, "decision_outil", True),
+        Action("verifier",
+               "PREUVE : node --check sur du JS, exécution du jeu en navigateur "
+               "si possible, sinon relecture ciblée du correctif. Distingue "
+               "explicitement ce qui est testé de ce qui ne l'est pas.",
+               "code", {}, "verification", True),
+        Action("final",
+               "bugs trouvés (symptôme + cause + correctif) + modifications "
+               "réellement écrites + tests réellement passés",
+               "", {}, "reponse", True),
+    ]
+
+
+@skill(
+    "browser-rendu",
+    "NAVIGATEUR : ouvrir réellement une page web et constater le rendu (capture, "
+               "erreurs console, DOM), au lieu de supposer que ça marche.",
+    types=("CODE",),
+    outils=("navigateur",),
+    motifs=(r"\bteste? (?:le |la )?(?:jeu|page|site|app|web|interface)\b",
+            r"\b(rendu|rendez|capture|screenshot|aperçu)\b",
+            r"\bouvr(?:e|ez|ir) (?:le jeu|la page|mon site)\b"),
+)
+def _plan_browser_rendu(question: str, niveau: str) -> list[Action]:
+    return [
+        Action("raisonner",
+               "TESTER DANS UN VRAI NAVIGATEUR, pas seulement en statique. Trois "
+               "niveaux de preuve, du plus faible au plus fort : (1) node --check "
+               "= syntaxe ; (2) exécution headless = le script ne plante pas et "
+               "la page rend ; (3) interaction = on bouge, on tire, on vérifie "
+               "l'état du jeu. Ne présente JAMAIS (1) comme si c'était (3).",
+               "", {}, "raisonnement", False),
+        Action("outil",
+               "lancer un navigateur headless et capturer : "
+               "msedge --headless=new --disable-gpu --screenshot=<f>.png "
+               "--window-size=1280,800 <url>  (ou chrome ; trouve le binaire "
+               "avec Get-Command msedge,chrome,chromium -ErrorAction "
+               "SilentlyContinue)", "navigateur", {"requete": question},
+               "decision_outil", True),
+        Action("outil",
+               "relire les erreurs console (WebGL, script) et le DOM rendu : "
+               "sans elles, un canvas noir passe pour un succès",
+               "navigateur", {"requete": question}, "decision_outil", True),
+        Action("verifier",
+               "constater le rendu (fichier image non vide) et l'absence d'erreur "
+               "console bloquante", "code", {}, "verification", True),
+        Action("final",
+               "dire EXACTEMENT ce qui a été exécuté et ce qui reste non testé",
+               "", {}, "reponse", True),
+    ]
 
 
 # ---------------------------------------------------------------------------

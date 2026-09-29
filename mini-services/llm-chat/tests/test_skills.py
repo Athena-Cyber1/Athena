@@ -19,13 +19,21 @@ def test_registre_complet():
     attendus = {
         "math-exact", "code-simule", "grammaire-accord", "devinette-honnete",
         "factuel-sourcé", "logique-premisses", "conversationnelle",
+        # v10.11 — tâches longues
+        "goal-longue-tache", "superpower", "repair-code", "browser-rendu",
     }
     assert attendus.issubset(noms), f"manquants : {attendus - noms}"
     for s in skills.lister():
         assert s["nom"] and s["description"]
-        assert isinstance(s["types"], list) and s["types"]
+        # types peut être VIDE : les skills de tâche longue (v10.11) se
+        # routent par MOTIFS uniquement, pour ne pas capturer tout CODE.
+        assert isinstance(s["types"], list)
         assert isinstance(s["outils"], list)
         assert isinstance(s["autorite"], bool)
+        if not s["types"]:
+            # un skill sans type doit donc avoir des motifs, sinon il est
+            # inatteignable
+            assert s["nom"] in {"goal-longue-tache"}, s["nom"]
 
 
 def test_selection_par_type():
@@ -90,6 +98,60 @@ def test_types_cohérents_avec_classifier():
     for s in skills.lister():
         for t in s["types"]:
             assert t in types_connus, f"{s['nom']} → type inconnu {t}"
+
+# ---------------------------------------------------------------------------
+# v10.11 — skills de tâche longue
+# ---------------------------------------------------------------------------
+
+def test_routing_motifs_taches_longues():
+    """Les skills de repair/tâche longue se déclenchent sur des questions
+    réelles, pas seulement sur un mot-clé exact."""
+    cas = [
+        ("cherche des bugs dans donjon-threejs.html", "repair-code"),
+        ("le jeu plante quand je tire", "repair-code"),
+        ("le bot ne se déplace plus", "repair-code"),
+        ("teste le jeu donjon-threejs.html", "browser-rendu"),
+        ("fais une capture de la page", "browser-rendu"),
+        ("nettoie tout le projet", "goal-longue-tache"),
+        ("active le mode superpower", "superpower"),
+    ]
+    for question, attendu in cas:
+        s = skills.selectionner("CODE", question)
+        assert s is not None, f"aucun skill pour : {question}"
+        assert s.nom == attendu, f"{question!r} -> {s.nom}, attendu {attendu}"
+
+
+def test_selection_force_superpower():
+    s = skills.selectionner("CODE", "x", skill_force="superpower")
+    assert s is not None and s.nom == "superpower"
+
+
+def test_plans_longue_tache_exigent_livraison():
+    """Un plan de tâche longue doit finir par une vérification ET un verdict
+    terminal — jamais par une réponse d'intention."""
+    for nom in ("goal-longue-tache", "superpower", "repair-code", "browser-rendu"):
+        s = skills.obtenir(nom)
+        plan = skills.plan_de(s, "corrige le jeu", "complexe")
+        assert plan, f"{nom} : plan vide"
+        assert plan[-1].type == "final", f"{nom} : ne finit pas par 'final'"
+        assert any(a.type == "verifier" for a in plan), f"{nom} : aucune vérification"
+        for a in plan:
+            assert a.objectif and a.objectif.strip(), f"{nom} : action sans objectif"
+
+
+def test_repair_mentionne_sauvegarde_et_preuve():
+    s = skills.obtenir("repair-code")
+    plan = skills.plan_de(s, "corrige les bugs", "complexe")
+    texte = " ".join(a.objectif for a in plan).lower()
+    assert "bak" in texte, "pas de sauvegarde avant modification"
+    assert "test" in texte or "preuve" in texte, "pas d'exigence de preuve"
+
+
+def test_browser_rendu_distingue_niveaux_de_preuve():
+    s = skills.obtenir("browser-rendu")
+    texte = " ".join(a.objectif for a in skills.plan_de(s, "teste le jeu", "complexe")).lower()
+    assert "headless" in texte or "navigateur" in texte
+    assert "jamais" in texte, "l'interdiction de présenter la syntaxe comme un test doit rester"
 
 
 if __name__ == "__main__":
