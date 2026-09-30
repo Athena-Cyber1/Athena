@@ -991,7 +991,7 @@ button.dot:focus-visible,
   padding: 0 8px;
   font-size: 0.68rem;
   color: var(--texte-doux);
-  background: var(--fond-bulle, transparent);
+  background: var(--fond);
 }
 .outil-badge {
   display: inline-block;
@@ -1054,6 +1054,40 @@ button.dot:focus-visible,
   background: var(--carte-doux);
   color: var(--texte-doux);
   border-radius: 0 9px 9px 0;
+}
+/* v20260926n : la citation rend ses sous-blocs en récursion → un <p> interne
+   ne doit pas ajouter sa marge au premier/au dernier rang. */
+.md blockquote > *:first-child {
+  margin-top: 0;
+}
+.md blockquote > *:last-child {
+  margin-bottom: 0;
+}
+/* Case à cocher des listes de tâches (« - [x] fait » / « - [ ] à faire »). */
+.md-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.4em;
+  border: 1px solid var(--bord-fort);
+  border-radius: 4px;
+  vertical-align: -0.15em;
+  color: var(--texte);
+  background: transparent;
+}
+.md-check svg {
+  width: 0.72em;
+  height: 0.72em;
+}
+.md-check.faite {
+  border-color: var(--primaire);
+  color: var(--primaire);
+}
+.md del {
+  color: var(--texte-doux);
+  text-decoration: line-through;
 }
 .md a {
   color: var(--lien);
@@ -2972,21 +3006,25 @@ details.raisonnement summary {
   background: #2b2b2b;
 }
 
+/* v1.2 (allègement) : plus de carte encadrée sombre autour des commandes —
+   le groupe est une simple règle typographique. Le contraste vient du
+   contenu (la trace), pas d'un cadre épais qui vole la lecture. */
 .activity-group {
-  margin: 14px 0 18px;
+  margin: 12px 0 14px;
   overflow: hidden;
-  border: 1px solid var(--bord-fort);
-  border-radius: 13px;
-  background: #292929;
+  border: 0;
+  border-top: 1px solid var(--bord);
+  border-radius: 0;
+  background: transparent;
 }
 
 .activity-group > summary {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 10px 12px;
-  color: #d8d8d8;
+  gap: 7px;
+  min-height: 30px;
+  padding: 7px 2px;
+  color: var(--texte-doux);
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -2997,41 +3035,79 @@ details.raisonnement summary {
 }
 
 .activity-group > summary .ico {
-  width: 15px;
-  height: 15px;
-  color: #bcbcbc;
+  width: 13px;
+  height: 13px;
+  color: inherit;
+  opacity: 0.7;
 }
 
 .activity-label {
-  font-size: 0.86rem;
+  font-size: 0.78rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .activity-count {
-  color: #999;
-  font-size: 0.75rem;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 0.72rem;
+  font-weight: 400;
 }
 
 .activity-group > summary .chev {
   margin-left: auto;
 }
 
+.activity-group > summary .chev .ico {
+  width: 12px;
+  height: 12px;
+  opacity: 0.5;
+}
+
 .activity-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 9px 9px;
-  border-top: 1px solid #3d3d3d;
+  gap: 6px;
+  padding: 0 0 4px;
+  border-top: 0;
 }
 
 .activity-group .trace-cmd {
-  margin: 8px 0 0;
-  border-color: var(--bord-fort);
-  background: #1d1d1d;
+  margin: 4px 0 0;
+  border-color: var(--bord);
+  background: transparent;
+  color: var(--texte);
 }
 
 .activity-group .trace-cmd summary {
-  color: #d0d0d0;
+  color: var(--texte-doux);
+  min-height: 28px;
+  padding: 6px 2px;
+}
+
+.activity-group .trace-cmd summary .ico,
+.activity-group .trace-cmd summary .chev,
+.activity-group .trace-cmd summary .trace-cmd-meta {
+  color: var(--texte-doux);
+}
+
+.activity-group .trace-cmd summary .trace-cmd-label {
+  color: var(--texte);
+}
+
+.activity-group .trace-cmd .trace-cmd-corps {
+  border-top-color: var(--bord);
+  padding: 0 2px 8px;
+}
+
+.activity-group .trace-cmd pre {
+  background: var(--carte-doux);
+  color: var(--texte);
+}
+
+.activity-group .trace-cmd pre.trace-cmd-err {
+  background: var(--gris-fond);
+  color: var(--texte);
 }
 
 @media (max-width: 940px) {
@@ -4459,7 +4535,7 @@ html[data-theme="light"] .md pre a {
   color: #0b5cad;
 }
 html[data-theme="light"] .activity-group .trace-cmd {
-  background: #f5f5f5;
+  background: transparent;
 }
 html[data-theme="light"] .message-actions button:hover {
   background: #e2e2e2;

@@ -2109,8 +2109,28 @@ function lancerEntrainement() {
    listes - / 1., citations >, liens [t](http…), lignes ---, tableaux simples. */
 
 function echapperHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* Décodage des entités HTML les plus fréquentes (une seule passe, non
+   superposable : &amp;lt; ne donne qu'&lt; — pas de décodage en cascade).
+   À appeler AVANT echapperHtml, jamais après. */
+const ENTITES_MD = {
+  '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&nbsp;': ' ',
+  '&#39;': "'", '&#x27;': "'", '&mdash;': '—', '&ndash;': '–', '&hellip;': '…',
+  '&copy;': '©', '&reg;': '®', '&rsquo;': '\u2019', '&lsquo;': '\u2018',
+  '&ldquo;': '\u201C', '&rdquo;': '\u201D', '&trade;': '\u2122',
+};
+function decoderEntites(s) {
+  return String(s == null ? '' : s).replace(
+    /&(?:amp|lt|gt|quot|nbsp|mdash|ndash|hellip|copy|reg|rsquo|lsquo|ldquo|rdquo|trade);|&#(?:39|x27);/gi,
+    (m) => {
+      const cle = m.toLowerCase();
+      if (cle === '&#39;' || cle === '&#x27;') return "'";
+      return Object.prototype.hasOwnProperty.call(ENTITES_MD, cle) ? ENTITES_MD[cle] : m;
+    }
+  );
 }
 
 /* Inline : échappe puis applique code/gras/italique/liens/URLs nues. */
@@ -2137,16 +2157,37 @@ function substituerEmojisStatut(s) {
   return t;
 }
 function markdownInline(texte) {
-  const s = echapperHtml(texte);
+  /* v20260926n : les entités du modèle (&amp; &lt; &mdash;…) sont DÉCODÉES
+     avant échappement — sans quoi &amp; s'affichait littéralement « &amp; »
+     (double échappement, mesuré). L'échappement reste la DERNIÈRE opération :
+     aucun <script> du modèle ne peut passer. */
+  const s = echapperHtml(decoderEntites(texte));
   const morceaux = s.split(/(`+[^`]+`+)/g); // préserve les segments `code`
   return morceaux.map((morceau) => {
     if (/^`+[^`]+`+$/.test(morceau)) {
       return '<code>' + morceau.replace(/^`+/, '').replace(/`+$/, '') + '</code>';
     }
     let t = substituerEmojisStatut(morceau);
-    // liens [texte](https://…) — http(s) uniquement, jamais de javascript:
-    t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, texte2, url) =>
-      '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + texte2 + '</a>');
+    // case à cocher GFM en tête de liste : « - [x] fait » / « - [ ] à faire »
+    t = t.replace(/^\s*\[([ xX])\]\s+/, (_m, coche) =>
+      /[xX]/.test(coche)
+        ? '<span class="md-check faite" role="img" aria-label="fait">' + icoSvgTexte('check') + '</span>'
+        : '<span class="md-check" role="img" aria-label="à faire"></span>');
+    /* liens [texte](url) — http(s) uniquement, jamais de javascript:.
+       La cible peut porter un titre ([t](http… "titre")) : sans cette
+       branche, l'URL nue était ré-liée PAR-DESSUS le lien markdown et le
+       rendu cassait en « [t](<a…>http…</a> "titre") » (mesuré). */
+    t = t.replace(/\[([^\]]+)\]\(([^()]*)\)/g, (m, texte2, cible) => {
+      /* la cible a été échappée (« devient &quot;) et peut être entourée de
+         <> : on normalise AVANT de tester l'URL, sinon le titre faisait
+         échouer la détection et l'URL était ré-liée par l'étape suivante. */
+      const brut = cible.trim().replace(/^<([\s\S]*)>$/, '$1').trim();
+      const dm = /^\s*(https?:\/\/[^\s)<]+)(?:\s+.*)?$/.exec(brut);
+      if (!dm) return m;
+      return '<a href="' + dm[1] + '" target="_blank" rel="noopener noreferrer">' + texte2 + '</a>';
+    });
+    // barré GFM : ~~texte~~
+    t = t.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
     // URLs nues -> liens (le modèle sort rarement du [texte](url)), SAUF dans
     // les <a> déjà générés (v20260926d : une URL dans le texte d'un lien
     // re-matchait et imbriquait un second <a>).
@@ -3031,7 +3072,7 @@ function raisonnerPropre(bulleEl) {
    panneau « Raisonnement · 1 s » y est collé à la réponse, ce qui donne
    « …1 sJe vais… » et casse tout \b (mesuré : relance jamais déclenchée).
    On isole donc la réponse avant de tester. */
-const PROMESSES = /\b(je vais|je poursuis|je continue|il me reste|prochainement|je dois (maintenant|encore)|je m['’]occupe)\b/i;
+const PROMESSES = /\b(je vais|je poursuis|je continue|il me reste|prochainement|je dois (maintenant|encore)|je m['’]occupe|i['’]ll|i will|i['’]m going to|let me (check|try|look|run))\b/i;
 function texteRepre(seul) {
   try {
     const copie = seul.cloneNode(true);
@@ -3451,21 +3492,49 @@ function markdownVersFragment(texte) {
     // alors à la fin du texte — mieux qu'un affichage en brut)
     // v20260926b (direct) : le reste de la ligne d'ouverture est capturé
     // (params) pour ```athena-file chemin="...".
-    const ouverture = /^\s*```\s*(\S*)\s*(.*)$/.exec(ligne);
+    /* v1.2 (étiquette collée) : ```athena-exec$f=… SANS saut de ligne — le
+       (\S*) avalait la commande entière : elle devenait le « langage », le
+       corps du bloc restait vide et le bloc perdait son bouton Exécuter (vu sur
+       un export réel : tout le PowerShell s'affichait dans le badge .code-lang).
+       On borne l'étiquette aux caractères de langage, on détache les étiquettes
+       connues collées au code, et le reste de la ligne devient la 1re ligne du
+       corps — fermeture collée comprise. */
+    const ouverture = /^(\s*)```([A-Za-z0-9_+#.-]*)(.*)$/.exec(ligne);
     if (ouverture) {
       viderParagraphe();
-      const langage = ouverture[1] || '';
-      const params = (ouverture[2] || '').trim();
+      let langage = ouverture[2] || '';
+      let resteLigne = ouverture[3] || '';
+      const bas = langage.toLowerCase();
+      ['athena-exec', 'athena-file'].forEach((spec) => {
+        if (bas.indexOf(spec) === 0 && langage.length > spec.length) {
+          resteLigne = langage.slice(spec.length) + resteLigne;
+          langage = spec;
+        }
+      });
+      let apresBloc = '';
+      const fc = resteLigne.indexOf('```');
+      if (fc >= 0) { apresBloc = resteLigne.slice(fc + 3); resteLigne = resteLigne.slice(0, fc); }
+      const estFichier = langage.toLowerCase() === 'athena-file';
+      const params = (estFichier ? resteLigne : '').trim();
+      const retrait = ouverture[1].length;
+      const dedenter = (l) => {
+        let k = 0;
+        while (k < retrait && k < l.length && /\s/.test(l[k])) k++;
+        return l.slice(k);
+      };
       const corps = [];
+      const premiere = estFichier ? '' : resteLigne.replace(/\s+$/, '');
+      if (premiere) corps.push(dedenter(premiere));
       i++;
-      while (i < lignes.length && !/^\s*```\s*$/.test(lignes[i])) { corps.push(lignes[i]); i++; }
+      while (i < lignes.length && !/^\s*```/.test(lignes[i])) { corps.push(dedenter(lignes[i])); i++; }
       i++; // sauter le ``` de fermeture (ou dépasser la fin)
       /* v20260926b (direct) : ```athena-file → carte fichier (PC + download). */
-      if (langage.toLowerCase() === 'athena-file') {
+      if (estFichier) {
         fragment.appendChild(creerBlocFichier(params, corps.join('\n')));
       } else {
         fragment.appendChild(creerBlocCode(langage, corps.join('\n')));
       }
+      if (apresBloc.trim()) paragraphe.push(apresBloc.trim());
       continue;
     }
     /* v20260926d (kimi) : tableaux pipe — le commentaire les promettait, le
@@ -3493,34 +3562,15 @@ function markdownVersFragment(texte) {
       i++;
       continue;
     }
-    const puce = /^\s*[-*•]\s+(.*)$/.exec(ligne);
-    if (puce) {
+    /* v20260926n : listes à puces ET numérotées confiées au même constructeur
+       — l'ancienne version aplattissait tout (« - parent /   - enfant »
+       sortait en 4 puces sur le même niveau) et coupait la liste en deux dès
+       qu'un bloc de code ou un paragraphe suivait l'item. */
+    if (/^\s*(?:[-*•]|\d+[.)])\s+\S/.test(ligne)) {
       viderParagraphe();
-      const ul = document.createElement('ul');
-      while (i < lignes.length) {
-        const m = /^\s*[-*•]\s+(.*)$/.exec(lignes[i]);
-        if (!m) break;
-        const li = document.createElement('li');
-        li.innerHTML = markdownInline(m[1]);
-        ul.appendChild(li);
-        i++;
-      }
-      fragment.appendChild(ul);
-      continue;
-    }
-    const num = /^\s*(\d+)[.)]\s+(.*)$/.exec(ligne);
-    if (num) {
-      viderParagraphe();
-      const ol = document.createElement('ol');
-      while (i < lignes.length) {
-        const m = /^\s*(\d+)[.)]\s+(.*)$/.exec(lignes[i]);
-        if (!m) break;
-        const li = document.createElement('li');
-        li.innerHTML = markdownInline(m[2]);
-        ol.appendChild(li);
-        i++;
-      }
-      fragment.appendChild(ol);
+      const liste = construireListe(lignes, i);
+      fragment.appendChild(liste.el);
+      i = liste.fin;
       continue;
     }
     if (/^\s*>\s?/.test(ligne)) {
@@ -3531,7 +3581,9 @@ function markdownVersFragment(texte) {
         contenu.push(lignes[i].replace(/^\s*>\s?/, ''));
         i++;
       }
-      cite.innerHTML = markdownInline(contenu.join('\n'));
+      /* rendu récursif : une citation contient des listes, des titres et des
+         blocs de code (« > ```js » sortait en texte brut avant) */
+      cite.appendChild(markdownVersFragment(contenu.join('\n')));
       fragment.appendChild(cite);
       continue;
     }
@@ -3540,6 +3592,141 @@ function markdownVersFragment(texte) {
   }
   viderParagraphe();
   return fragment;
+}
+
+/* v20260926n : construit une liste (puces ou numérotée) à partir de sa
+   PREMIÈRE ligne. Chaque item est découpé puis rendu par récursion, ce qui
+   donne gratuitement l'imbrication (indentation > niveau de base = contenu de
+   l'item courant) et les blocs internes (code, tableau, sous-liste).
+   Retourne { el, fin } — fin = index de la première ligne HORS liste. */
+const RE_ITEM_LISTE = /^(\s*)(?:[-*•]|\d+[.)])(?:[ \t]+(.*))?$/;
+const RE_ITEM_ORDO = /^\s*\d+[.)](?:[ \t]|$)/;
+
+function construireListe(lignes, debut) {
+  const m0 = RE_ITEM_LISTE.exec(lignes[debut]);
+  const indentBase = m0[1].length;
+  const ordonnee = RE_ITEM_ORDO.test(lignes[debut]);
+  const el = document.createElement(ordonnee ? 'ol' : 'ul');
+  const items = [];
+  const indentDe = (l) => l.length - l.replace(/^\s*/, '').length;
+  /* large = liste LÂCHE (une ligne vide sépare deux items) → les <p> sont
+     conservés. Un « 1. » qui suit une ligne vide relance la numérotation :
+     c'est une NOUVELLE liste, pas un item de plus. */
+  let large = false;
+  let separateur = false;
+  let courant = null;
+  let i = debut;
+  while (i < lignes.length) {
+    const ligne = lignes[i];
+    if (!ligne.trim()) {
+      let j = i;
+      while (j < lignes.length && !lignes[j].trim()) j++;
+      if (j >= lignes.length || !courant) break;
+      const mj = RE_ITEM_LISTE.exec(lignes[j]);
+      const indJ = mj ? mj[1].length : indentDe(lignes[j]);
+      if (mj && indJ >= indentBase) {
+        separateur = true;          // sépare deux items : on ne range PAS le vide
+        i++;
+        continue;
+      }
+      if (indJ > indentBase) {
+        large = true;               // contenu indenté de l'item courant
+        courant.lignes.push('');
+        i++;
+        continue;
+      }
+      break;
+    }
+    const sep = separateur;
+    separateur = false;
+    const m = RE_ITEM_LISTE.exec(ligne);
+    const ind = m ? m[1].length : indentDe(ligne);
+    if (m && ind === indentBase) {
+      // changement de type (puces ↔ numérotée) au même niveau = nouvelle liste
+      if (courant && RE_ITEM_ORDO.test(ligne) !== ordonnee) break;
+      const nm = /^\s*(\d+)[.)]/.exec(ligne);
+      if (sep && nm && Number(nm[1]) === 1 && items.length) break;
+      if (sep) large = true;
+      courant = { lignes: [m[2] || ''] };
+      items.push(courant);
+      i++;
+      continue;
+    }
+    if (!courant) break;
+    if (ind <= indentBase) break;   // nouveau bloc hors liste (laziness refusée)
+    // suite de l'item : dédentée de 2 espaces (ou de l'indentation dispo)
+    courant.lignes.push(ligne.slice(Math.min(ind, indentBase + 2)));
+    i++;
+  }
+  items.forEach((it) => {
+    const li = document.createElement('li');
+    const frag = markdownVersFragment(it.lignes.join('\n'));
+    /* liste SERRÉE : les <p> de premier rang sont dépliés — sinon chaque
+       puce prenait les marges d'un paragraphe et la liste doublait. */
+    if (!large) {
+      [...frag.childNodes].forEach((n) => {
+        if (n.nodeType === 1 && n.nodeName === 'P') {
+          const morceau = document.createDocumentFragment();
+          while (n.firstChild) morceau.appendChild(n.firstChild);
+          n.parentNode.insertBefore(morceau, n);
+          n.remove();
+        }
+      });
+    }
+    li.appendChild(frag);
+    el.appendChild(li);
+  });
+  return { el, fin: i };
+}
+
+/* ---------- v1.2 : la pensée interne ne doit JAMAIS atteindre la réponse ------
+   Deux formes de fuite mesurées (test_fuite_raisonnement) :
+   A) flux qui ne produit QUE du raisonnement → le shim substituait la pensée
+      à la réponse (corrigé côté shim : la cascade retente le modèle suivant) ;
+   C) modèle free qui baloque sa chaîne de pensée DANS le contenu
+      (« **Thinking:** … », <thinking>…</thinking>, ```…```).
+   Ces marqueurs sont retirés de l'affichage ET du contenu persisté (le texte
+   repart donc aussi propre dans l'historique renvoyé au modèle).
+   Ne touche JAMAIS aux vrais blocs de code : on ne traite que les marqueurs
+   explicites de raisonnement, jamais les ``` qui ouvrent une commande. */
+const MOTIF_PAIRE_COT = /<think(?:ing)?\b[^>]*>[\s\S]*?<\/think(?:ing)?\s*>/gi;
+const MOTIF_OUVREUR_COT = /^\s*<think(?:ing)?\b[^>]*>[\s\S]*$/i;
+const MOTIF_ETIQUETTE_COT = /<\/?think(?:ing)?\b[^>]*>/gi;
+/* En-tête de pensée : EXIGE soit du gras (« **Thinking:** »), soit un mot
+   suivi de deux-points EN FIN DE LIGNE (« Réflexion :\n »). Une phrase
+   légitime commençant par « Thinking: la réponse est… » (même ligne) n'est
+   donc JAMAIS confondue avec de la pensée. */
+const MOTIF_ENTETE_COT = new RegExp(
+  '^\\s*(?:#{1,6}\\s*)?'
+  + '(?:(?:\\*{1,2}|_{1,2})(?:thinking|pens\\u00e9e|pensee|r\\u00e9flexion|reflexion)\\s*:?\\s*(?:\\*{1,2}|_{1,2})?\\s*'
+  + '|(?:#{1,6}\\s*)?(?:thinking|pens\\u00e9e|pensee|r\\u00e9flexion|reflexion)\\s*:\\s*(?=\\n))',
+  'i');
+
+function nettoyerCoT(texte) {
+  let t = String(texte || '');
+  if (!t || !t.trim()) return t;
+  /* Garde économique : appelée à CHAQUE jeton du flux — on ne lance les
+     motifs (dont un balayage de la réponse entière) que si la réponse en
+     contient réellement un. */
+  if (t.indexOf('<think') === -1 && t.indexOf('</think') === -1
+    && !MOTIF_ENTETE_COT.test(t)) return t;
+  /* 1. <thinking>…</thinking> : l'intérieur est de la pensée, pas de la
+        réponse — retiré intégralement (les vrais ``` de code ne ressemblent
+        pas à ces balises, ils sont intacts). */
+  t = t.replace(MOTIF_PAIRE_COT, '');
+  t = t.replace(MOTIF_OUVREUR_COT, '');
+  t = t.replace(MOTIF_ETIQUETTE_COT, '');
+  /* 2. En-tête « **Thinking:** » / « Réflexion : » en TÊTE de réponse : la
+        pensée court jusqu'au premier saut de paragraphe (ou, à défaut de
+        paragraphe, jusqu'à la dernière ligne) — le reste est la réponse. */
+  if (MOTIF_ENTETE_COT.test(t)) {
+    const sansEnTete = t.replace(MOTIF_ENTETE_COT, '');
+    const paragraphes = sansEnTete.split(/\n\s*\n/);
+    t = paragraphes.length > 1
+      ? paragraphes.slice(1).join('\n\n')
+      : (sansEnTete.trim().split(/\n/).pop() || '');
+  }
+  return t.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
 }
 
 /* Retire les étiquettes « Résultat : » / « Réponse : » puis rend le Markdown.
@@ -3552,7 +3739,9 @@ function formater(texte) {
     .replace(/(^|\n)\s*Résultat\s*:\s*/g, '$1')
     .replace(/(^|\n)\s*Réponse\s*:\s*/g, '$1')
     .replace(/\s+$/, '');
-  return markdownVersFragment(sansEtiquette);
+  /* v1.2 : historique ANCIEN nettoyé au rendu aussi (une conversation créée
+     avant ce correctif contient encore la pensée brute). */
+  return markdownVersFragment(nettoyerCoT(sansEtiquette));
 }
 
 /* ---------- v7.1 : panneau « raisonnement en direct » (canal de progression) ----------
@@ -3743,20 +3932,39 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
      une commande ou un fichier TRONQUÉ. La bulle finale, elle, a les vrais
      boutons. */
   let renduJusqua = 0;
+  /* v1.2 (esthétique) : vrai pendant que le curseur est DANS un bloc de code
+     non clôturé. Dans ce cas la queue n'est JAMAIS affichée — sinon on voyait
+     la commande s'écrire caractère par caractère en markdown brut (« je ne
+     dois pas le voir écrire sa commande »). Le bloc apparaît d'un coup, rendu,
+     à sa fermeture. */
+  let blocOuvert = false;
   const afficherProgressif = () => {
     try {
       const lignes = reponse.split('\n');
-      let dansBloc = false, pos = 0, finBloc = -1;
+      let dansBloc = false, pos = 0, finBloc = -1, debutBloc = -1;
+      /* v1.2 (fence collé) : ```code…``` sur UNE seule ligne — l'ancien test
+         (fermeture seule sur sa ligne) laissait le bloc « ouvert » à jamais :
+         la queue restait masquée et la commande n'apparaissait jamais. On
+         repère l'ouverture et la fermeture à l'intérieur de la ligne. */
       for (const l of lignes) {
-        if (!dansBloc && /^\s*```/.test(l)) dansBloc = true;
-        else if (dansBloc && /^\s*```\s*$/.test(l)) { dansBloc = false; finBloc = pos + l.length + 1; }
+        if (!dansBloc && /^\s*```/.test(l)) {
+          const oi = l.indexOf('```');
+          const fi = l.indexOf('```', oi + 3);
+          if (fi >= 0) finBloc = pos + fi + 3;
+          else { dansBloc = true; debutBloc = pos; }
+        } else if (dansBloc && l.indexOf('```') >= 0) {
+          dansBloc = false;
+          finBloc = pos + l.indexOf('```') + 3;
+        }
         pos += l.length + 1;
       }
-      const limite = finBloc < 0 ? 0 : Math.min(finBloc, reponse.length);
+      blocOuvert = dansBloc;
+      const limite = dansBloc ? Math.max(0, debutBloc)
+        : (finBloc < 0 ? 0 : Math.min(finBloc, reponse.length));
       if (limite > renduJusqua) {
         zone.replaceChildren();
         if (limite > 0) zone.appendChild(markdownVersFragment(reponse.slice(0, limite)));
-        const queue = reponse.slice(limite);
+        const queue = dansBloc ? '' : reponse.slice(limite);
         txtEl = document.createElement('span');
         txtEl.className = 'diffusion-texte';
         txtEl.textContent = queue;
@@ -3767,6 +3975,7 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
         renduJusqua = limite;
       }
     } catch {}
+    return blocOuvert;
   };
   let penseeEl = null;
   if (panneau && panneau.el) {
@@ -3793,12 +4002,13 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
     flushTimer = null;
     if (!gardeVue || gardeVue()) {
       /* Rendu progressif d'abord : fige en markdown tout bloc clôturé,
-         recrée txtEl (la queue) et recale afficheQueue. */
-      afficherProgressif();
+         recrée txtEl (la queue) et recale afficheQueue. Retourne true si le
+         curseur est dans un bloc encore ouvert → la queue reste MASQUÉE. */
+      const ouvert = afficherProgressif();
       /* Fenêtre anti-explosion : si la réponse brute dépasse, on n'affiche
          que la fin — mais en tenant compte de la partie déjà rendue. */
       const debutQueue = Math.max(renduJusqua, reponse.length - FENETRE_DIFFUSION);
-      const queue = reponse.slice(debutQueue);
+      const queue = ouvert ? '' : reponse.slice(debutQueue);
       if (queue !== afficheQueue) {
         /* v20260926g : appendData n'existe que sur les Text — pour un
            élément, on ajoute un nœud texte (pas de réécriture complète). */
@@ -3832,7 +4042,10 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       pensee += ev.texte;
       if (penseeEl) { penseeEl.hidden = false; planifierFlush(); }
     } else {
-      reponse += ev.texte;
+      /* v1.2 : la réponse affichée est nettoyée AU FIL DE L'EAU — un modèle
+         qui balance sa pensée en plein flux ne la montre jamais (sinon on
+         voyait « **Thinking:** … » s'écrire sous les yeux). */
+      reponse = nettoyerCoT(reponse + ev.texte);
       if (zone.hidden) zone.hidden = false;
       planifierFlush();
     }
@@ -3864,8 +4077,9 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       /* v1.2 : même rendu progressif que le flux — la machine à écrire ne
          diffuse plus le markdown brut. */
       afficherProgressif();
+      const ouvertBloc = blocOuvert;
       const debutQueue = Math.max(renduJusqua, reponse.length - FENETRE_DIFFUSION);
-      const queue = reponse.slice(debutQueue);
+      const queue = ouvertBloc ? '' : reponse.slice(debutQueue);
       if (queue !== afficheQueue) {
         if (queue.startsWith(afficheQueue)) txtEl.append(document.createTextNode(queue.slice(afficheQueue.length)));
         else txtEl.textContent = queue;
@@ -3914,8 +4128,29 @@ function preparerHistorique(messages) {
     });
   if (propres.length === 0) return propres;
   if (propres.length <= FENETRE_API) return propres;
+  /* v1.2 (contexte) : l'ancienne formule ne gardait que le SYSTEME + les 399
+     DERNIERS messages. Dès 400 messages de session, TOUT le début disparaissait
+     sans trace — la demande initiale, le cadre posé, les décisions premières —
+     et le modèle « oubliait la conversation » alors que l'historique affiché,
+     lui, était intact. On garde MAINTENANT la TÊTE autant que la QUEUE, avec un
+     marqueur explicite à la coupure pour que le modèle sache qu'un milieu manque
+     au lieu de croire à une session qui a commencé au milieu. */
   const tete = propres[0].role === 'system' ? [propres[0]] : [];
-  return tete.concat(propres.slice(-(FENETRE_API - tete.length)));
+  const debut = tete.length;
+  const TETE_GARDE = 8;
+  const queue = FENETRE_API - debut - TETE_GARDE - 1; // -1 : place au marqueur
+  if (queue <= 0) return tete.concat(propres.slice(-(FENETRE_API - debut)));
+  const gardeDebut = propres.slice(debut, debut + TETE_GARDE);
+  const gardeFin = propres.slice(-queue);
+  const retires = propres.length - debut - TETE_GARDE - queue;
+  const marqueur = {
+    role: 'system',
+    content: '[Athéna · mémoire : ' + retires + ' messages du milieu de cette conversation ont été '
+      + 'retirés pour tenir dans la fenêtre d\'envoi. Ce qui précède (demande initiale, cadre, '
+      + 'décisions) et ce qui suit (suite récente) sont intacts — ne réinvente donc pas ce qui a '
+      + 'déjà été dit, et réponds en tenant compte de la demande initiale.]',
+  };
+  return tete.concat(gardeDebut, [marqueur], gardeFin);
 }
 
 /* ---------- Sonde de santé rapide (v9.4 : utilisée entre les réessais) ---------- */
@@ -4704,6 +4939,12 @@ async function genererReponse(convo, opts) {
   if (r && r.ok && r.partiel) {
     const textePartiel = (r.reponse && r.reponse.trim()) ? r.reponse : diffusion.texte();
     r.reponse = (textePartiel || '(réponse vide)') + '\n\n[…réponse interrompue en cours de frappe — début conservé tel quel…]';
+  }
+  /* v1.2 (fuite raisonnement) : la réponse FINALE est nettoyée avant d'être
+     rendue, persistée et renvoyée dans l'historique — la pensée du modèle ne
+     survit nulle part (l'affichage live est déjà nettoyé dans ingerer()). */
+  if (r && r.ok && typeof r.reponse === 'string') {
+    r.reponse = nettoyerCoT(r.reponse);
   }
   /* v20260926b (direct) : chemin tamponné (aucun jeton reçu) — on révèle le
      texte final en machine à écrire plutôt que de l'afficher d'un bloc.

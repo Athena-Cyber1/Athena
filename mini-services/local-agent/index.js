@@ -435,7 +435,12 @@ const serveur = http.createServer(async (req, res) => {
     if (req.method === 'POST' && chemin === '/exec') {
       let brut;
       try {
-        brut = await lireCorps(req);
+        /* v1.2 (anti-bâclage) : la limite par défaut de lireCorps (8000, corps
+           JSON COMPRIS) détruisait la socket au-delà de ~7970 caractères de
+           commande → le client voyait « fetch failed » au lieu d'une erreur
+           lisible. Le vrai plafond est LIMITE_COMMANDE (validation ci-dessous) :
+           on laisse donc de la marge pour le JSON. */
+        brut = await lireCorps(req, 64 * 1024);
       } catch (e) {
         json(res, (e && e.code) || 400, { erreur: (e && e.message) || 'corps illisible' }, origin, req);
         return;
@@ -450,8 +455,20 @@ const serveur = http.createServer(async (req, res) => {
         return;
       }
       const commande = String(corps.commande || corps.command || '').trim();
-      if (!commande || commande.length > 2000 || commande.includes('\0')) {
-        json(res, 400, { erreur: 'commande absente ou trop longue' }, origin, req);
+      /* v1.2 (anti-bâclage) : 2000 rejetait SILENCIEMENT les scripts de
+         vérification réels du modèle (~2500 car. : Chrome headless + lecture
+         DOM + contrôle d'erreurs). Mesuré : 400 « commande absente ou trop
+         longue » deux fois de suite → le modèle arrêtait la boucle
+         écrire→tester→corriger et livrait un fichier cassé en croyant avoir
+         fini. La borne suit la sortie de commande (MAX_OUT / 8000). */
+      const LIMITE_COMMANDE = 8000;
+      if (!commande || commande.length > LIMITE_COMMANDE || commande.includes('\0')) {
+        json(res, 400, {
+          erreur: 'commande absente ou trop longue (' + LIMITE_COMMANDE
+            + ' caractères maximum, reçue : ' + commande.length + '). '
+            + 'Écris le script dans un fichier .ps1 puis lance '
+            + 'powershell -NoProfile -File <chemin>.ps1',
+        }, origin, req);
         return;
       }
       if (corps.cwd !== undefined && (typeof corps.cwd !== 'string' || corps.cwd.length > 500 || corps.cwd.includes('\0'))) {
@@ -631,16 +648,33 @@ const serveur = http.createServer(async (req, res) => {
       }
       const baseReelle = cheminReel(base);
       const dirReel = cheminReel(path.dirname(abs));
-      if (!baseReelle || !dirReel || !(dirReel === baseReelle || dirReel.startsWith(baseReelle + path.sep))) {
-        json(res, 403, { erreur: 'chemin hors zone après résolution des liens', chemin: abs }, origin, req);
+      if (!dirReel) {
+        json(res, 400, { erreur: 'dossier parent inaccessible', chemin: abs }, origin, req);
         return;
       }
-      const fichierReel = cheminReel(abs);
-      if (fichierReel && !(fichierReel === abs || fichierReel.startsWith(baseReelle + path.sep))) {
-        json(res, 403, { erreur: 'fichier existant hors zone (lien symbolique)', chemin: abs }, origin, req);
-        return;
+      /* v1.2 (audit 14:27) : le confinement strict « à l'intérieur de base »
+         ne vaut QUE si un dossier de travail est demandé (confine). Sans lui,
+         il interdisait tout chemin absolu hors du cwd de l'agent — alors que
+         le prompt documente « relatif ou absolu », et que l'exec PowerShell
+         (même agent, mêmes garde-fous DENY) peut écrire partout : la
+         restriction était incohérente, pas protectrice. Mesuré : un .txt
+         légitime en %TEMP% refusé en 403, tâche morte. */
+      if (confine) {
+        if (!baseReelle || !(dirReel === baseReelle || dirReel.startsWith(baseReelle + path.sep))) {
+          json(res, 403, { erreur: 'chemin hors du dossier de travail (../ interdit)', chemin: abs }, origin, req);
+          return;
+        }
+        const fichierReel = cheminReel(abs);
+        if (fichierReel && !(fichierReel === abs || fichierReel.startsWith(baseReelle + path.sep))) {
+          json(res, 403, { erreur: 'fichier existant hors zone (lien symbolique)', chemin: abs }, origin, req);
+          return;
+        }
       }
-      if (DENY_WRITE.some((re) => re.test(abs))) {
+      /* Hors confinement : les liens sont résolus et le CHEMIN RÉEL est
+         confronté à la liste de refus (dossiers système) — un symlink vers
+         C:\Windows reste bloqué, un .txt en %TEMP% passe. */
+      const cibleReelle = cheminReel(abs) || abs;
+      if (DENY_WRITE.some((re) => re.test(abs) || re.test(cibleReelle))) {
         json(res, 403, { erreur: 'écriture bloquée : dossier système', chemin: abs }, origin, req);
         return;
       }

@@ -519,22 +519,44 @@
      la fuite. Deux verrous : (1) on l'interdit explicitement, (2) le
      raisonnement n'est JAMAIS renvoyé au modèle (il reste affiché pour
      l'humain) — c'est ce qui faisait revenir la mélange à chaque tour. */
+  /* v1.2 (langue, MODE) : on impose MAINTENANT la langue de la DEMANDE et non
+     plus le français à tout prix. Mesuré : une règle « toujours français »
+     était régulièrement perdue face à une question écrite en anglais — le
+     modèle basculait, puis mélangeait. On donne donc une cible explicite
+     (détectée à la volée, cf. langueDemande) et on interdit le MÉLANGE, qui
+     est le vrai défaut quel que soit le camp. */
   var ATHENA_SYSTEM_LANGUE =
-    'LANGUE : réponds UNIQUEMENT en français, et seulement en français. '
-    + 'Le français n\'est pas la seule langue que tu connais, et il ne faut '
-    + 'JAMAIS laisser un mot, un caractère ou un groupe de caractères '
-    + 'd\'une autre langue (anglais, chinois, japonais, arabe…) apparaître dans '
-    + 'ta réponse : ni dans un mot, ni dans un commentaire, ni dans un nom de '
-    + 'variable ou de fonction. Si un terme technique est en anglais, garde '
-    + 'l\'anglais du terme mais écrase le reste en français. Un seul caractère '
-    + 'étranger dans une phrase française est un défaut, pas une touche. '
-    + 'Pense librement dans la langue qui t\'arrange, mais TA RÉPONSE est '
-    + 'intégralement en français.';
+    'LANGUE : réponds dans la langue de la demande, et uniquement dans cette '
+    + 'langue. La langue de cette conversation est rappelée en toute fin de ce '
+    + 'prompt (« LANGUE DE LA CONVERSATION ») : c\'est elle qui prime, même si '
+    + 'un message plus ancien est rédigé dans une autre langue. Si le rappel '
+    + 'manque, déduis la langue du message de l\'utilisateur ; à défaut de '
+    + 'signal clair, le français.\n'
+    + 'RÈGLE DURE — JAMAIS DE MÉLANGE : aucun mot, aucun caractère d\'une autre '
+    + 'langue ne doit apparaître dans le texte que tu livres : ni dans une '
+    + 'phrase, ni dans une liste, ni dans un titre, ni dans un commentaire de '
+    + 'code, ni dans un nom de variable ou de fonction. Seuls restent dans leur '
+    + 'langue d\'origine un terme technique consacré, un nom de bibliothèque, '
+    + 'du code exécutable et une citation entre guillemets. Un seul caractère '
+    + 'd\'une autre langue que la tienne dans ta réponse est un défaut, pas une '
+    + 'touche. Tu peux PENSER dans la langue qui t\'arrange ; ce que tu livres '
+    + 'est intégralement dans la langue de la demande.';
 
+  /* v1.2 (anti-flemmard) : l'ancien texte autorisait explicitement « courte si
+     simple » — le modèle en déduisait qu'une réponse expédiée suffisait (mesuré :
+     4 notions demandées, 380 caractères livrés, raisonnement « Need concise »).
+     On garde l'adaptation de FORMAT, mais on interdit la paresse de FOND. */
   var ATHENA_SYSTEM_GENERAL =
-    'Athéna, assistant utile : réponds complètement à la question, sans ' +
-    'abréger ni bâcler ; adapte la longueur de ta réponse à la question ' +
-    '(courte si simple, complète et menée à son terme si complexe).';
+    'Athéna, assistant utile : va TOUJOURS au bout de la question, en menant ta ' +
+    'réponse à son terme. Jamais de réponse expédiée : pas de « voici un aperçu », ' +
+    'pas d\'abréviation, pas de « etc. », pas de liste volontairement raccourcie, ' +
+    'pas de renvoi vers « la suite », pas de question de retour quand la consigne ' +
+    'est claire et faisable. Si la question demande N points, livre les N points ; ' +
+    'si elle demande une explication, livre l\'explication entière et non un résumé. ' +
+    'Seul le FORMAT s\'adapte à la question (court si elle est courte), jamais le ' +
+    'FOND : une réponse qui s\'arrête avant d\'avoir tout dit est un échec, même ' +
+    'si elle est polie et bien tournée.';
+
   var ATHENA_SYSTEM_EXEC =
     'Athéna · outil local : pour exécuter une commande sur le PC de l\'utilisateur, ' +
     'réponds avec un bloc de code fenced de langage exact athena-exec contenant la ' +
@@ -589,6 +611,14 @@
     'seul passage, jamais interactives. Pour retrouver un fichier : Get-ChildItem ' +
     '-LiteralPath <dossier> -Recurse -Depth 3 -File (TOUJOURS -Depth + dossier ciblé : ' +
     'la récursion sans borne sur $HOME/Desktop/Documents est refusée). ' +
+    /* v1.2 (anti-bâclage) : l'agent rejetait à 400 toute commande > 2000 car.
+       sans dire ni la limite ni la parade — le modèle répétait la même
+       commande puis abandonnait, et la vérification de son propre fichier ne
+       se faisait jamais (mesuré sur une animation livrée cassée). */
+    'COMMANDE TROP LONGUE : l\'agent local refuse au-delà de 8000 caractères ' +
+    '(message « commande absente ou trop longue »). Au-delà d\'environ 7000, ' +
+    'n\'inline pas : écris le script avec un bloc athena-file ' +
+    '(script.ps1) puis exécute powershell -NoProfile -File <chemin>.ps1. ' +
     /* v1.2 (anti-dégénérescence) : le test réel a vu un modèle déverser un
        fichier de 45 Ko d'un bloc, se faire tronquer à 4000 caractères, puis
        produire `U+0044 U+006F…` pendant 10 commandes. Lecture par pages. */
@@ -642,8 +672,135 @@
     'Dans les deux cas, une correction non écrite n\'est PAS une correction : si ' +
     'tu as trouvé des bugs, écris le fichier. Ne termine jamais sur un constat ' +
     'sans avoir rien modifié.';
-  var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_GENERAL + '\n\n' + ATHENA_SYSTEM_LANGUE
-    + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER;
+  /* v1.2 (langue, fin de bloc) : la contrainte de langue était UNIQUEMENT en
+     tête d'un bloc de ~6500 caractères suivie de plusieurs milliers d'autres —
+     mesuré : le raisonnement partait en anglais et des caractères chinois
+     finissaient dans la réponse. On répète la contrainte dans les DERNIERS
+     caractères lus avant le dialogue : c'est là que l'attention est la plus
+     forte. */
+  var ATHENA_SYSTEM_FIN =
+    'AVANT DE RÉPONDRE, relis ces deux règles :\n' +
+    '(1) LANGUE — ta réponse est dans la langue de la demande (rappelée juste '
+    + 'après, « LANGUE DE LA CONVERSATION ») et dans elle seule : aucun mot, '
+    + 'aucun caractère d\'une autre langue dans le texte que tu livres, y '
+    + 'compris dans les listes, les titres, les commentaires de code et les '
+    + 'noms propres inventés. Tu peux PENSER dans la langue qui t\'arrange ; ce '
+    + 'qui sort est uniforme, sans mélange.\n' +
+    '(2) ALLER AU BOUT — livre la réponse complète, sans abréger, sans résumer '
+    + 'hâtiment, sans sauter de point demandé.';
+
+  /* BASE = ce qui doit être présent dans TOUS les cas (même sans outils web),
+     OUTILS = BASE + les consignes d'exécution/fichiers. FIN reste en DERNIER. */
+  var ATHENA_SYSTEM_BASE = ATHENA_SYSTEM_GENERAL + '\n\n' + ATHENA_SYSTEM_LANGUE;
+  var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_BASE
+    + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER
+    + '\n\n' + ATHENA_SYSTEM_FIN;
+  var ATHENA_SYSTEM_SANS_OUTILS = ATHENA_SYSTEM_BASE + '\n\n' + ATHENA_SYSTEM_FIN;
+  /* v1.2 (langue, proximité) : même avec FIN en fin de system, plusieurs
+     milliers de tokens de dialogue suivent. On rappelle donc la règle dans le
+     DERNIER message user — exactement là où le modèle lit avant de générer.
+     Ajouté sur une COPIE (jamais dans l'historique) pour ne pas s'empiler. */
+  function consigneFin(langue) {
+    return '<consigne>AVANT DE RÉPONDRE : LANGUE — réponds en ' + langue
+      + ' et uniquement en ' + langue
+      + ' (aucun mot, aucun caractère d\'une autre langue dans le texte livré, '
+      + 'aucun mélange — le raisonnement interne, lui, peut être dans n\'importe '
+      + 'quelle langue) ; ALLER AU BOUT — réponse complète, sans abréger, sans '
+      + 'sauter de point.</consigne>';
+  }
+
+  /* v1.2 (langue, détection) : la langue est celle de la DEMANDE, pas une
+     constante. Les enveloppes de résultats de commande sont ignorées (elles
+     sont en français par construction et faussent le vote). PRIORITÉ AU DERNIER
+     message utilisateur réel — c'est lui qui constitue la requête ; à défaut de
+     signal, vote majoritaire des messages utiles récents (égalité → le plus
+     récent), français par défaut. Heuristique : écritures non latines d'abord,
+     puis mots-outils + caractères propres à chaque langue. */
+  var LANGUE_DEFAUT = 'français';
+  var MOTS_LANGUE = {
+    'français': /\b(le|la|les|des|une|un|est|dans|pour|avec|que|qui|pas|plus|vous|nous|sur|être|suis|fait|tout|tous|toute|cette|ces|par|comme|mais|où|comment|pourquoi|peux|peut|bonjour|merci|en|de|du|au|aux|je|tu|elles|leur|leurs|sa|son|ses|c\'est|qu\'est|s\'il|plaît|explique|expliquez|deux|trois|phrases|très|aussi|donc|ensuite|puis|donne|dis|montre|oui|veut|veux)\b/gi,
+    'anglais': /\b(the|and|is|of|to|in|for|with|that|not|you|are|this|from|have|what|how|why|when|where|which|who|can|should|would|could|must|please|thanks|hello|explain|sentences?|two|three|write|give|list|show|tell|about|into|over|then|also|because|these|those)\b/gi,
+    'espagnol': /\b(el|los|las|una|es|en|para|con|que|no|más|usted|por|cómo|qué|gracias|explica|haz|hola|dos|frases|este|esta|pero|muy|también|puedes|puede|hacer)\b/gi,
+    'italien': /\b(il|lo|gli|una|è|di|per|con|che|non|più|nel|come|cosa|grazie|spiega|questo|questa|molto|anche|puoi|può|fare|ciao)\b/gi,
+    'allemand': /\b(der|die|das|ist|und|mit|für|nicht|sie|ein|eine|zu|wie|was|bitte|danke|erkläre|schreibe|auch|aber|noch|wenn)\b/gi,
+    'portugais': /\b(um|uma|é|em|para|com|que|não|você|por|como|obrigado|explica|esta|este|muito|também|pode|fazer|olá)\b/gi,
+    'néerlandais': /\b(de|het|een|is|van|en|voor|met|dat|niet|u|wat|hoe|leg|uit)\b/gi,
+    'polonais': /\b(jest|nie|się|że|co|jak|dla|przez|dziękuję|napisz|wyjaśnij)\b/gi,
+    'russe': /[а-яё]/i,
+    'chinois': /[一-鿿]/,
+    'japonais': /[぀-ゟ゠-ヿ]/,
+    'coréen': /[가-힯]/,
+    'arabe': /[؀-ۿ]/,
+    'grec': /[Ͱ-Ͽ]/,
+  };
+  /* caractères propres (ou très typiques) : départagent les courtes demandes
+     qui ne contiennent pas assez de mots-outils. */
+  var SIGNES_LANGUE = {
+    'français': /[âçêëîïôûœÿ]/g,
+    'espagnol': /[ñ¿¡]/g,
+    'italien': /[àìò]/g,
+    'portugais': /[ãõ]/g,
+    'allemand': /[äöüß]/g,
+  };
+  var ECRITURES = ['japonais', 'coréen', 'chinois', 'arabe', 'grec', 'russe'];
+  function langueDeTexte(txt) {
+    var s = String(txt || '');
+    if (!s) return null;
+    /* écritures non latines : détermination certaine, AVANT tout seuil —
+       « 你好 » ne pèse que 4 caractères mais est sans ambiguïté. */
+    for (var e = 0; e < ECRITURES.length; e++) {
+      if (MOTS_LANGUE[ECRITURES[e]].test(s)) return ECRITURES[e];
+    }
+    if (s.replace(/\s/g, '').length < 6) return null;
+    var scores = {};
+    Object.keys(MOTS_LANGUE).forEach(function (lang) {
+      if (ECRITURES.indexOf(lang) >= 0) return;
+      var re = MOTS_LANGUE[lang];
+      re.lastIndex = 0;
+      scores[lang] = (s.match(re) || []).length;
+      var sg = SIGNES_LANGUE[lang];
+      if (sg) { sg.lastIndex = 0; scores[lang] += (s.match(sg) || []).length; }
+    });
+    var best = null, bestN = 0;
+    Object.keys(scores).forEach(function (k) { if (scores[k] > bestN) { bestN = scores[k]; best = k; } });
+    /* 1 seul mot-outil isolé : insuffisant pour trancher (un « est » anglais
+       ou un « for » technique ne font pas une langue) */
+    if (best && bestN >= 2) return best;
+    return null;
+  }
+  function langueDemande(msgs) {
+    try {
+      var utiles = (msgs || []).filter(function (m) {
+        if (!m || m.role !== 'user' || typeof m.content !== 'string') return false;
+        var c = m.content;
+        if (c.indexOf('<resultat_commande>') >= 0) return false;   // enveloppe FR
+        if (c.indexOf('=== RÉSULTAT') === 0) return false;
+        if (c.indexOf('<consigne>') >= 0) return false;
+        if (c.indexOf('Commande(s) exécutée(s)') === 0) return false;
+        return true;
+      }).slice(-6);
+      if (!utiles.length) return LANGUE_DEFAUT;
+      /* 1) LA requête = le dernier message utilisateur réel : s'il porte un
+         signal, il prime. Sans cela, une conversation antérieure en français
+         faisait basculer en français une nouvelle demande rédigée en anglais
+         (constaté en test : 4 demandes sur 5 détectées à tort « français »). */
+      var lDernier = langueDeTexte(utiles[utiles.length - 1].content);
+      if (lDernier) return lDernier;
+      /* 2) à défaut : vote majoritaire des messages utiles récents, l'égalité
+         étant départagée en faveur du PLUS RÉCENT (parcours de la fin). */
+      var score = {};
+      var ordre = [];
+      utiles.forEach(function (m) {
+        var l = langueDeTexte(m.content);
+        if (l) { if (score[l] === undefined) ordre.push(l); score[l] = (score[l] || 0) + 1; }
+      });
+      var best = null;
+      for (var i = ordre.length - 1; i >= 0; i--) {
+        if (!best || score[ordre[i]] >= score[best]) best = ordre[i];
+      }
+      return best || LANGUE_DEFAUT;
+    } catch (e) { return LANGUE_DEFAUT; }
+  }
 
   async function agentLocalExec(payload, signal) {
     try {
@@ -859,6 +1016,17 @@
       }
       if (liste) c.models = liste;
       else c.model = entry.model;
+      /* v1.2 (langue, proximité) : rappel collé au DERNIER message user —
+         copie, jamais mutée (l'historique reste propre d'un tour à l'autre). */
+      try {
+        var ms = messages;
+        var der = ms && ms.length ? ms[ms.length - 1] : null;
+        if (der && der.role === 'user' && typeof der.content === 'string'
+            && der.content.indexOf('<consigne>') < 0) {
+          ms = ms.slice(0, -1).concat([{ role: 'user', content: der.content + '\n\n' + consigneFin(langueDemande(messages)) }]);
+          c.messages = ms;
+        }
+      } catch (eCons) {}
       return JSON.stringify(c);
     }
 
@@ -897,12 +1065,12 @@
       if (Array.isArray(txt)) {
         txt = txt.map(function (x) { return (x && x.text) || ''; }).join('');
       }
-      /* reasoning-only (modèles free type GLM/gemma/qwen) : si content
-         vide, on retient le raisonnement plutôt que d'échouer. Space Bunny
-         est exclu : son raisonnement interne n'est pas une réponse. */
-      if ((!txt || !String(txt).trim()) && entry.reponseSansRaisonnement !== true && c && typeof c.reasoning === 'string' && c.reasoning.trim()) {
-        txt = c.reasoning;
-      }
+      /* v1.2 (fuite raisonnement) : on NE SUBSTITUE PLUS le raisonnement à la
+         réponse. Un modèle free qui n'a produit QUE de la pensée interne
+         renvoyait cette pensée comme si elle était destinée à l'utilisateur
+         (« le modèle crache son raisonnement dans l'UI »). On rend un texte
+         vide → la cascade tente le modèle suivant. Le raisonnement reste
+         affiché (recueilli) dans le panneau replié. */
       if (txt && typeof txt !== 'string') txt = JSON.stringify(txt);
       if (d && d.model) {
         try { entry._modeleReel = String(d.model); } catch (e) {}
@@ -1054,10 +1222,18 @@
         throw e;
       }
       var txt = contenu;
-      /* Space Bunny : un flux sans contenu final reste une réponse vide,
-         même si le raisonnement a été reçu. */
-      if (!String(txt).trim() && entry.reponseSansRaisonnement !== true && String(pensee).trim()) txt = pensee;
-      if (!String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
+      /* v1.2 (fuite raisonnement) : un flux qui n'a produit QUE du
+         raisonnement n'est PAS une réponse — on ne le substitue plus (c'était
+         la fuite « le modèle crache son raisonnement dans l'UI »).
+         emis remis à false AVANT de jeter : les jetons de raisonnement déjà
+         diffusés ne doivent pas marquer l'erreur comme « partielle », sinon
+         la cascade s'arrête là au lieu de retenter le modèle suivant. */
+      if (!String(txt).trim()) {
+        /* jeté HORS du try/catch : l'erreur n'est donc jamais marquée
+           `partiel`, la cascade passe au modèle suivant. */
+        throw new Error(entry.provider + ' : réponse vide'
+          + (String(pensee).trim() ? ' (raisonnement seul, sans réponse)' : ''));
+      }
       /* v20260926d (kimi) : reliquat de jetons PUIS contrôle de fin. */
       if (onDelta) {
         if (pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
@@ -1288,17 +1464,26 @@
        executionAuto est off. */
     var aSystem = messages.some(function (m) { return m.role === 'system'; });
     /* v1.2 (anti-bâclage) : outils désactivés (outils === false) = pas de
-       prompt d'outils — avant, il s'injectait quand même sans system. */
-    if (!aSystem && body.outils !== false) {
-      messages = [{ role: 'system', content: ATHENA_SYSTEM_OUTILS }].concat(messages);
-    } else if (body.outils !== false) {
+       prompt d'outils — avant, il s'injectait quand même sans system.
+       v1.2 (langue) : outils ou non, le bloc de base (généralité + LANGUE +
+       rappel final) est TOUJOURS présent : sans lui, l'historique partait nu
+       et le modèle répondait dans n'importe quelle langue. */
+    /* v1.2 (langue, cible) : la langue n'est plus une constante mais celle de
+       la DEMANDE — déduite des messages utilisateur récents, et rappelée en
+       TOUTE FIN du prompt (position la plus forte avant le dialogue). */
+    var langue = langueDemande(messages);
+    var ligneLangue = '\n\nLANGUE DE LA CONVERSATION : ' + langue
+      + '. Réponds en ' + langue + ' et uniquement en ' + langue
+      + ', sans jamais mélanger une autre langue dans le texte livré.';
+    var consignes = (body.outils !== false ? ATHENA_SYSTEM_OUTILS : ATHENA_SYSTEM_SANS_OUTILS)
+      + ligneLangue;
+    if (!aSystem) {
+      messages = [{ role: 'system', content: consignes }].concat(messages);
+    } else {
       messages = messages.map(function (m, idx) {
         if (m.role !== 'system' || idx !== 0) return m;
-        if (m.content.indexOf('athena-file') >= 0) return m;
-        if (m.content.indexOf('athena-exec') >= 0) {
-          return { role: 'system', content: m.content + '\n\n' + ATHENA_SYSTEM_FICHIER };
-        }
-        return { role: 'system', content: m.content + '\n\n' + ATHENA_SYSTEM_OUTILS };
+        if (m.content.indexOf(ATHENA_SYSTEM_FIN) >= 0) return m;
+        return { role: 'system', content: m.content + '\n\n' + consignes };
       });
     }
 
