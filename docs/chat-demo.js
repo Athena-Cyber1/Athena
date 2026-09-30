@@ -2200,7 +2200,8 @@ function creerBlocCode(langage, code) {
         return;
       }
       const d = await lancerCommandeLocale(code, executer, codeEl);
-      if (d) enchainerApresExec(c, [d]);
+      /* v1.2 (suite) : clic manuel → la suite continue dans la même bulle. */
+      if (d) enchainerApresExec(c, [d], codeEl.closest ? (codeEl.closest('.bubble') || null) : null);
     });
     pre.appendChild(executer);
   }
@@ -3073,7 +3074,9 @@ function relancerSiPromesse(convo, bulleEl) {
       convo.maj = Date.now();
       try { sauverConversations(); } catch (_) {}
       notifier('Le modèle tournait en rond — relance pour qu\'il tranche.');
-      genererReponse(convo).catch(() => {});
+      /* v1.2 (suite) : la relance continue DANS LA MÊME bulle. */
+      const partagee = b && b.closest ? (b.closest('.bubble') || null) : null;
+      genererReponse(convo, partagee ? { suiteDe: partagee } : undefined).catch(() => {});
       return;
     }
     return;
@@ -3100,7 +3103,7 @@ function relancerSiPromesse(convo, bulleEl) {
   } catch (_) { /* relance = confort, jamais bloquant */ }
 }
 
-function enchainerApresExec(convo, resultats) {
+function enchainerApresExec(convo, resultats, bulleSuite) {
   if (!convo || !Array.isArray(resultats) || !resultats.length) return;
   /* v1.2 : la chaîne ne s'arrête que sur l'arrêt NATUREL du modèle (une réponse
      sans bloc de commande) — plus de plafond arbitraire qui coupait une tâche
@@ -3121,7 +3124,12 @@ function enchainerApresExec(convo, resultats) {
     convo._cmdExecutees.push(c);
     return corpsPourModele(d, repete);
   });
-  convo._toursExec = deja + 1;
+  /* v1.2 (audit) : _toursExec compte des COMMANDES, pas des tours. Avant,
+     +1 par tour alors qu'un tour peut porter N commandes : `anciens`
+     devenait négatif, et le journal montré au modèle listait de mauvaises
+     « anciennes » commandes (slice(0, négatif)). Le budget ABSOLU porte
+     donc sur des commandes, comme l'annonce le message. */
+  convo._toursExec = deja + blocs.length;
   /* MÉMOIRE BORNÉE : sans ça, chaque tour ajoutait 8 000 caractères et le
      modèle oubliait le début de son propre travail (puis dérape — observé :
      20 commandes de déversement, aucun verdict). On ne garde QUE les
@@ -3169,10 +3177,14 @@ function enchainerApresExec(convo, resultats) {
   convo.maj = Date.now();
   try { sauverConversations(); } catch (_) {}
   try { rendreConversations(); } catch (_) {}
-  /* La suite s'affiche comme une réponse normale : l'utilisateur peut
+  /* v1.2 (suite) : la suite CONTINUE dans la même bulle — bulleSuite est la
+     .bubble du tour précédent (transmise par l'appelant). Sans elle, chaque
+     tour créait une nouvelle bulle : « il refait un message au lieu de
+     continuer dans le même ».
+     La suite s'affiche comme une réponse normale : l'utilisateur peut
      l'interrompre à tout moment (contrôleurEnCours) et les messages restent
      dans l'historique — un rechargement ne rejoue aucune commande. */
-  genererReponse(convo).catch(() => {});
+  genererReponse(convo, bulleSuite ? { suiteDe: bulleSuite } : undefined).catch(() => {});
 }
 /* v20260926b (direct) : enregistre un fichier créé par le modèle sur le PC
    (/api/write → agent local 127.0.0.1:3020).
@@ -4528,14 +4540,35 @@ async function envoyer(texte) {
    « Régénérer » rejoue EXACTEMENT le même pipeline (panneau de raisonnement,
    annulation, badges, persistance). Préconditions : occupe === true,
    historique de convo déjà en place, bulle utilisateur déjà affichée. */
-async function genererReponse(convo) {
+async function genererReponse(convo, opts) {
   /* v20260922j (bug 3) : la réponse ne doit JAMAIS être injectée dans la vue
      affichée si l'utilisateur a changé de conversation ou ouvert une vue
      (Paramètres/Projets/Compte) pendant la génération. La persistance
      (convo.messages) reste correcte ; seule la mise en forme DOM est
      conditionnée à vueOuverte(), et un toast sobre propose « Ouvrir ». */
   const vueOuverte = () => idConversation === convo.id && !msgsEl.querySelector('.workspace-view');
-  const think = bulle('assistant', '', null, null, { actions: false });
+  /* v1.2 (audit) : SUITE dans la même bulle. Avant, chaque tour de chaîne
+     (commande → résultat → nouveau tour) créait une NOUVELLE bulle
+     assistant : « le modèle refait un message au lieu de continuer dans le
+     même ». opts.suiteDe = la .bubble du tour précédent : on y ajoute une
+     section .suite (séparateur discret + pensée + diffusion + rendu) au lieu
+     d'une nouvelle rangée. L'historique persisté reste découpé par tour
+     (le modèle en a besoin), seul l'AFFICHAGE est continu. */
+  const suiteDe = opts && opts.suiteDe && opts.suiteDe.isConnected
+    ? (opts.suiteDe.closest('.bubble') || opts.suiteDe) : null;
+  let think, suiteBox = null;
+  if (suiteDe) {
+    suiteBox = document.createElement('div');
+    suiteBox.className = 'suite';
+    const sep = document.createElement('div');
+    sep.className = 'suite-sep';
+    sep.setAttribute('aria-hidden', 'true');
+    suiteBox.appendChild(sep);
+    suiteDe.appendChild(suiteBox);
+    think = suiteBox;
+  } else {
+    think = bulle('assistant', '', null, null, { actions: false });
+  }
   /* v20260926e (kimi) : indicateur animé « le modèle réfléchit » — visible
      même panneau replié/désactivé ; retiré avec la rangée au rendu final. */
   const indicateur = document.createElement('span');
@@ -4583,9 +4616,18 @@ async function genererReponse(convo) {
       if (vueOuverte()) {
         /* v20260922m (F3) : garde de retrait — la rangée peut avoir été
            détachée entre-temps (changement de vue/conversation). */
-        const rangeePensee = think.closest ? think.closest('.row') : null;
-        if (rangeePensee) rangeePensee.remove();
-        bulle('assistant', 'Génération interrompue.');
+        if (suiteBox) {
+          /* Mode suite : on ne touche PAS à la bulle partagée — on note
+             juste l'interruption dans la section, qui reste visible. */
+          const note = document.createElement('div');
+          note.className = 'md';
+          note.textContent = 'Génération interrompue.';
+          suiteBox.appendChild(note);
+        } else {
+          const rangeePensee = think.closest ? think.closest('.row') : null;
+          if (rangeePensee) rangeePensee.remove();
+          bulle('assistant', 'Génération interrompue.');
+        }
       }
       controleurEnCours = null;
       occupe = false;
@@ -4629,9 +4671,17 @@ async function genererReponse(convo) {
        une vue pendant le stream, msgsEl.replaceChildren() a DÉTACHÉ la bulle
        « réfléchit… » — think.parentElement === null. L'ancien code exécutait
        think.parentElement.remove() sans garde → TypeError → occupe coincé
-       (génération « fantôme »). Garde + retrait via closest('.row'). */
-    const rangeePensee = think.closest ? think.closest('.row') : null;
-    if (rangeePensee) rangeePensee.remove();
+       (génération « fantôme »). Garde + retrait via closest('.row').
+       v1.2 (suite) : en mode suite, think EST la section partagée dans la
+       bulle commune — on ne la retire surtout pas, on retire juste
+       l'indicateur animé. */
+    const indicateurPensee = think.querySelector ? think.querySelector(':scope > .thinking') : null;
+    if (suiteBox) {
+      if (indicateurPensee) indicateurPensee.remove();
+    } else {
+      const rangeePensee = think.closest ? think.closest('.row') : null;
+      if (rangeePensee) rangeePensee.remove();
+    }
     if (r && r.ok) {
       const reponseVue = vueOuverte();
       /* v1.2 : `r.reponse` est déjà le texte PUR du modèle — le raisonnement
@@ -4645,12 +4695,27 @@ async function genererReponse(convo) {
       rendreConversations();
       sauverConversations();
       if (reponseVue) {
-        const bAssist = bulle('assistant', r.reponse, r.outil, { verification: r.verification, rag: r.rag });
+        /* v1.2 (suite) : en mode suite, pas de nouvelle bulle — le rendu de
+           ce tour S'AJOUTE à la bulle partagée, avec le panneau vivant déjà
+           en place (créé dans suiteBox). bAssist désigne ici le conteneur du
+           tour : la bulle entière en mode normal, la section en mode suite. */
+        let bAssist, conteneurTour;
+        if (suiteBox) {
+          const md = document.createElement('div');
+          md.className = 'md';
+          md.appendChild(formater(r.reponse));
+          suiteBox.appendChild(md);
+          bAssist = suiteDe;
+          conteneurTour = suiteBox;
+        } else {
+          bAssist = bulle('assistant', r.reponse, r.outil, { verification: r.verification, rag: r.rag });
+          conteneurTour = bAssist;
+        }
         /* v7.1 : le panneau survit à la réponse (replié, au-dessus du texte).
            v7.1.1 : inséré DANS la bulle (comme le rejeu) — avant, inséré comme
            frère de la bulle dans le .row flexbox -> panneau et réponse côte à
            côte, écrasés. */
-        if (etapesRaisonnement.length) {
+        if (etapesRaisonnement.length && !suiteBox) {
           const det = (panneau && panneau.etapes.length) ? panneau.el
             : detailsRaisonnementDepuisEtapes(etapesRaisonnement);
           bAssist.insertBefore(det, bAssist.firstChild);
@@ -4662,7 +4727,7 @@ async function genererReponse(convo) {
           versEntrainement.style.marginTop = '8px';
           versEntrainement.textContent = 'Valider la correction dans Entraînement';
           versEntrainement.addEventListener('click', () => afficherParametres('Entraînement'));
-          bAssist.appendChild(versEntrainement);
+          conteneurTour.appendChild(versEntrainement);
         }
         /* v1.2 (anti-bâclage) : réponse coupée par le budget (finish length) —
            badge persistant dans la bulle + toast : ce n'est pas le modèle qui
@@ -4671,7 +4736,7 @@ async function genererReponse(convo) {
           const badge = document.createElement('div');
           badge.className = 'coupe-badge';
           badge.textContent = 'Réponse coupée par la limite du modèle — demandez la suite ou montez l’effort.';
-          bAssist.appendChild(badge);
+          conteneurTour.appendChild(badge);
           notifier('Réponse coupée par la limite du modèle (pas un bâclage).');
         }
         /* v1.2 (anti-bâclage, item 10) : voie réellement servie — discret,
@@ -4681,7 +4746,7 @@ async function genererReponse(convo) {
           voie.className = 'voie-modele';
           voie.textContent = 'via ' + (r.model || r.provider)
             + (r.modele_repli ? ' · repli' : '');
-          bAssist.appendChild(voie);
+          conteneurTour.appendChild(voie);
         }
         /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
            (préférence executionAuto, ON par défaut) — la commande part
@@ -4690,15 +4755,21 @@ async function genererReponse(convo) {
            réponse fraîche : rejeu, rechargement et réouverture d'une
            conversation ne ré-exécutent rien.
            v1.2 (anti-bâclage) : le .then rend la sortie au modèle pour qu'il
-           POURSUIVE l'analyse — sans cela il s'arrêtait à la 1re commande. */
+           POURSUIVE l'analyse — sans cela il s'arrêtait à la 1re commande.
+           v1.2 (suite) : on transmet la bulle partagée pour que le tour
+           suivant continue DANS LA MÊME bulle, et le conteneur du tour
+           pour ne scanner que les NOUVEAUX blocs. */
         if (preferences.executionAuto !== false) {
-          autoExecBlocs(bAssist)
-            .then((res) => enchainerApresExec(convo, res))
+          autoExecBlocs(conteneurTour)
+            .then((res) => enchainerApresExec(convo, res, bAssist))
             .catch(() => {});
         }
         /* v20260926b (direct) : idem pour les fichiers créés par le modèle. */
         if (preferences.executionAuto !== false) autoFileBlocs(bAssist);
-        relancerSiPromesse(convo, bAssist);
+        /* v1.2 (suite) : on passe le CONTENEUR DU TOUR, pas la bulle
+           partagée — sinon le .exec-bloc d'un tour précédent fait croire
+           que CE tour a agi, et la relance ne part jamais. */
+        relancerSiPromesse(convo, conteneurTour);
       } else {
         notifier('Réponse prête dans « ' + convo.titre + ' »', { label: 'Ouvrir', action: () => ouvrirConversation(convo.id) });
       }
@@ -4962,6 +5033,19 @@ async function regenererDerniereReponse() {
   if (convo.messages.length && convo.messages[convo.messages.length - 1].role === 'assistant') {
     convo.messages.pop();
   }
+  /* v1.2 (audit) : Régénérer repart de la question — donc le budget et la
+     mémoire de la chaîne repartent aussi. Avant, rien n'était réinitialisé :
+     _toursExec gardait l'ancien compteur (budget fantôme), _budgetEpuise
+     resté à true BLOQUAIT toute commande sans explication, _msgExec pointait
+     après le pop() vers un autre message (le rewrite du journal écrasait le
+     MAUVAIS message → historique corrompu envoyé au modèle), et
+     _relanceFaite interdisait toute relance. */
+  convo._toursExec = 0;
+  convo._cmdExecutees = [];
+  convo._fenetreExec = [];
+  convo._msgExec = null;
+  convo._budgetEpuise = false;
+  convo._relanceFaite = false;
   convo.maj = Date.now();
   sauverConversations();
   rangeesReponse.forEach((rangee) => rangee.remove());

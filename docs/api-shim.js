@@ -1021,6 +1021,19 @@
             }
             if (typeof delta.reasoning_content === 'string') pensee += delta.reasoning_content;
             else if (typeof delta.reasoning === 'string') pensee += delta.reasoning;
+            /* v1.2 (audit) : OpenRouter envoie le raisonnement en TABLEAU
+               `reasoning_details: [{type:'reasoning.text', text|summary}]`
+               quand reasoning.exclude=false (exactement ce qu'on demande à
+               Bunny). Sans cette branche, le raisonnement arrivait mais
+               n'était JAMAIS lu : panneau vide, 0 étape, et l'utilisateur
+               croyait le modèle devenu muet. */
+            else if (Array.isArray(delta.reasoning_details)) {
+              for (var ird = 0; ird < delta.reasoning_details.length; ird++) {
+                var rd = delta.reasoning_details[ird] || {};
+                if (typeof rd.text === 'string' && rd.text) pensee += rd.text;
+                else if (typeof rd.summary === 'string' && rd.summary) pensee += rd.summary;
+              }
+            }
             if (typeof delta.content === 'string') contenu += delta.content;
             if (d && d.model) {
               try { entry._modeleReel = String(d.model); } catch (e) {}

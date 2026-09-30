@@ -976,6 +976,13 @@ button.dot:focus-visible,
   font-size: 0.7rem;
   color: var(--texte-doux);
 }
+/* v1.2 (suite) : continuation d'une réponse dans la MÊME bulle — un filet
+   discret sépare les tours, sans casser la lecture d'un seul message. */
+.suite-sep {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px dashed var(--bord);
+}
 .outil-badge {
   display: inline-block;
   margin: 10px 6px 0 0;
