@@ -2971,6 +2971,24 @@ function corpsPourModele(d, repete) {
   return corps.join('\n');
 }
 
+  /* v1.2 (purge du raisonnement) : le raisonnement du modèle n'est PAS
+     conservé dans l'historique. Motif mesuré : sur une simple question, le
+     panneau affichait « We need answer in French… » puis une séquence
+     « 但读者 » (chinois) — du texte de travail interne, dans une autre langue,
+     et il COMPARAÎT aux tours suivants : le modèle se met à brasser des
+     mélanges de langues de plus en plus. On n'envoie donc que la RÉPONSE
+     finale, jamais le brouillon, et on le dit au modèle. */
+function raisonnerPropre(bulleEl) {
+  if (!bulleEl) return '';
+  try {
+    const copie = bulleEl.cloneNode(true);
+    // tout le monde sauf le corps de la réponse
+    copie.querySelectorAll('details.raisonnement, .coupe-badge, .voie-modele, .activite, .activity-group')
+      .forEach((n) => { try { n.remove(); } catch (_) {} });
+    return String(copie.textContent || '').replace(/\s+/g, ' ').trim();
+  } catch (_) { return ''; }
+}
+
 /* v1.2 (dernier maillon) : le modèle peut terminer sur une PROMESSE au lieu
    d'un acte. Constaté en run réel de 22 min / 196 commandes : après avoir lu
    les 1734 lignes, il a répondu « je vais maintenant cibler les sections,
@@ -4547,12 +4565,18 @@ async function genererReponse(convo) {
     const rangeePensee = think.closest ? think.closest('.row') : null;
     if (rangeePensee) rangeePensee.remove();
     if (r && r.ok) {
-      /* persistance TOUJOURS (la donnée va dans la bonne conversation) */
-      convo.messages.push({ role: 'assistant', content: r.reponse, outil: r.outil || null, verification: r.verification || null, rag: r.rag || null, raisonnement: etapesRaisonnement.length ? etapesRaisonnement : null });
+      const reponseVue = vueOuverte();
+      /* v1.2 : `r.reponse` est déjà le texte PUR du modèle — le raisonnement
+         vit à part (etapesRaisonnement) et n'est jamais renvoyé au modèle
+         (preparerHistorique ne lit que m.content). Référencer `bAssist`
+         ici était un bug : il est déclaré plus bas dans le bloc `if`, donc
+         TDZ → ReferenceError → la boucle exec ne démarrait jamais (le
+         défaut exact « la requête s'arrête après une commande »). */
+      convo.messages.push({ role: 'assistant', content: String(r.reponse || ''), outil: r.outil || null, verification: r.verification || null, rag: r.rag || null, raisonnement: etapesRaisonnement.length ? etapesRaisonnement : null });
       convo.maj = Date.now();
       rendreConversations();
       sauverConversations();
-      if (vueOuverte()) {
+      if (reponseVue) {
         const bAssist = bulle('assistant', r.reponse, r.outil, { verification: r.verification, rag: r.rag });
         /* v7.1 : le panneau survit à la réponse (replié, au-dessus du texte).
            v7.1.1 : inséré DANS la bulle (comme le rejeu) — avant, inséré comme

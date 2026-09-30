@@ -512,6 +512,25 @@
 
   /* v1.2 (anti-bâclage) : préambule général — le prompt système ne parlait
      que d'outils ; le modèle n'avait aucune consigne de complétude globale. */
+  /* v1.2 (langue) : le modèle parque du chinois/anglais au milieu d'une
+     phrase française — mesuré : « Le placement dépend d'un 迷宫 aléatoire ».
+     Ce n'est PAS un bug d'encodage (le flux SSE est décodé en UTF-8
+     correctement) : le modèle écrit son raisonnement dans une autre langue et
+     la fuite. Deux verrous : (1) on l'interdit explicitement, (2) le
+     raisonnement n'est JAMAIS renvoyé au modèle (il reste affiché pour
+     l'humain) — c'est ce qui faisait revenir la mélange à chaque tour. */
+  var ATHENA_SYSTEM_LANGUE =
+    'LANGUE : réponds UNIQUEMENT en français, et seulement en français. '
+    + 'Le français n\'est pas la seule langue que tu connais, et il ne faut '
+    + 'JAMAIS laisser un mot, un caractère ou un groupe de caractères '
+    + 'd\'une autre langue (anglais, chinois, japonais, arabe…) apparaître dans '
+    + 'ta réponse : ni dans un mot, ni dans un commentaire, ni dans un nom de '
+    + 'variable ou de fonction. Si un terme technique est en anglais, garde '
+    + 'l\'anglais du terme mais écrase le reste en français. Un seul caractère '
+    + 'étranger dans une phrase française est un défaut, pas une touche. '
+    + 'Pense librement dans la langue qui t\'arrange, mais TA RÉPONSE est '
+    + 'intégralement en français.';
+
   var ATHENA_SYSTEM_GENERAL =
     'Athéna, assistant utile : réponds complètement à la question, sans ' +
     'abréger ni bâcler ; adapte la longueur de ta réponse à la question ' +
@@ -618,7 +637,8 @@
     'Dans les deux cas, une correction non écrite n\'est PAS une correction : si ' +
     'tu as trouvé des bugs, écris le fichier. Ne termine jamais sur un constat ' +
     'sans avoir rien modifié.';
-  var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_GENERAL + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER;
+  var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_GENERAL + '\n\n' + ATHENA_SYSTEM_LANGUE
+    + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER;
 
   async function agentLocalExec(payload, signal) {
     try {
