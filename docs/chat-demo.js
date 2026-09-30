@@ -664,7 +664,11 @@ function titreDepuis(texte) {
 }
 /* Aperçu sobre sous le titre (2e ligne de la conversation) + heure. */
 function apercuConversation(c) {
-  const dernier = [...(c.messages || [])].reverse().find((m) => m && m.content && String(m.content).trim());
+  /* v1.2 : les messages _exec (journal technique des commandes, poussé pour
+     le modèle) ne doivent JAMAIS apparaître pour l'humain — avant, la
+     sidebar affichait « Vous : Commande(s) exécutée(s)… » comme dernière
+     activité, masquant la vraie réponse. */
+  const dernier = [...(c.messages || [])].reverse().find((m) => m && !m._exec && m.content && String(m.content).trim());
   if (!dernier) return 'Conversation vide';
   const t = nettoyerApercu(dernier.content);
   return (dernier.role === 'user' ? 'Vous : ' : '') + (t.length > 72 ? t.slice(0, 72) + '…' : t);
@@ -764,6 +768,8 @@ function normaliserRecherche(s) {
   return (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 function extraitDepuisMessage(m, q) {
+  /* v1.2 : pas de recherche dans le journal technique _exec. */
+  if (m && m._exec) return null;
   const brut = String(m.content || '').replace(/\s+/g, ' ').trim();
   if (!brut) return null;
   const norm = normaliserRecherche(brut);
@@ -858,14 +864,21 @@ function ouvrirConversation(id) {
     msgsEl.replaceChildren();
     if (c.messages.length === 0) exemplesInitiaux();
     else c.messages.forEach((m) => {
+      /* v1.2 : les messages _exec (journal technique des commandes, pour le
+         modèle uniquement) ne REJOUENT pas en bulles visibles — avant, à
+         chaque réouverture on voyait des bulles « Vous : Commande(s)
+         exécutée(s)… === RÉSULTAT DE TA DERNIÈRE COMMANDE === », comme si le
+         modèle recréait des messages. C'est le défaut exact « il recrée un
+         message au lieu de continuer ». */
+      if (m && m._exec) return;
       /* v7.2.2 : UN message corrompu (ancien format, champ inattendu) ne doit
-         JAMAIS tuer tout le rejeu ni la sidebar — on rend un placeholder et on
+         JAMAIS tuer tout le rejeu ni la sidebar - on rend un placeholder et on
          continue (avant : exception -> module mort au chargement). */
       try {
         bulle(m.role === 'user' ? 'user' : 'assistant', m.content, m.outil, { verification: m.verification, rag: m.rag, raisonnement: m.raisonnement, attachments: m.attachments || null, traces: m.traces || null });
       } catch (e) {
         if (console && console.warn) console.warn('rejeu : message non rendu', e);
-        bulle('assistant', '(message non affiché — erreur de rejeu)');
+        bulle('assistant', '(message non affiché - erreur de rejeu)');
       }
     });
     rendreConversations();
@@ -3655,7 +3668,7 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   const zone = document.createElement('div');
   zone.className = 'diffusion';
   zone.hidden = true;
-  const txtEl = document.createElement('span');
+  let txtEl = document.createElement('span');
   txtEl.className = 'diffusion-texte';
   const curseur = document.createElement('span');
   curseur.className = 'diffusion-curseur';
@@ -3663,6 +3676,41 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   curseur.setAttribute('aria-hidden', 'true');
   zone.append(txtEl, curseur);
   conteneur.appendChild(zone);
+  /* v1.2 (fluidité) : rendu markdown PROGRESSIF. Avant, la frappe diffusait
+     le markdown BRUT (les ``` défilaient en texte), puis la bulle finale
+     remplaçait tout d'un coup — le code « n'apparaissait pas fluidement ».
+     Maintenant, dès qu'un bloc clôturé est complet, tout ce qui le précède
+     est rendu en vrai markdown, et seule la queue continue en brut.
+     SÉCURITÉ : les boutons du rendu intermédiaire (Exécuter, Enregistrer,
+     Télécharger) sont DÉSACTIVÉS — un clic en cours de frappe exécuterait
+     une commande ou un fichier TRONQUÉ. La bulle finale, elle, a les vrais
+     boutons. */
+  let renduJusqua = 0;
+  const afficherProgressif = () => {
+    try {
+      const lignes = reponse.split('\n');
+      let dansBloc = false, pos = 0, finBloc = -1;
+      for (const l of lignes) {
+        if (!dansBloc && /^\s*```/.test(l)) dansBloc = true;
+        else if (dansBloc && /^\s*```\s*$/.test(l)) { dansBloc = false; finBloc = pos + l.length + 1; }
+        pos += l.length + 1;
+      }
+      const limite = finBloc < 0 ? 0 : Math.min(finBloc, reponse.length);
+      if (limite > renduJusqua) {
+        zone.replaceChildren();
+        if (limite > 0) zone.appendChild(markdownVersFragment(reponse.slice(0, limite)));
+        const queue = reponse.slice(limite);
+        txtEl = document.createElement('span');
+        txtEl.className = 'diffusion-texte';
+        txtEl.textContent = queue;
+        zone.append(txtEl, curseur);
+        zone.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        afficheReponse = reponse;
+        afficheQueue = queue;
+        renduJusqua = limite;
+      }
+    } catch {}
+  };
   let penseeEl = null;
   if (panneau && panneau.el) {
     penseeEl = document.createElement('div');
@@ -3678,19 +3726,30 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
      le delta (appendData), jamais de réécriture complète du nœud qui grossit. */
   let afficheReponse = '';
   let affichePensee = '';
+  /* v1.2 : contenu brut ACTUELLEMENT dans txtEl (la queue après le dernier
+     rendu markdown). Séparé d'afficheReponse car, depuis le rendu progressif,
+     txtEl ne contient plus toute la réponse mais seulement la queue. */
+  let afficheQueue = '';
   const FENETRE_DIFFUSION = 12000;
   const FENETRE_PENSEE = 6000;
   const flusher = () => {
     flushTimer = null;
     if (!gardeVue || gardeVue()) {
-      const cibleR = reponse.length > FENETRE_DIFFUSION ? reponse.slice(-FENETRE_DIFFUSION) : reponse;
-      if (cibleR !== afficheReponse) {
+      /* Rendu progressif d'abord : fige en markdown tout bloc clôturé,
+         recrée txtEl (la queue) et recale afficheQueue. */
+      afficherProgressif();
+      /* Fenêtre anti-explosion : si la réponse brute dépasse, on n'affiche
+         que la fin — mais en tenant compte de la partie déjà rendue. */
+      const debutQueue = Math.max(renduJusqua, reponse.length - FENETRE_DIFFUSION);
+      const queue = reponse.slice(debutQueue);
+      if (queue !== afficheQueue) {
         /* v20260926g : appendData n'existe que sur les Text — pour un
            élément, on ajoute un nœud texte (pas de réécriture complète). */
-        if (cibleR.startsWith(afficheReponse)) txtEl.append(document.createTextNode(cibleR.slice(afficheReponse.length)));
-        else txtEl.textContent = cibleR;
-        afficheReponse = cibleR;
+        if (queue.startsWith(afficheQueue)) txtEl.append(document.createTextNode(queue.slice(afficheQueue.length)));
+        else txtEl.textContent = queue;
+        afficheQueue = queue;
       }
+      afficheReponse = reponse;
       if (penseeEl) {
         const cibleP = pensee.length > FENETRE_PENSEE ? pensee.slice(-FENETRE_PENSEE) : pensee;
         if (cibleP !== affichePensee) {
@@ -3745,7 +3804,16 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       if ((gardeVue && !gardeVue()) || !zone.isConnected) return;
       i = Math.min(cible.length, i + 48);
       reponse = cible.slice(0, i);
-      txtEl.textContent = reponse;
+      /* v1.2 : même rendu progressif que le flux — la machine à écrire ne
+         diffuse plus le markdown brut. */
+      afficherProgressif();
+      const debutQueue = Math.max(renduJusqua, reponse.length - FENETRE_DIFFUSION);
+      const queue = reponse.slice(debutQueue);
+      if (queue !== afficheQueue) {
+        if (queue.startsWith(afficheQueue)) txtEl.append(document.createTextNode(queue.slice(afficheQueue.length)));
+        else txtEl.textContent = queue;
+        afficheQueue = queue;
+      }
       afficheReponse = reponse;
       defilerSiBas();
       await pasImage();
