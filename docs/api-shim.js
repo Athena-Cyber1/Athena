@@ -612,8 +612,13 @@
      conversation. */
   var ATHENA_SYSTEM_FICHIER =
     'Pour créer un fichier sur le PC de l\'utilisateur, réponds avec un bloc de code fenced ' +
-    'de langage exact athena-file dont la première ligne donne le chemin, par exemple:\n' +
+    'de langage exact athena-file dont le CHEMIN EST SUR LA LIGNE DU FENCE (après ' +
+    'athena-file, sur la même ligne), par exemple:\n' +
     '```athena-file notes/idees.md\ncontenu du fichier…\n```\n' +
+    'Le chemin sur la ligne du fence, JAMAIS en première ligne du contenu : ' +
+    'une première ligne de contenu qui ressemble à un chemin est ignorée comme ' +
+    'nom de fichier. Après l\'enregistrement, le chemin ABSOLU réel te sera ' +
+    'renvoyé : utilise-le tel quel dans tes commandes suivantes, ne le devine pas.\n' +
     'Le chemin peut être relatif (dossier de travail choisi dans les réglages ' +
     '— par défaut celui de l\'agent) ou absolu ; les dossiers ' +
     'système sont refusés. Le fichier est enregistré AUTOMATIQUEMENT sur le poste (comme les ' +

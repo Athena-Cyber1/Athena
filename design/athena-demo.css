@@ -982,6 +982,16 @@ button.dot:focus-visible,
   margin: 10px 0;
   border: 0;
   border-top: 1px dashed var(--bord);
+  position: relative;
+}
+.suite-nom {
+  position: absolute;
+  top: -0.65em;
+  left: 12px;
+  padding: 0 8px;
+  font-size: 0.68rem;
+  color: var(--texte-doux);
+  background: var(--fond-bulle, transparent);
 }
 .outil-badge {
   display: inline-block;

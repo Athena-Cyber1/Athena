@@ -10,11 +10,17 @@ import { garderOrigine, reponseRefus } from "@/lib/secu";
 
 const AGENT = "http://127.0.0.1:3020";
 
+/* v1.2 (audit 503) : le proxy avortait à 25 s alors que l'agent travaille
+   jusqu'à 60 s — toute commande longue mourait en 503 « agent injoignable »
+   pendant que l'agent continuait de l'exécuter. Le proxy doit couvrir
+   l'agent (60 s) + la marge réseau : 70 s. Le client borne à 90 s. */
+const TIMEOUT_PROXY_MS = 70_000;
+
 async function proxy(chemin: string, init?: RequestInit): Promise<Response> {
   try {
     const r = await fetch(AGENT + chemin, {
       ...init,
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(TIMEOUT_PROXY_MS),
       cache: "no-store",
     });
     const txt = await r.text();
@@ -61,7 +67,7 @@ export async function POST(req: Request) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(corps),
-        signal: AbortSignal.timeout(25_000),
+        signal: AbortSignal.timeout(TIMEOUT_PROXY_MS),
         cache: "no-store",
       });
       if (!r.ok || !r.body) {

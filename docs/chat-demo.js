@@ -2300,8 +2300,25 @@ function surlignerCode(texte, chemin) {
   return frag;
 }
 function creerBlocFichier(params, contenu) {
-  const chemin = analyserCheminFichier(params);
-  const texte = contenu == null ? '' : String(contenu);
+  let chemin = analyserCheminFichier(params);
+  let texte = contenu == null ? '' : String(contenu);
+  /* v1.2 (audit 14:27) : le modèle met souvent le chemin en PREMIÈRE LIGNE
+     DU CONTENU (« la première ligne donne le chemin » se lit des deux
+     façons) avec un fence nu ```athena-file. Avant, cette ligne devenait du
+     contenu et le fichier tombait en `fichier-sans-nom.txt` au mauvais
+     endroit — puis l'exec qui le cherchait au bon endroit échouait
+     (throw → code=1, tâche morte). On accepte les deux formes : si le fence
+     ne donne aucun chemin et que la première ligne du contenu ressemble à
+     un chemin, c'est le chemin (retiré du contenu). */
+  if ((chemin === 'fichier-sans-nom.txt' || !chemin) && texte) {
+    const lignes = texte.split('\n');
+    const premiere = (lignes[0] || '').trim().replace(/^["']|["']$/g, '');
+    if (premiere && !/\s/.test(premiere) && premiere.length <= 260
+        && (/[/\\]/.test(premiere) || /\.[A-Za-z0-9]{1,5}$/.test(premiere))) {
+      chemin = premiere;
+      texte = lignes.slice(1).join('\n').replace(/^\n/, '');
+    }
+  }
   const carte = document.createElement('div');
   carte.className = 'file-bloc';
   carte.dataset.chemin = chemin;
@@ -3166,10 +3183,18 @@ function enchainerApresExec(convo, resultats, bulleSuite) {
   if (Number.isInteger(convo._msgExec) && convo.messages[convo._msgExec]
       && convo.messages[convo._msgExec]._exec) {
     /* Message unique réécrit à chaque tour : l'historique ne grossit pas.
-       L'INDICE du dernier résultat voyage avec, sinon le modèle ne peut plus
-       faire le lien commande → sortie sur les tours suivants. */
-    convo.messages[convo._msgExec]._dernierIdx = blocs.length - 1;
-    convo.messages[convo._msgExec].content = contenu;
+       v1.2 (audit 14:27) : le message est AUSSI remis en DERNIER. Avant, il
+       restait figé à son index : dès le 2e tour, le dernier message devenait
+       la propre réponse précédente du modèle, et le résultat frais se
+       retrouvait enterré au milieu — le modèle continuait sans l'avoir vu
+       (mesuré : tour 3 sans LIGNE-A alors que l'exec avait réussi). C'est
+       aussi l'ordre chronologique réel : le résultat arrive APRÈS la réponse
+       qui a lancé la commande. */
+    const msg = convo.messages.splice(convo._msgExec, 1)[0];
+    msg._dernierIdx = blocs.length - 1;
+    msg.content = contenu;
+    convo.messages.push(msg);
+    convo._msgExec = convo.messages.length - 1;
   } else {
     convo._msgExec = convo.messages.length;
     convo.messages.push({ role: 'user', content: contenu, _exec: true });
@@ -3271,17 +3296,37 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
   }
 }
 /* Comme autoExecBlocs : les cartes ```athena-file de la réponse FRAÎCHE sont
-   enregistrées seules, dans l'ordre, sans modale. Jamais en rejeu. */
+   enregistrées seules, dans l'ordre, sans modale. Jamais en rejeu.
+   v1.2 (audit 14:27) : REND les résultats. Avant, le modèle ne savait JAMAIS
+   où son fichier avait atterri (chemin absolu réel) : il devinait un chemin,
+   l'exec le cherchait ailleurs, throw → code=1, tâche morte. Le retour
+   alimente enchainerApresExec comme une commande. */
 function autoFileBlocs(bulleEl) {
   const cartes = bulleEl ? [...bulleEl.querySelectorAll('.file-bloc')] : [];
-  if (!cartes.length) return;
-  (async () => {
+  if (!cartes.length) return Promise.resolve([]);
+  return (async () => {
+    const resultats = [];
     for (const carte of cartes) {
       if (carte.dataset.fileAuto === '1') continue;
       const contenu = carte._contenuComplet != null ? carte._contenuComplet : '';
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
-      await enregistrerFichierLocal(carte.dataset.chemin || '', contenu, null, carte, { auto: true });
+      const d = await enregistrerFichierLocal(carte.dataset.chemin || '', contenu, null, carte, { auto: true });
+      const demande = String(carte.dataset.chemin || '');
+      if (d && d.chemin) {
+        resultats.push({ commande: 'enregistrer ' + demande, ok: true, code: 0,
+          stdout: 'Fichier enregistré : ' + String(d.chemin) + (d.ecrase ? ' (remplacé)' : ''),
+          stderr: '', duree_ms: null });
+      } else {
+        /* v1.2 (audit 14:27) : la VRAIE raison part au modèle (chemin hors
+           zone, dossier système, agent injoignable…), pas un « échec » sec —
+           sinon il ne peut pas corriger et devine un autre chemin au hasard. */
+        const carteStatut = carte.querySelector('.file-statut');
+        const raison = (carteStatut && (carteStatut.title || carteStatut.textContent) || 'raison inconnue').slice(0, 300);
+        resultats.push({ commande: 'enregistrer ' + demande, ok: false, code: null,
+          stdout: '', stderr: 'Échec d\'enregistrement : ' + raison, duree_ms: null });
+      }
     }
+    return resultats;
   })();
 }
 function creerGroupeActivite() {
@@ -4558,11 +4603,22 @@ async function genererReponse(convo, opts) {
     ? (opts.suiteDe.closest('.bubble') || opts.suiteDe) : null;
   let think, suiteBox = null;
   if (suiteDe) {
+    /* v1.2 (discrétion) : la suite ne rejoue PAS tout le cirque « le modèle
+       réfléchit + panneau ouvert ». Avant, chaque commande terminée
+       rouvrait un panneau de raisonnement complet : visuellement, on aurait
+       dit qu'un nouveau message était envoyé. Maintenant : un liseré avec
+       le numéro de suite, et le panneau de raisonnement reste REPLIÉ (son
+       contenu s'accumule quand même, un clic le rouvre). */
     suiteBox = document.createElement('div');
     suiteBox.className = 'suite';
     const sep = document.createElement('div');
     sep.className = 'suite-sep';
     sep.setAttribute('aria-hidden', 'true');
+    const nSuite = suiteDe.querySelectorAll(':scope > .suite').length + 1;
+    const etiquette = document.createElement('span');
+    etiquette.className = 'suite-nom';
+    etiquette.textContent = 'Suite ' + nSuite;
+    sep.appendChild(etiquette);
     suiteBox.appendChild(sep);
     suiteDe.appendChild(suiteBox);
     think = suiteBox;
@@ -4580,6 +4636,10 @@ async function genererReponse(convo, opts) {
   /* v7.1 : panneau « raisonnement en direct » (canal de progression NDJSON) */
   const panneau = preferences.raisonnementVisible !== false
     ? creerPanneauRaisonnement(think, vueOuverte) : null;
+  if (suiteBox && panneau && panneau.el) {
+    /* Suite : panneau replié d'office (voir commentaire discrétion). */
+    try { panneau.el.open = false; } catch {}
+  }
   if (!panneau) think.replaceChildren();
   /* v20260926b (direct) : la frappe et la réflexion s'affichent EN DIRECT. */
   const diffusion = creerZoneDiffusion(think, panneau, vueOuverte);
@@ -4678,6 +4738,14 @@ async function genererReponse(convo, opts) {
     const indicateurPensee = think.querySelector ? think.querySelector(':scope > .thinking') : null;
     if (suiteBox) {
       if (indicateurPensee) indicateurPensee.remove();
+      /* v1.2 (audit rendu) : en mode suite, la zone de diffusion du tour a
+         déjà servi (son contenu est rendu en .md juste après) — la laisser
+         accumulait des dizaines de zones orphelines avec leur rendu
+         progressif (mesuré : 28 .diffusion et 114 <pre> pour une seule
+         réponse). On la retire, le panneau replié reste consultable. */
+      try {
+        suiteBox.querySelectorAll(':scope > .diffusion').forEach((z) => z.remove());
+      } catch {}
     } else {
       const rangeePensee = think.closest ? think.closest('.row') : null;
       if (rangeePensee) rangeePensee.remove();
@@ -4760,12 +4828,14 @@ async function genererReponse(convo, opts) {
            suivant continue DANS LA MÊME bulle, et le conteneur du tour
            pour ne scanner que les NOUVEAUX blocs. */
         if (preferences.executionAuto !== false) {
-          autoExecBlocs(conteneurTour)
-            .then((res) => enchainerApresExec(convo, res, bAssist))
+          /* v1.2 (audit 14:27) : UNE SEULE chaîne avec commandes + fichiers.
+             Avant, les fichiers partaient en fire-and-forget : le modèle ne
+             savait jamais où son fichier avait atterri, devinait un chemin,
+             et l'exec suivante échouait dessus. */
+          Promise.all([autoExecBlocs(conteneurTour), autoFileBlocs(conteneurTour)])
+            .then(([resExec, resFich]) => enchainerApresExec(convo, [...resExec, ...resFich], bAssist))
             .catch(() => {});
         }
-        /* v20260926b (direct) : idem pour les fichiers créés par le modèle. */
-        if (preferences.executionAuto !== false) autoFileBlocs(bAssist);
         /* v1.2 (suite) : on passe le CONTENEUR DU TOUR, pas la bulle
            partagée — sinon le .exec-bloc d'un tour précédent fait croire
            que CE tour a agi, et la relance ne part jamais. */
