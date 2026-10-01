@@ -60,12 +60,15 @@ function publierHooks(nom, obj) { if (MODE_QA) window[nom] = obj; }
 const msgsEl = $('msgs'), saisieEl = $('saisie'), btnEl = $('btn');
 const titreConversationEl = $('titre-conversation'), partagerEl = $('partager');
 /* v20261001 : liste des fichiers de la conversation (bouton à gauche de
-   « Partager ») + interpréteur HTML embarqué (iframe sandboxée). */
-const listeFichiersEl = $('liste-fichiers'), panneauFichiersEl = $('panneau-fichiers'), listeFichiersCompteurEl = $('liste-fichiers-compteur');
+   « Partager ») + HUD interpréteur HTML à droite (la page se rétracte). */
+const listeFichiersEl = $('liste-fichiers'), panneauFichiersEl = $('panneau-fichiers');
 const zoneFichiersEl = document.querySelector('.zone-fichiers');
-const interpreteurEl = $('interpreteur'), interpreteurNomEl = $('interpreteur-nom'), interpreteurStatutEl = $('interpreteur-statut');
-const interpreteurCodeEl = $('interpreteur-code'), interpreteurCadreEl = $('interpreteur-cadre'), interpreteurConsoleEl = $('interpreteur-console');
+const pageDemoEl = document.querySelector('.page-demo');
+const interpreteurEl = $('interpreteur'), interpreteurNomEl = $('interpreteur-nom');
+const interpreteurCodeEl = $('interpreteur-code'), interpreteurCadreEl = $('interpreteur-cadre');
 const interpreteurExeEl = $('interpreteur-exe'), interpreteurFermerEl = $('interpreteur-fermer');
+const interpreteurCorpsEl = $('interpreteur-corps'), interpreteurSplitEl = $('interpreteur-split'), interpreteurToggleEl = $('interpreteur-toggle');
+const interpreteurBordEl = $('interpreteur-bord');
 const saisieMirrorEl = $('saisie-mirror'), modelePiedEl = $('modele-pied');
 const navProjetsEl = $('nav-projets'), navArtefactsEl = $('nav-artefacts');
 const navCodeEl = $('nav-code'), navPersonnaliserEl = $('nav-personnaliser');
@@ -2253,13 +2256,13 @@ function creerBlocCode(langage, code) {
     });
     pre.appendChild(executer);
   }
-  /* v20261001 : HTML/SVG → bouton « Interpréter » (rendu immédiat dans
-     l'interpréteur, iframe sandboxée + console des erreurs). */
+  /* v20261001 : HTML/SVG → bouton « Interpréter » (rendu immédiat dans le
+     HUD à droite, iframe sandboxée + console des erreurs). */
   if (/^(html?|xhtml|svg)$/i.test((langage || '').trim())) {
     const interp = document.createElement('button');
     interp.type = 'button';
     interp.className = 'code-interpreter';
-    interp.title = 'Interpréter ce code dans l’aperçu intégré';
+    interp.title = 'Interpréter ce code dans le HUD à droite';
     interp.textContent = 'Interpréter';
     interp.addEventListener('click', () => {
       const ext = /^svg$/i.test((langage || '').trim()) ? 'svg' : 'html';
@@ -2408,6 +2411,12 @@ function creerBlocFichier(params, contenu) {
   tete.setAttribute('role', 'button');
   tete.title = 'Ouvrir l’aperçu : ' + chemin;
   const ouvrir = () => {
+    /* HTML/SVG : HUD d'exécution à droite (rendu seul par défaut, la page
+       se rétracte) — les autres fichiers restent dans le HUD latéral. */
+    if (/\.(html?|xhtml|svg)$/i.test(chemin) && texte) {
+      ouvrirInterpreteur(nomBaseFichier(chemin), texte);
+      return;
+    }
     document.querySelectorAll('.file-bloc.ouvert').forEach((c) => { if (c !== carte) c.classList.remove('ouvert'); });
     carte.classList.add('ouvert');
     ouvrirHudFichier(chemin, texte, carte);
@@ -5278,10 +5287,6 @@ function rendrePanneauFichiers() {
   if (!panneauFichiersEl) return;
   panneauFichiersEl.textContent = '';
   const fichiers = fichiersDeLaConversation();
-  if (listeFichiersCompteurEl) {
-    listeFichiersCompteurEl.hidden = !fichiers.length;
-    listeFichiersCompteurEl.textContent = String(fichiers.length);
-  }
   const tete = document.createElement('div');
   tete.className = 'panneau-fichiers-tete';
   const titre = document.createElement('span');
@@ -5343,14 +5348,6 @@ function basculerPanneauFichiers(force) {
   panneauFichiersEl.hidden = !ouvrir;
   listeFichiersEl.setAttribute('aria-expanded', String(ouvrir));
 }
-function journalInterpreteur(texte, classe) {
-  if (!interpreteurConsoleEl) return;
-  const ligne = document.createElement('div');
-  if (classe) ligne.className = classe;
-  ligne.textContent = texte;
-  interpreteurConsoleEl.appendChild(ligne);
-  interpreteurConsoleEl.scrollTop = interpreteurConsoleEl.scrollHeight;
-}
 /* Pont injecté DANS le srcdoc : relais console/erreurs/chargement vers le
    parent. Concaténé en « <scr'+'ipt> » pour ne jamais fermer le script hôte. */
 const PONT_INTERPRETEUR = [
@@ -5375,40 +5372,115 @@ function integrerPont(html) {
 function executerInterpreteur() {
   if (!interpreteurEl || interpreteurEl.hidden) return;
   const code = interpreteurCodeEl ? interpreteurCodeEl.value : '';
-  if (interpreteurConsoleEl) interpreteurConsoleEl.textContent = '';
-  if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'exécution…';
-  journalInterpreteur('▶ exécution de ' + (interpreteurNomEl ? interpreteurNomEl.textContent : 'code.html'));
+  if (interpreteurCadreEl) {
+    interpreteurCadreEl.removeAttribute('data-rendu');
+    interpreteurCadreEl.removeAttribute('data-journal');
+    interpreteurCadreEl.removeAttribute('data-erreur');
+  }
   try {
     if (interpreteurCadreEl) interpreteurCadreEl.srcdoc = integrerPont(code);
   } catch (e) {
-    journalInterpreteur('✖ ' + (e && e.message), 'ligne-erreur');
-    if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'erreur';
+    if (interpreteurCadreEl) interpreteurCadreEl.dataset.erreur = (e && e.message) || String(e);
   }
 }
-function ouvrirInterpreteur(nom, code) {
+/* Vue double par défaut : code à gauche, rendu à droite, largeurs réglables
+   par la poignée #interpreteur-split (mémorisée dans localStorage).
+   Le bouton « Code » masque/affiche le volet code. */
+function basculerCodeInterpreteur(afficher) {
+  if (interpreteurCorpsEl) interpreteurCorpsEl.classList.toggle('sans-code', !afficher);
+  if (interpreteurToggleEl) interpreteurToggleEl.setAttribute('aria-pressed', afficher ? 'true' : 'false');
+}
+function appliquerLargeurCode(px) {
+  if (!interpreteurCorpsEl || !(px > 0)) return;
+  interpreteurCorpsEl.style.setProperty('--interp-largeur', Math.round(px) + 'px');
+}
+function largeurCodeEnregistree() {
+  try {
+    const v = Number(localStorage.getItem('athena_largeur_code'));
+    return isFinite(v) && v > 0 ? v : 0;
+  } catch (e) { return 0; }
+}
+function ajusterSplitALaLargeur() {
+  if (!interpreteurCorpsEl) return;
+  const dispo = Math.round(interpreteurCorpsEl.getBoundingClientRect().width);
+  if (!(dispo > 0)) return;
+  const actuelle = parseInt(interpreteurCorpsEl.style.getPropertyValue('--interp-largeur'), 10) || 0;
+  const max = Math.max(220, dispo - 330);
+  if (actuelle > max) appliquerLargeurCode(max);
+}
+/* Largeur du HUD = largeur réservée à la page (.page-demo.hud-ouvert en
+   padding-right) : une seule variable --hud-largeur pilote les deux. */
+function largeurHudEnregistree() {
+  try {
+    const v = Number(localStorage.getItem('athena_largeur_hud'));
+    return isFinite(v) && v > 0 ? v : 0;
+  } catch (e) { return 0; }
+}
+function appliquerLargeurHud(px) {
+  const min = 420;
+  const max = Math.max(min + 60, Math.round(window.innerWidth) - 600);
+  document.documentElement.style.setProperty('--hud-largeur', Math.round(Math.min(Math.max(px, min), max)) + 'px');
+  evaluerAdaptationHud();
+}
+/* Adaptation de la page : sous 920 px de contenu disponible (HUD large ou
+   écran moyen), la barre latérale se rétracte (hud-economie) pour rendre la
+   largeur à la conversation. Un clic sur la bascule pendant que le HUD est
+   ouvert = choix manuel : on ne ré-évalue plus jusqu'à la réouverture. */
+let adaptationHudManuelle = false;
+function evaluerAdaptationHud() {
+  const app = document.getElementById('app');
+  if (!app || !pageDemoEl) return;
+  const ouvert = pageDemoEl.classList.contains('hud-ouvert');
+  if (!ouvert || adaptationHudManuelle || app.classList.contains('sidebar-fermee')) {
+    app.classList.remove('hud-economie');
+    return;
+  }
+  const hud = interpreteurEl ? Math.round(interpreteurEl.getBoundingClientRect().width) : 0;
+  app.classList.toggle('hud-economie', (window.innerWidth - hud) < 920);
+}
+window.addEventListener('resize', evaluerAdaptationHud);
+/* HUD ancré à DROITE : la page garde la priorité — .page-demo réserve la
+   largeur du HUD en padding (conversation + barre latérale se réadaptent,
+   jamais recouvertes). Code masqué par défaut : le rendu occupe tout le
+   HUD, le bouton « Code » révèle l'éditeur (split interne réglable). */
+function ouvrirInterpreteur(nom, code, opts) {
   if (!interpreteurEl) return;
+  adaptationHudManuelle = false;
   if (interpreteurNomEl) interpreteurNomEl.textContent = nom || 'sans-titre.html';
   if (interpreteurCodeEl) interpreteurCodeEl.value = code == null ? '' : String(code);
+  basculerCodeInterpreteur(!!(opts && opts.code === true));
   basculerPanneauFichiers(false);
+  const largeurHud = largeurHudEnregistree();
+  if (largeurHud) appliquerLargeurHud(largeurHud);
+  else document.documentElement.style.removeProperty('--hud-largeur');
+  if (pageDemoEl) pageDemoEl.classList.add('hud-ouvert');
   interpreteurEl.hidden = false;
+  const largeur = largeurCodeEnregistree();
+  if (interpreteurCorpsEl) {
+    if (largeur) appliquerLargeurCode(largeur);
+    else interpreteurCorpsEl.style.removeProperty('--interp-largeur');
+  }
+  ajusterSplitALaLargeur();
+  evaluerAdaptationHud();
   executerInterpreteur();
 }
 function fermerInterpreteur() {
   if (!interpreteurEl || interpreteurEl.hidden) return;
   interpreteurEl.hidden = true;
   if (interpreteurCadreEl) interpreteurCadreEl.srcdoc = '';
+  if (pageDemoEl) pageDemoEl.classList.remove('hud-ouvert');
+  adaptationHudManuelle = false;
+  evaluerAdaptationHud();
 }
 window.addEventListener('message', (e) => {
   const d = e && e.data;
-  if (!d || d.source !== 'athena-interpreteur' || !interpreteurEl || interpreteurEl.hidden) return;
+  if (!d || d.source !== 'athena-interpreteur' || !interpreteurEl || interpreteurEl.hidden || !interpreteurCadreEl) return;
   if (d.type === 'console') {
-    journalInterpreteur((d.niveau || 'log') + ' : ' + d.texte, d.niveau === 'error' ? 'ligne-erreur' : '');
+    interpreteurCadreEl.dataset.journal = ((interpreteurCadreEl.dataset.journal || '') + ' ' + d.texte).slice(-800);
   } else if (d.type === 'erreur') {
-    journalInterpreteur('✖ ' + d.texte, 'ligne-erreur');
-    if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'erreur';
+    interpreteurCadreEl.dataset.erreur = d.texte;
   } else if (d.type === 'charge') {
-    if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'rendu ✓ · ' + d.elements + ' éléments';
-    journalInterpreteur('✔ rendu : ' + d.elements + ' éléments' + (d.titre ? ' · « ' + d.titre + ' »' : ''), 'ligne-ok');
+    interpreteurCadreEl.dataset.rendu = String(d.elements);
   }
 });
 if (listeFichiersEl) listeFichiersEl.addEventListener('click', () => basculerPanneauFichiers());
@@ -5417,9 +5489,65 @@ document.addEventListener('click', (e) => {
 });
 if (interpreteurExeEl) interpreteurExeEl.addEventListener('click', executerInterpreteur);
 if (interpreteurFermerEl) interpreteurFermerEl.addEventListener('click', fermerInterpreteur);
+if (interpreteurToggleEl) interpreteurToggleEl.addEventListener('click', () => {
+  const sansCode = !!interpreteurCorpsEl && interpreteurCorpsEl.classList.contains('sans-code');
+  basculerCodeInterpreteur(sansCode);
+});
+if (interpreteurSplitEl && interpreteurCorpsEl) {
+  let glisse = false;
+  let largeurGlissee = 0;
+  interpreteurSplitEl.addEventListener('pointerdown', (e) => {
+    if (interpreteurCorpsEl.classList.contains('sans-code')) return;
+    glisse = true;
+    interpreteurSplitEl.classList.add('drague');
+    try { interpreteurSplitEl.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
+    e.preventDefault();
+  });
+  interpreteurSplitEl.addEventListener('pointermove', (e) => {
+    if (!glisse) return;
+    const boite = interpreteurCorpsEl.getBoundingClientRect();
+    const min = 220, max = Math.round(boite.width) - 300;
+    largeurGlissee = Math.min(Math.max(e.clientX - boite.left, min), Math.max(min, max));
+    appliquerLargeurCode(largeurGlissee);
+  });
+  const finGlisse = () => {
+    if (!glisse) return;
+    glisse = false;
+    interpreteurSplitEl.classList.remove('drague');
+    if (largeurGlissee > 0) {
+      try { localStorage.setItem('athena_largeur_code', String(Math.round(largeurGlissee))); } catch (err) { /* stockage facultatif */ }
+    }
+  };
+  interpreteurSplitEl.addEventListener('pointerup', finGlisse);
+  interpreteurSplitEl.addEventListener('pointercancel', finGlisse);
+}
+if (interpreteurBordEl) {
+  let glisseHud = false;
+  interpreteurBordEl.addEventListener('pointerdown', (e) => {
+    glisseHud = true;
+    interpreteurBordEl.classList.add('drague');
+    try { interpreteurBordEl.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
+    e.preventDefault();
+  });
+  interpreteurBordEl.addEventListener('pointermove', (e) => {
+    if (!glisseHud) return;
+    appliquerLargeurHud(window.innerWidth - e.clientX);
+    ajusterSplitALaLargeur();
+  });
+  const finGlisseHud = () => {
+    if (!glisseHud) return;
+    glisseHud = false;
+    interpreteurBordEl.classList.remove('drague');
+    const w = Math.round(interpreteurEl.getBoundingClientRect().width);
+    if (w > 0) {
+      try { localStorage.setItem('athena_largeur_hud', String(w)); } catch (err) { /* stockage facultatif */ }
+    }
+  };
+  interpreteurBordEl.addEventListener('pointerup', finGlisseHud);
+  interpreteurBordEl.addEventListener('pointercancel', finGlisseHud);
+}
 let minuteurInterpreteur = null;
 if (interpreteurCodeEl) interpreteurCodeEl.addEventListener('input', () => {
-  if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'modifié';
   clearTimeout(minuteurInterpreteur);
   minuteurInterpreteur = setTimeout(executerInterpreteur, 900);
 });
@@ -5476,7 +5604,9 @@ function majBasculeSidebar() {
   basculeSidebarEl.setAttribute('aria-expanded', String(!fermee));
 }
 function basculerSidebar() {
+  if (pageDemoEl && pageDemoEl.classList.contains('hud-ouvert')) adaptationHudManuelle = true;
   enregistrerPreference('sidebarVisible', preferences.sidebarVisible === false);
+  evaluerAdaptationHud();
 }
 if (basculeSidebarEl) basculeSidebarEl.addEventListener('click', basculerSidebar);
 window.addEventListener('keydown', (e) => {

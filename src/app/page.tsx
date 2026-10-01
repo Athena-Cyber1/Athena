@@ -166,7 +166,6 @@ export default function Accueil() {
               >
                 <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5h7A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z" /></svg>
                 <span>Fichiers</span>
-                <span id="liste-fichiers-compteur" className="fichiers-compteur" hidden>0</span>
               </button>
               <div id="panneau-fichiers" className="panneau-fichiers" hidden role="menu" aria-label="Fichiers de la conversation"></div>
             </div>
@@ -248,34 +247,37 @@ export default function Accueil() {
           </form>
         </main>
 
-        {/* v20261001 : interpréteur HTML embarqué — code exécuté dans une
-            iframe sandboxée (aucun accès au stockage ni au DOM parent). */}
-        <div id="interpreteur" className="interpreteur" hidden role="dialog" aria-modal="true" aria-labelledby="interpreteur-nom">
+        {/* v20261001 : HUD interpréteur HTML ancré à DROITE — la page
+            (.page-demo) réserve sa largeur en padding-right : la conversation
+            et la barre latérale se réadaptent, jamais recouvertes. Code masqué
+            par défaut (rendu seul) ; iframe sandboxée à l'exécution. */}
+        <div id="interpreteur" className="interpreteur" hidden role="region" aria-labelledby="interpreteur-nom">
+          <div id="interpreteur-bord" className="interpreteur-bord" role="separator" aria-orientation="vertical" title="Glisser pour redimensionner le HUD"></div>
           <div className="interpreteur-tete">
             <span className="interpreteur-ico" aria-hidden="true"><svg className="ico" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4m8-8 4 4-4 4" /></svg></span>
             <span id="interpreteur-nom" className="interpreteur-nom">sans-titre.html</span>
-            <span id="interpreteur-statut" className="interpreteur-statut" aria-live="polite">prêt</span>
             <div className="interpreteur-actions">
+              <button id="interpreteur-toggle" className="btn-interpreteur" type="button" aria-pressed="true" title="Afficher ou masquer le code source">Code</button>
               <button id="interpreteur-exe" className="btn-interpreteur btn-interpreteur-plein" type="button" title="Exécuter le code (Ctrl+Entrée)">Exécuter</button>
               <button id="interpreteur-fermer" className="btn-interpreteur" type="button" title="Fermer l’interpréteur (Échap)" aria-label="Fermer l’interpréteur">
                 <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
               </button>
             </div>
           </div>
-          <div className="interpreteur-corps">
+          <div id="interpreteur-corps" className="interpreteur-corps">
             <textarea id="interpreteur-code" className="interpreteur-code" spellCheck={false} aria-label="Code HTML à interpréter"></textarea>
+            <div id="interpreteur-split" className="interpreteur-split" role="separator" aria-orientation="vertical" title="Glisser pour ajuster la largeur du code et du rendu"></div>
             <div className="interpreteur-apercu">
               <iframe id="interpreteur-cadre" className="interpreteur-cadre" title="Rendu de l’interpréteur" sandbox="allow-scripts allow-modals allow-popups"></iframe>
-              <div id="interpreteur-console" className="interpreteur-console" aria-live="polite"></div>
             </div>
           </div>
         </div>
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925cl" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925cm" strategy="beforeInteractive" />
       <Script src="/vendor/twemoji.min.js" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925cl" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925cm" strategy="beforeInteractive" />
     </div>
   );
 }

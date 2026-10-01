@@ -4801,16 +4801,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   width: 15px;
   height: 15px;
 }
-.fichiers-compteur {
-  min-width: 17px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--primaire);
-  color: #fff;
-  font-size: 0.66rem;
-  line-height: 17px;
-  text-align: center;
-}
 .panneau-fichiers {
   position: absolute;
   top: calc(100% + 6px);
@@ -4896,17 +4886,94 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   color: var(--primaire);
 }
 /* ————— Interpréteur HTML (code → iframe sandboxée) ————— */
+/* v20261001 : HUD ancré à DROITE — la PAGE se rétracte : .page-demo réserve
+   la largeur du HUD en padding-right (conversation + barre latérale se
+   réadaptent, JAMAIS recouvertes). Sans le code par défaut (rendu seul) ;
+   largeur réglable par #interpreteur-bord, mémorisée (--hud-largeur). */
+.page-demo {
+  transition: padding-right 0.18s ease;
+}
+.page-demo.hud-ouvert {
+  padding-right: var(--hud-largeur, 640px);
+}
+/* Espace tendu (HUD large / écran moyen) : la barre latérale se rétracte à
+   son tour pour rendre toute la largeur à la conversation (même mécanique
+   que sidebar-fermee, état géré par evaluerAdaptationHud()). */
+#app.hud-ouvert #app,
+.page-demo.hud-ouvert #app {
+  max-width: none;
+}
+#app.hud-economie .sidebar {
+  margin-left: calc(-1 * (var(--pos-sidebar-largeur) + 1px));
+  opacity: 0;
+  pointer-events: none;
+}
+/* Le HUD entre en coulissant pendant que la page se rétracte : mouvement
+   coordonné, on voit la page « poussée » par le HUD. */
+@keyframes hud-entree {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+/* Adaptation du composeur quand la colonne se réduit : le texte de mise en
+   garde tronque en une ligne (au lieu d'une colonne verticale) et les
+   réglages passent à la ligne proprement. */
+.composeur-pied {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.composeur-pied > span:first-child {
+  min-width: 0;
+  max-width: 68%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composeur-modele {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
 .interpreteur {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: var(--hud-largeur, 640px);
   z-index: 65;
   display: flex;
   flex-direction: column;
   background: var(--fond);
-  animation: fondu 0.15s ease;
+  border-left: 1px solid var(--bord-fort);
+  border-radius: var(--rayon-l) 0 0 var(--rayon-l);
+  box-shadow: var(--ombre);
+  animation: hud-entree 0.18s ease;
 }
 .interpreteur[hidden] {
   display: none;
+}
+.interpreteur-bord {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  width: 10px;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  transition: background 0.12s;
+}
+.interpreteur-bord::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.interpreteur-bord:hover,
+.interpreteur-bord.drague {
+  background: var(--primaire);
 }
 .interpreteur-tete {
   display: flex;
@@ -4914,6 +4981,7 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   gap: 10px;
   padding: 9px 14px;
   border-bottom: 1px solid var(--bord);
+  border-radius: var(--rayon-l) 0 0 0;
   background: var(--carte);
 }
 .interpreteur-ico .ico {
@@ -4928,10 +4996,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.interpreteur-statut {
-  font-size: 0.74rem;
-  color: var(--texte-doux);
-}
 .interpreteur-actions {
   margin-left: auto;
   display: flex;
@@ -4942,7 +5006,7 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 32px;
+  min-height: 34px;
   padding: 0 9px;
   border: 1px solid var(--bord);
   border-radius: var(--rayon-s);
@@ -4953,6 +5017,10 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   cursor: pointer;
 }
 .btn-interpreteur:hover {
+  border-color: var(--primaire);
+  color: var(--primaire);
+}
+.btn-interpreteur[aria-pressed="true"] {
   border-color: var(--primaire);
   color: var(--primaire);
 }
@@ -4974,18 +5042,44 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 .interpreteur-corps {
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
+  border-radius: 0 0 0 var(--rayon-l);
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1fr);
+  grid-template-columns: var(--interp-largeur, minmax(280px, 1fr)) 8px minmax(320px, 1fr);
+}
+.interpreteur-corps.sans-code {
+  grid-template-columns: 1fr;
+}
+.interpreteur-corps.sans-code .interpreteur-code,
+.interpreteur-corps.sans-code .interpreteur-split {
+  display: none;
+}
+.interpreteur-split {
+  position: relative;
+  background: var(--bord);
+  cursor: col-resize;
+  touch-action: none;
+  transition: background 0.12s;
+}
+.interpreteur-split::after {
+  content: "";
+  position: absolute;
+  inset: 0 -5px;
+}
+.interpreteur-split:hover,
+.interpreteur-split.drague {
+  background: var(--primaire);
 }
 .interpreteur-code {
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   resize: none;
   border: none;
   border-right: 1px solid var(--bord);
-  background: #161616;
-  color: #e9e9e9;
-  font: 0.8rem/1.5 ui-monospace, Consolas, monospace;
+  background: var(--code-fond);
+  color: #f2f2f2;
+  font: 0.8rem/1.5 var(--mono);
   padding: 12px 14px;
   tab-size: 2;
 }
@@ -4999,29 +5093,7 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   flex: 1 1 auto;
   width: 100%;
   border: 0;
-  background: #fff;
-}
-.interpreteur-console {
-  flex: 0 0 auto;
-  max-height: 148px;
-  overflow-y: auto;
-  background: #101010;
-  color: #cfcfcf;
-  font: 0.74rem/1.45 ui-monospace, Consolas, monospace;
-  padding: 8px 10px;
-  border-top: 1px solid var(--bord);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.interpreteur-console:empty::before {
-  content: "console : vide";
-  color: #777;
-}
-.interpreteur-console .ligne-erreur {
-  color: #ff7b72;
-}
-.interpreteur-console .ligne-ok {
-  color: #7ee787;
+  background: var(--carte);
 }
 .code-interpreter {
   position: absolute;
@@ -5032,24 +5104,43 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   gap: 5px;
   min-height: 24px;
   padding: 3px 9px;
-  border: 1px solid var(--bord);
+  border: 1px solid var(--primaire-fort);
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #f2f2f2;
+  background: var(--primaire);
+  color: var(--sur-primaire);
   font: inherit;
   font-size: 0.72rem;
+  font-family: var(--mono);
   cursor: pointer;
   transition: background 0.15s;
 }
 .code-interpreter:hover {
-  background: rgba(255, 255, 255, 0.24);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #fff;
+  background: var(--primaire-fort);
+  color: var(--sur-primaire);
 }
 @media (max-width: 760px) {
+  .page-demo.hud-ouvert {
+    padding-right: 0;
+  }
+  .interpreteur {
+    width: 100vw;
+    border-left: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .interpreteur-tete,
+  .interpreteur-corps {
+    border-radius: 0;
+  }
+  .interpreteur-bord {
+    display: none;
+  }
   .interpreteur-corps {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(150px, 38%) 1fr;
+  }
+  .interpreteur-split {
+    display: none;
   }
   .interpreteur-code {
     border-right: none;
@@ -5065,36 +5156,15 @@ html[data-theme="light"] .btn-fichiers:hover {
   background: var(--gris-fond);
 }
 html[data-theme="light"] .btn-interpreteur-plein {
-  background: #fff;
-  color: #1c1a1a;
-  border-color: var(--bord);
+  background: #171717;
+  color: #ffffff;
+  border-color: #171717;
 }
 html[data-theme="light"] .btn-interpreteur-plein:hover {
-  background: var(--gris-fond);
-}
-html[data-theme="light"] .interpreteur {
-  background: #f6f6f6;
+  background: #e4e4e4;
+  color: #111111;
+  border-color: transparent;
 }
 html[data-theme="light"] .interpreteur-code {
-  background: #fbfbfb;
-  color: #1c1a1a;
-}
-html[data-theme="light"] .interpreteur-console {
-  background: #f0f0f0;
-  color: #333;
-}
-html[data-theme="light"] .interpreteur-console .ligne-erreur {
-  color: #b3261e;
-}
-html[data-theme="light"] .interpreteur-console .ligne-ok {
-  color: #1a7f37;
-}
-html[data-theme="light"] .code-interpreter {
-  background: rgba(0, 0, 0, 0.06);
-  color: #1c1a1a;
-  border-color: var(--bord);
-}
-html[data-theme="light"] .code-interpreter:hover {
-  background: rgba(0, 0, 0, 0.12);
-  color: #1c1a1a;
+  color: #171717;
 }

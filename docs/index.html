@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925cl" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925cm" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -192,7 +192,6 @@
             >
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5h7A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
               <span>Fichiers</span>
-              <span id="liste-fichiers-compteur" class="fichiers-compteur" hidden>0</span>
             </button>
             <div id="panneau-fichiers" class="panneau-fichiers" hidden role="menu" aria-label="Fichiers de la conversation"></div>
           </div>
@@ -274,25 +273,28 @@
         </form>
       </main>
 
-      <!-- v20261001 : interpréteur HTML embarqué — le code est exécuté dans
-           une iframe sandboxée (aucun accès au stockage ni au DOM parent). -->
-      <div id="interpreteur" class="interpreteur" hidden role="dialog" aria-modal="true" aria-labelledby="interpreteur-nom">
+      <!-- v20261001 : HUD interpréteur HTML ancré à DROITE — la page
+           (.page-demo) réserve sa largeur en padding-right : la conversation
+           et la barre latérale se réadaptent, jamais recouvertes. Code masqué
+           par défaut (rendu seul) ; iframe sandboxée à l'exécution. -->
+      <div id="interpreteur" class="interpreteur" hidden role="region" aria-labelledby="interpreteur-nom">
+        <div id="interpreteur-bord" class="interpreteur-bord" role="separator" aria-orientation="vertical" title="Glisser pour redimensionner le HUD"></div>
         <div class="interpreteur-tete">
           <span class="interpreteur-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4m8-8 4 4-4 4"/></svg></span>
           <span id="interpreteur-nom" class="interpreteur-nom">sans-titre.html</span>
-          <span id="interpreteur-statut" class="interpreteur-statut" aria-live="polite">prêt</span>
           <div class="interpreteur-actions">
+            <button id="interpreteur-toggle" class="btn-interpreteur" type="button" aria-pressed="true" title="Afficher ou masquer le code source">Code</button>
             <button id="interpreteur-exe" class="btn-interpreteur btn-interpreteur-plein" type="button" title="Exécuter le code (Ctrl+Entrée)">Exécuter</button>
             <button id="interpreteur-fermer" class="btn-interpreteur" type="button" title="Fermer l’interpréteur (Échap)" aria-label="Fermer l’interpréteur">
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
             </button>
           </div>
         </div>
-        <div class="interpreteur-corps">
+        <div id="interpreteur-corps" class="interpreteur-corps">
           <textarea id="interpreteur-code" class="interpreteur-code" spellcheck="false" aria-label="Code HTML à interpréter"></textarea>
+          <div id="interpreteur-split" class="interpreteur-split" role="separator" aria-orientation="vertical" title="Glisser pour ajuster la largeur du code et du rendu"></div>
           <div class="interpreteur-apercu">
             <iframe id="interpreteur-cadre" class="interpreteur-cadre" title="Rendu de l’interpréteur" sandbox="allow-scripts allow-modals allow-popups"></iframe>
-            <div id="interpreteur-console" class="interpreteur-console" aria-live="polite"></div>
           </div>
         </div>
       </div>
@@ -301,11 +303,11 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260925cl"></script>
-    <script src="./api-shim.js?v=20260925cl"></script>
+    <script src="./keys.js?v=20260925cm"></script>
+    <script src="./api-shim.js?v=20260925cm"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20260925cl"></script>
+    <script src="./chat-demo.js?v=20260925cm"></script>
   </div>
 </body>
 </html>
