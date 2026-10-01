@@ -1105,7 +1105,15 @@
         || (entry && entry.providerKey === 'nvidia');
       var efFlux = 'low';
       if (raisonneFlux) { try { efFlux = effortNvidia(entry); } catch (e) {} }
-      var delaiPremier = raisonneFlux ? 20000 : 10000;
+      /* v20261001 (glm-5.3) : le premier octet arrive APRÈS le raisonnement —
+         glm-5.3 « max » met ~40-46 s avant le premier jeton (mesuré) : un
+         plafond fixe de 20 s coupait le flux au démarrage. Échelle par
+         effort, alignée sur delaiInactivite. */
+      var delaiPremier = !raisonneFlux ? 10000
+        : efFlux === 'max' ? 150000
+        : efFlux === 'high' ? 90000
+        : efFlux === 'medium' ? 45000
+        : 20000;
       var delaiInactivite = !raisonneFlux ? 40000 : efFlux === 'max' ? 150000 : efFlux === 'high' ? 90000 : 60000;
       /* v20260926d (kimi) : sans [DONE] ni finish_reason, une fin de flux
          propre reste une COUPURE — le partiel ne passe pas pour du complet. */
@@ -1260,9 +1268,21 @@
         enTetes.Accept = 'text/event-stream';
       }
       /* v20260926f (lags) : watchdog d'EN-TÊTES — si la réponse ne DÉMARRE
-         pas sous 30 s (connexion trou noir, proxy bloqué, modèle froid),
-         on abandonne ce modèle au lieu d'attendre la borne totale. Le TTFB
-         interne ne couvre que le corps SSE une fois les en-têtes reçus. */
+         pas, on abandonne ce modèle au lieu d'attendre la borne totale. Le
+         TTFB interne ne couvre que le corps SSE une fois les en-têtes reçus.
+         v20261001 (glm-5.3) : 30 s fixe était trop court — nvidia raisonne
+         AVANT le premier octet (glm-5.3 « max » ~40-46 s mesuré) : l'échelle
+         suit l'effort. Le Worker CF coupe de toute façon à ~100-125 s (524),
+         donc 150 s en « max » n'allonge jamais réellement l'attente. */
+      var raisonneTete = (entry && Array.isArray(entry.efforts) && entry.efforts.length > 0)
+        || (entry && entry.providerKey === 'nvidia');
+      var efTete = 'low';
+      if (raisonneTete) { try { efTete = effortNvidia(entry); } catch (e) {} }
+      var delaiTete = !raisonneTete ? 30000
+        : efTete === 'max' ? 150000
+        : efTete === 'high' ? 90000
+        : efTete === 'medium' ? 45000
+        : 30000;
       var ctrlTete = null;
       var courseTete = null;
       var teteExpiree = false;
@@ -1276,7 +1296,7 @@
         courseTete = setTimeout(function () {
           teteExpiree = true;
           try { ctrlTete.abort(); } catch (_) {}
-        }, 30000);
+        }, delaiTete);
         signalEnvoi = ctrlTete.signal;
       }
       return realFetch(base + '/chat/completions', {
@@ -1300,7 +1320,7 @@
         /* En-têtes jamais arrivées et pas un abort utilisateur : timeout
            compté pour le saut de provider (sinon on attendrait la borne). */
         if (teteExpiree && (!signal || !signal.aborted)) {
-          throw new Error('timeout 30000 ms (en-têtes jamais reçus)');
+          throw new Error('timeout ' + delaiTete + ' ms (en-têtes jamais reçus)');
         }
         throw eErr;
       });
