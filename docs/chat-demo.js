@@ -48,9 +48,6 @@
    Thème : rouge #E02600 / encre #1C1A1A sur #F0F0F0
    ============================================================ */
 
-const ROUGE = '#E02600';
-const ENCRE = '#1C1A1A';
-
 const $ = (id) => document.getElementById(id);
 /* v9.4 — sécurité (audit) : les hooks window.__atelier* étaient exposés en
    prod (surface d'attaque + empreinte). Ils ne sont publiés QUE avec ?qa
@@ -861,6 +858,12 @@ if (rechercheConversationsEl) {
 publierHooks('__atelierRecherche', { filtrer: filtrerConversations, extrait: extraitConversation }); /* hook QA — non utilisé par l'interface */
 function ouvrirConversation(id) {
   idConversation = id;
+  /* v20261001 : l'interpréteur HUD et le panneau fichiers dépendent de LA
+     conversation affichée — toute création/changement de conversation les
+     ferme (sinon le HUD persiste avec le code de l'ancienne discussion). */
+  fermerInterpreteur();
+  fermerHudFichier();
+  basculerPanneauFichiers(false);
   /* v20260926e (kimi) : la voix ne continue pas sur une conversation
      détruite/reaffichée. */
   try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch {}
@@ -2451,6 +2454,12 @@ function largeurHudFichier() {
   } catch {}
   return LARGUEUR_HUD_DEFAUT;
 }
+/* La page se rétracte à la largeur réelle du HUD fichier (comme pour
+   l'interprèteur) - l'aperçu recouvre plus rien : il pousse l'UI. */
+function appliquerLargeurHudFichier(px) {
+  document.documentElement.style.setProperty('--hudf-largeur', Math.round(px) + 'px');
+  evaluerAdaptationHud();
+}
 function hudFichierRacine() {
   let hud = document.getElementById('hud-fichier');
   if (hud) return hud;
@@ -2505,6 +2514,7 @@ function hudFichierRacine() {
     if (!enCours) return;
     const w = Math.min(960, Math.max(300, window.innerWidth - e.clientX));
     hud.style.width = w + 'px';
+    appliquerLargeurHudFichier(hud.getBoundingClientRect().width || w);
   };
   const finir = () => {
     if (!enCours) return;
@@ -2522,6 +2532,7 @@ function hudFichierRacine() {
   poignee.addEventListener('pointercancel', finir);
   poignee.addEventListener('dblclick', () => {
     hud.style.width = LARGUEUR_HUD_DEFAUT + 'px';
+    appliquerLargeurHudFichier(LARGUEUR_HUD_DEFAUT);
     try { localStorage.removeItem(CLE_LARGEUR_HUD); } catch {}
   });
   if (!window.__hudFichierEchap) {
@@ -2599,7 +2610,12 @@ function ouvrirHudFichier(chemin, contenu, carte) {
   btnEdit.textContent = 'Modifier';
   btnEdit.onclick = () => basculerEditionHud();
   if (!hud.style.width) hud.style.width = largeurHudFichier() + 'px';
+  /* Exclusion stricte avec l'interprèteur : les deux HUD sont à droite, ils
+     ne doivent jamais coexister (superposition du rendu et du code). */
+  fermerInterpreteur();
   hud.hidden = false;
+  if (pageDemoEl) pageDemoEl.classList.add('hudf-ouvert');
+  appliquerLargeurHudFichier(hud.getBoundingClientRect().width || largeurHudFichier());
   document.querySelectorAll('.file-bloc.ouvert').forEach((c) => c.classList.remove('ouvert'));
   if (carte) carte.classList.add('ouvert');
 }
@@ -2660,7 +2676,9 @@ function basculerEditionHud() {
 function fermerHudFichier() {
   const hud = document.getElementById('hud-fichier');
   if (hud) hud.hidden = true;
+  if (pageDemoEl) pageDemoEl.classList.remove('hudf-ouvert');
   document.querySelectorAll('.file-bloc.ouvert').forEach((c) => c.classList.remove('ouvert'));
+  evaluerAdaptationHud();
 }
 function telechargerFichier(chemin, texte, bouton) {
   try {
@@ -3071,24 +3089,6 @@ function corpsPourModele(d, repete) {
   }
   corps.push('</resultat_commande>');
   return corps.join('\n');
-}
-
-  /* v1.2 (purge du raisonnement) : le raisonnement du modèle n'est PAS
-     conservé dans l'historique. Motif mesuré : sur une simple question, le
-     panneau affichait « We need answer in French… » puis une séquence
-     « 但读者 » (chinois) — du texte de travail interne, dans une autre langue,
-     et il COMPARAÎT aux tours suivants : le modèle se met à brasser des
-     mélanges de langues de plus en plus. On n'envoie donc que la RÉPONSE
-     finale, jamais le brouillon, et on le dit au modèle. */
-function raisonnerPropre(bulleEl) {
-  if (!bulleEl) return '';
-  try {
-    const copie = bulleEl.cloneNode(true);
-    // tout le monde sauf le corps de la réponse
-    copie.querySelectorAll('details.raisonnement, .coupe-badge, .voie-modele, .activite, .activity-group')
-      .forEach((n) => { try { n.remove(); } catch (_) {} });
-    return String(copie.textContent || '').replace(/\s+/g, ' ').trim();
-  } catch (_) { return ''; }
 }
 
 /* v1.2 (dernier maillon) : le modèle peut terminer sur une PROMESSE au lieu
@@ -5369,6 +5369,141 @@ function integrerPont(html) {
   if (doctype) { const i = doctype.index + doctype[0].length; return code.slice(0, i) + PONT_INTERPRETEUR + code.slice(i); }
   return PONT_INTERPRETEUR + code;
 }
+/* v20261001 : liens du fichier HTML vers LES AUTRES fichiers de la
+   conversation. Les cibles (CSS/JS/SVG/images) sont encodées en data: URL
+   pour tourner dans l'iframe sandboxée (pas de same-origin → fiable), et
+   leurs propres url()/imports sont réécrits en récursion bornée. */
+const MIME_LIE = {
+  css: 'text/css', js: 'text/javascript', mjs: 'text/javascript',
+  json: 'application/json', svg: 'image/svg+xml', png: 'image/png',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  ico: 'image/x-icon', html: 'text/html', htm: 'text/html',
+  txt: 'text/plain', md: 'text/plain', xml: 'application/xml',
+  wasm: 'application/wasm'
+};
+const BINAIRES_LIE = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'wasm'];
+function normaliserChemin(p) {
+  const sortie = [];
+  for (const part of String(p || '').replace(/\\/g, '/').split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') { sortie.pop(); continue; }
+    sortie.push(part);
+  }
+  return sortie.join('/');
+}
+function indexFichiersHud(cheminCourant) {
+  const index = new Map();
+  for (const f of fichiersDeLaConversation()) {
+    if (f.contenu == null) continue;
+    const n = normaliserChemin(f.chemin || f.nom);
+    if (n && !index.has(n)) index.set(n, f.contenu);
+  }
+  return { index, dossier: normaliserChemin(cheminCourant).split('/').slice(0, -1).join('/') };
+}
+function resoudreLienHud(ref, ctx) {
+  const r = String(ref || '').trim();
+  if (!r || /^(https?:|data:|blob:|mailto:|javascript:|about:|vbscript:|tel:|#)/i.test(r)) return null;
+  const i = r.search(/[?#]/);
+  const suffixe = i >= 0 && r.indexOf('#', i) >= 0 ? r.slice(r.indexOf('#', i)) : '';
+  const chemin = i >= 0 ? r.slice(0, i) : r;
+  if (!chemin) return null;
+  const candidats = [];
+  if (chemin.charAt(0) === '/') candidats.push(normaliserChemin(chemin.slice(1)));
+  else {
+    candidats.push(normaliserChemin(ctx.dossier ? ctx.dossier + '/' + chemin : chemin));
+    candidats.push(normaliserChemin(chemin));
+  }
+  for (const c of candidats) if (c && ctx.index.has(c)) return { contenu: ctx.index.get(c), chemin: c, suffixe };
+  return null;
+}
+function dataUrlPour(chemin, contenu) {
+  const ext = (chemin.split('.').pop() || '').toLowerCase();
+  const mime = MIME_LIE[ext] || 'application/octet-stream';
+  const texte = String(contenu);
+  if (BINAIRES_LIE.indexOf(ext) >= 0) {
+    const brut = texte.replace(/\s+/g, '');
+    if (brut.length > 64 && /^[A-Za-z0-9+/]+=*$/.test(brut)) return 'data:' + mime + ';base64,' + brut;
+  }
+  return 'data:' + mime + ';charset=utf-8,' + encodeURIComponent(texte);
+}
+function reecrireCssLien(css, ctx, niveau) {
+  if (niveau > 3) return String(css);
+  let out = String(css);
+  out = out.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (m, q, ref) => {
+    const l = resoudreLienHud(ref, ctx);
+    return l ? 'url("' + dataUrlPour(l.chemin, l.contenu) + l.suffixe + '")' : m;
+  });
+  out = out.replace(/@import\s+(['"])([^'"]+)\1/gi, (m, q, ref) => {
+    const l = resoudreLienHud(ref, ctx);
+    if (!l) return m;
+    const c = /\.css$/i.test(l.chemin) ? reecrireCssLien(l.contenu, ctx, niveau + 1) : l.contenu;
+    return '@import url("' + dataUrlPour(l.chemin, c) + l.suffixe + '")';
+  });
+  return out;
+}
+function reecrireSpecsJs(js, ctx, niveau) {
+  if (niveau > 2) return String(js);
+  const resoudre = (ref) => {
+    const l = resoudreLienHud(ref, ctx);
+    if (!l) return null;
+    const c = /\.m?js$/i.test(l.chemin) ? reecrireSpecsJs(l.contenu, ctx, niveau + 1) : l.contenu;
+    return dataUrlPour(l.chemin, c) + l.suffixe;
+  };
+  let out = String(js);
+  out = out.replace(/(\bfrom\s+|\bimport\s+|\bimport\(\s*)(["'])([^"']+)\2/g, (m, tete, q, ref) => {
+    const d = resoudre(ref);
+    return d ? tete + q + d + q : m;
+  });
+  out = out.replace(/\bexport\s+([\w*$\s{},]*?)\bfrom\s+(["'])([^"']+)\2/g, (m, mid, q, ref) => {
+    const d = resoudre(ref);
+    return d ? 'export ' + mid + 'from ' + q + d + q : m;
+  });
+  return out;
+}
+function integrerLiensHud(code, cheminCourant) {
+  const brut = String(code == null ? '' : code);
+  const ctx = indexFichiersHud(cheminCourant || 'index.html');
+  if (!ctx.index.size) return brut;
+  if (/\.svg$/i.test(cheminCourant || '') && /^\s*<svg[\s>]/i.test(brut)) return brut;
+  let doc;
+  try { doc = new DOMParser().parseFromString(brut, 'text/html'); } catch (e) { return brut; }
+  if (!doc || !doc.documentElement) return brut;
+  const cible = (el, attr) => {
+    const l = resoudreLienHud(el.getAttribute(attr), ctx);
+    if (!l) return;
+    let c = l.contenu;
+    const estCss = /\.css$/i.test(l.chemin);
+    const estJs = /\.m?js$/i.test(l.chemin);
+    if (estCss) c = reecrireCssLien(c, ctx, 0);
+    if (estJs) {
+      const estModule = (el.tagName === 'SCRIPT' && (el.getAttribute('type') || '').toLowerCase() === 'module') || /\.mjs$/i.test(l.chemin);
+      if (estModule) c = reecrireSpecsJs(c, ctx, 0);
+    }
+    el.setAttribute(attr, dataUrlPour(l.chemin, c) + l.suffixe);
+  };
+  const srcset = (el) => {
+    const v = el.getAttribute('srcset');
+    if (!v) return;
+    const out = v.split(',').map((parte) => {
+      const t = parte.trim();
+      if (!t) return '';
+      const es = t.search(/\s/);
+      const l = resoudreLienHud(es < 0 ? t : t.slice(0, es), ctx);
+      return l ? dataUrlPour(l.chemin, l.contenu) + (es < 0 ? '' : t.slice(es)) : t;
+    }).filter(Boolean).join(', ');
+    el.setAttribute('srcset', out);
+  };
+  doc.querySelectorAll('link[href], script[src], img[src], source[src], video[src], audio[src], track[src], embed[src], object[data], use[href], image[href], input[type="image"][src]')
+    .forEach((el) => cible(el, el.hasAttribute('src') ? 'src' : el.hasAttribute('href') ? 'href' : 'data'));
+  doc.querySelectorAll('img[srcset], source[srcset]').forEach(srcset);
+  doc.querySelectorAll('style').forEach((el) => { el.textContent = reecrireCssLien(el.textContent, ctx, 0); });
+  doc.querySelectorAll('script:not([src])').forEach((el) => {
+    if ((el.getAttribute('type') || '').toLowerCase() === 'module') el.textContent = reecrireSpecsJs(el.textContent, ctx, 0);
+  });
+  doc.querySelectorAll('[style*="url"]').forEach((el) => { el.setAttribute('style', reecrireCssLien(el.getAttribute('style') || '', ctx, 0)); });
+  const doctype = doc.doctype ? '<!DOCTYPE ' + doc.doctype.name + '>' : '';
+  return doctype + doc.documentElement.outerHTML;
+}
 function executerInterpreteur() {
   if (!interpreteurEl || interpreteurEl.hidden) return;
   const code = interpreteurCodeEl ? interpreteurCodeEl.value : '';
@@ -5378,7 +5513,8 @@ function executerInterpreteur() {
     interpreteurCadreEl.removeAttribute('data-erreur');
   }
   try {
-    if (interpreteurCadreEl) interpreteurCadreEl.srcdoc = integrerPont(code);
+    const nom = interpreteurNomEl && interpreteurNomEl.textContent ? interpreteurNomEl.textContent : 'index.html';
+    if (interpreteurCadreEl) interpreteurCadreEl.srcdoc = integrerPont(integrerLiensHud(code, nom));
   } catch (e) {
     if (interpreteurCadreEl) interpreteurCadreEl.dataset.erreur = (e && e.message) || String(e);
   }
@@ -5389,6 +5525,7 @@ function executerInterpreteur() {
 function basculerCodeInterpreteur(afficher) {
   if (interpreteurCorpsEl) interpreteurCorpsEl.classList.toggle('sans-code', !afficher);
   if (interpreteurToggleEl) interpreteurToggleEl.setAttribute('aria-pressed', afficher ? 'true' : 'false');
+  ajusterSplitALaLargeur();
 }
 function appliquerLargeurCode(px) {
   if (!interpreteurCorpsEl || !(px > 0)) return;
@@ -5404,6 +5541,11 @@ function ajusterSplitALaLargeur() {
   if (!interpreteurCorpsEl) return;
   const dispo = Math.round(interpreteurCorpsEl.getBoundingClientRect().width);
   if (!(dispo > 0)) return;
+  /* Sous 560 px (code 220 + poignée 8 + rendu 320 minimum) le double volet
+     déborde : on empile (classe .etroit) au lieu de rogner le rendu. */
+  const etroit = dispo < 560;
+  interpreteurCorpsEl.classList.toggle('etroit', etroit);
+  if (etroit) return;
   const actuelle = parseInt(interpreteurCorpsEl.style.getPropertyValue('--interp-largeur'), 10) || 0;
   const max = Math.max(220, dispo - 330);
   if (actuelle > max) appliquerLargeurCode(max);
@@ -5430,15 +5572,25 @@ let adaptationHudManuelle = false;
 function evaluerAdaptationHud() {
   const app = document.getElementById('app');
   if (!app || !pageDemoEl) return;
-  const ouvert = pageDemoEl.classList.contains('hud-ouvert');
-  if (!ouvert || adaptationHudManuelle || app.classList.contains('sidebar-fermee')) {
+  /* Les deux HUD de droite (interprèteur + aperçu code) partagent la
+     mécanique : l'un ou l'autre rétracte la page et la barre latérale. */
+  const ouvertInterp = !!interpreteurEl && !interpreteurEl.hidden;
+  const hudFichier = document.getElementById('hud-fichier');
+  const ouvertHudf = !!hudFichier && !hudFichier.hidden;
+  if ((!ouvertInterp && !ouvertHudf) || adaptationHudManuelle || app.classList.contains('sidebar-fermee')) {
     app.classList.remove('hud-economie');
     return;
   }
-  const hud = interpreteurEl ? Math.round(interpreteurEl.getBoundingClientRect().width) : 0;
-  app.classList.toggle('hud-economie', (window.innerWidth - hud) < 920);
+  const ouvert = ouvertInterp ? interpreteurEl : hudFichier;
+  const hud = Math.round(ouvert.getBoundingClientRect().width);
+  app.classList.toggle('hud-economie', hud > 0 && (window.innerWidth - hud) < 920);
 }
 window.addEventListener('resize', evaluerAdaptationHud);
+window.addEventListener('resize', () => ajusterSplitALaLargeur());
+window.addEventListener('resize', () => {
+  const h = document.getElementById('hud-fichier');
+  if (h && !h.hidden) appliquerLargeurHudFichier(h.getBoundingClientRect().width);
+});
 /* HUD ancré à DROITE : la page garde la priorité — .page-demo réserve la
    largeur du HUD en padding (conversation + barre latérale se réadaptent,
    jamais recouvertes). Code masqué par défaut : le rendu occupe tout le
@@ -5450,6 +5602,8 @@ function ouvrirInterpreteur(nom, code, opts) {
   if (interpreteurCodeEl) interpreteurCodeEl.value = code == null ? '' : String(code);
   basculerCodeInterpreteur(!!(opts && opts.code === true));
   basculerPanneauFichiers(false);
+  /* Exclusion stricte : jamais le rendu et l'aperçu de code côte à côte. */
+  fermerHudFichier();
   const largeurHud = largeurHudEnregistree();
   if (largeurHud) appliquerLargeurHud(largeurHud);
   else document.documentElement.style.removeProperty('--hud-largeur');

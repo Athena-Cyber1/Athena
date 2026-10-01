@@ -4208,6 +4208,9 @@ header.chat-tete {
     max-width: none;
     border-left: none;
   }
+  .page-demo.hudf-ouvert {
+    padding-right: 0;
+  }
   .hudf-poignee {
     display: none;
   }
@@ -4896,6 +4899,15 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 .page-demo.hud-ouvert {
   padding-right: var(--hud-largeur, 640px);
 }
+/* Même mécanique pour le HUD d'aperçu de code (fichiers non-HTML) : la page
+   se rétracte à sa largeur au lieu d'être recouverte (« il ne s'adapte pas
+   à toute l'UI »). */
+.page-demo.hudf-ouvert {
+  padding-right: var(--hudf-largeur, 480px);
+}
+.page-demo.hudf-ouvert #app {
+  max-width: none;
+}
 /* Espace tendu (HUD large / écran moyen) : la barre latérale se rétracte à
    son tour pour rendre toute la largeur à la conversation (même mécanique
    que sidebar-fermee, état géré par evaluerAdaptationHud()). */
@@ -5049,6 +5061,10 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 }
 .interpreteur-corps.sans-code {
   grid-template-columns: 1fr;
+  /* force la PLEINE hauteur : sinon la rangée (.etroit / media ≤760 =
+     minmax(150px,38%) 1fr) restait vide sous le code masqué et le rendu
+     n'occupait que 38-40 % de la hauteur (« le rendu ne marche pas »). */
+  grid-template-rows: 1fr;
 }
 .interpreteur-corps.sans-code .interpreteur-code,
 .interpreteur-corps.sans-code .interpreteur-split {
@@ -5094,6 +5110,22 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   width: 100%;
   border: 0;
   background: var(--carte);
+}
+/* HUD étroit (glissé sous 560 px) : le split code|rendu passe en PILE -
+   code au-dessus, rendu dessous, poignée masquée — comme en mobile, mais
+   déclenché par la largeur réelle du HUD, pas du viewport. */
+.interpreteur-corps.etroit {
+  grid-template-columns: 1fr;
+}
+.interpreteur-corps.etroit:not(.sans-code) {
+  grid-template-rows: minmax(150px, 40%) 1fr;
+}
+.interpreteur-corps.etroit .interpreteur-split {
+  display: none;
+}
+.interpreteur-corps.etroit .interpreteur-code {
+  border-right: none;
+  border-bottom: 1px solid var(--bord);
 }
 .code-interpreter {
   position: absolute;

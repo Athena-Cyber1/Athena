@@ -120,7 +120,7 @@
        soit une coupure en pleine phrase. Le plafond de sortie est désormais
        délégué au provider — on ne garde que l'effort de raisonnement, dont la
        valeur est un VRAI réglage de puissance (et non une troncature). */
-    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', reponseSansRaisonnement: true, efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -190,11 +190,6 @@
       status: status || 200,
       headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
     });
-  }
-
-  function erreurs(obj) {
-    var msg = (obj && obj.erreur) || 'Erreur inconnue.';
-    return msg;
   }
 
   /* Texte exposé à l'UI : humaniserErreur() n'affiche le détail QUE si la
@@ -310,7 +305,7 @@
       if (!up && p && !p.free) {
         label = m.provider + ' · ' + ((!aCle && !p.viaProxy) ? 'clé manquante' : 'proxy non déployé');
       }
-      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null, reponseSansRaisonnement: m.reponseSansRaisonnement === true };
+      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
