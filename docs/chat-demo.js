@@ -59,6 +59,13 @@ const MODE_QA = new URLSearchParams(location.search).has('qa');
 function publierHooks(nom, obj) { if (MODE_QA) window[nom] = obj; }
 const msgsEl = $('msgs'), saisieEl = $('saisie'), btnEl = $('btn');
 const titreConversationEl = $('titre-conversation'), partagerEl = $('partager');
+/* v20261001 : liste des fichiers de la conversation (bouton à gauche de
+   « Partager ») + interpréteur HTML embarqué (iframe sandboxée). */
+const listeFichiersEl = $('liste-fichiers'), panneauFichiersEl = $('panneau-fichiers'), listeFichiersCompteurEl = $('liste-fichiers-compteur');
+const zoneFichiersEl = document.querySelector('.zone-fichiers');
+const interpreteurEl = $('interpreteur'), interpreteurNomEl = $('interpreteur-nom'), interpreteurStatutEl = $('interpreteur-statut');
+const interpreteurCodeEl = $('interpreteur-code'), interpreteurCadreEl = $('interpreteur-cadre'), interpreteurConsoleEl = $('interpreteur-console');
+const interpreteurExeEl = $('interpreteur-exe'), interpreteurFermerEl = $('interpreteur-fermer');
 const saisieMirrorEl = $('saisie-mirror'), modelePiedEl = $('modele-pied');
 const navProjetsEl = $('nav-projets'), navArtefactsEl = $('nav-artefacts');
 const navCodeEl = $('nav-code'), navPersonnaliserEl = $('nav-personnaliser');
@@ -2245,6 +2252,20 @@ function creerBlocCode(langage, code) {
       if (d) enchainerApresExec(c, [d], codeEl.closest ? (codeEl.closest('.bubble') || null) : null);
     });
     pre.appendChild(executer);
+  }
+  /* v20261001 : HTML/SVG → bouton « Interpréter » (rendu immédiat dans
+     l'interpréteur, iframe sandboxée + console des erreurs). */
+  if (/^(html?|xhtml|svg)$/i.test((langage || '').trim())) {
+    const interp = document.createElement('button');
+    interp.type = 'button';
+    interp.className = 'code-interpreter';
+    interp.title = 'Interpréter ce code dans l’aperçu intégré';
+    interp.textContent = 'Interpréter';
+    interp.addEventListener('click', () => {
+      const ext = /^svg$/i.test((langage || '').trim()) ? 'svg' : 'html';
+      ouvrirInterpreteur('code.' + ext, code);
+    });
+    pre.appendChild(interp);
   }
   return pre;
 }
@@ -5226,6 +5247,192 @@ ouvrirCompteEl.addEventListener('click', () => {
   const estOuvert = !menuCompteEl.hidden;
   menuCompteEl.hidden = estOuvert;
   ouvrirCompteEl.setAttribute('aria-expanded', String(!estOuvert));
+});
+/* ---------- v20261001 : fichiers de la conversation + interpréteur HTML ----------
+   Bouton « Fichiers » en haut à droite (à gauche de « Partager ») : liste les
+   cartes athena-file de la conversation + les pièces jointes analysées. Un
+   clic sur un .html/.svg ouvre l'interpréteur : le code tourne dans une iframe
+   sandboxée (allow-scripts, sans allow-same-origin → aucun accès au stockage
+   ni au DOM parent) avec relais console/erreurs via postMessage. */
+function fichiersDeLaConversation() {
+  const fichiers = [];
+  const vus = new Set();
+  document.querySelectorAll('#msgs .file-bloc').forEach((carte) => {
+    const chemin = carte.dataset.chemin || 'fichier.txt';
+    if (vus.has('c:' + chemin)) return;
+    vus.add('c:' + chemin);
+    const contenu = carte._contenuComplet != null ? String(carte._contenuComplet) : '';
+    fichiers.push({ nom: nomBaseFichier(chemin), chemin, contenu, carte: carte, attache: null, meta: '' });
+  });
+  document.querySelectorAll('#msgs .fichier-joint-item').forEach((item) => {
+    const n = item.querySelector('.fichier-joint-nom');
+    const nom = (n && n.textContent) || 'Fichier sans nom';
+    if (vus.has('a:' + nom)) return;
+    vus.add('a:' + nom);
+    const m = item.querySelector('.fichier-joint-meta');
+    fichiers.push({ nom: nom, chemin: nom, contenu: null, carte: null, attache: item, meta: m ? m.textContent : 'analysé' });
+  });
+  return fichiers;
+}
+function rendrePanneauFichiers() {
+  if (!panneauFichiersEl) return;
+  panneauFichiersEl.textContent = '';
+  const fichiers = fichiersDeLaConversation();
+  if (listeFichiersCompteurEl) {
+    listeFichiersCompteurEl.hidden = !fichiers.length;
+    listeFichiersCompteurEl.textContent = String(fichiers.length);
+  }
+  const tete = document.createElement('div');
+  tete.className = 'panneau-fichiers-tete';
+  const titre = document.createElement('span');
+  titre.textContent = 'Fichiers de la conversation';
+  const nb = document.createElement('span');
+  nb.textContent = fichiers.length ? fichiers.length + ' fichier' + (fichiers.length > 1 ? 's' : '') : '';
+  tete.append(titre, nb);
+  panneauFichiersEl.appendChild(tete);
+  if (!fichiers.length) {
+    const vide = document.createElement('p');
+    vide.className = 'panneau-fichiers-vide';
+    vide.textContent = 'Aucun fichier dans cette conversation pour l’instant.';
+    panneauFichiersEl.appendChild(vide);
+    return;
+  }
+  fichiers.forEach((f) => {
+    const ext = (f.nom.split('.').pop() || '').toLowerCase();
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'panneau-fichier';
+    btn.setAttribute('role', 'menuitem');
+    btn.title = f.contenu != null ? f.chemin : f.chemin + ' — pièce jointe analysée';
+    btn.appendChild(icoSvg('file'));
+    const nom = document.createElement('span');
+    nom.className = 'panneau-fichier-nom';
+    nom.textContent = f.nom;
+    const badge = document.createElement('span');
+    badge.className = 'panneau-fichier-badge' + (/^html?$/.test(ext) || ext === 'svg' ? ' html' : '');
+    badge.textContent = ext && ext.length <= 6 ? ext : 'txt';
+    const meta = document.createElement('span');
+    meta.className = 'panneau-fichier-meta';
+    if (f.contenu != null) {
+      try { meta.textContent = tailleFichier(new Blob([f.contenu]).size); } catch (e) { meta.textContent = f.contenu.length + ' car.'; }
+    } else {
+      meta.textContent = f.meta;
+    }
+    btn.append(nom, badge, meta);
+    btn.addEventListener('click', () => { basculerPanneauFichiers(false); ouvrirDepuisListeFichiers(f); });
+    panneauFichiersEl.appendChild(btn);
+  });
+}
+function ouvrirDepuisListeFichiers(f) {
+  if (f.contenu != null && /\.(html?|xhtml|svg)$/i.test(f.nom)) {
+    ouvrirInterpreteur(f.nom, f.contenu);
+    return;
+  }
+  if (f.carte) {
+    f.carte.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const tete = f.carte.querySelector('.file-ouvre');
+    if (tete) tete.click();
+    return;
+  }
+  if (f.attache) f.attache.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+function basculerPanneauFichiers(force) {
+  if (!panneauFichiersEl || !listeFichiersEl) return;
+  const ouvrir = typeof force === 'boolean' ? force : panneauFichiersEl.hidden;
+  if (ouvrir) rendrePanneauFichiers();
+  panneauFichiersEl.hidden = !ouvrir;
+  listeFichiersEl.setAttribute('aria-expanded', String(ouvrir));
+}
+function journalInterpreteur(texte, classe) {
+  if (!interpreteurConsoleEl) return;
+  const ligne = document.createElement('div');
+  if (classe) ligne.className = classe;
+  ligne.textContent = texte;
+  interpreteurConsoleEl.appendChild(ligne);
+  interpreteurConsoleEl.scrollTop = interpreteurConsoleEl.scrollHeight;
+}
+/* Pont injecté DANS le srcdoc : relais console/erreurs/chargement vers le
+   parent. Concaténé en « <scr'+'ipt> » pour ne jamais fermer le script hôte. */
+const PONT_INTERPRETEUR = [
+  '<scr' + 'ipt>(function(){',
+  'function env(type,data){try{parent.postMessage(Object.assign({source:"athena-interpreteur",type:type},data||{}),"*")}catch(e){}}',
+  '["log","info","warn","error"].forEach(function(n){var o=console[n]?console[n].bind(console):null;',
+  'console[n]=function(){var a=[].slice.call(arguments).map(function(x){try{return typeof x==="string"?x:JSON.stringify(x)}catch(e){return String(x)}});',
+  'env("console",{niveau:n,texte:a.join(" ")});if(o)o.apply(null,arguments)}});',
+  'window.addEventListener("error",function(e){env("erreur",{texte:e.message+" (ligne "+(e.lineno||0)+")"})});',
+  'window.addEventListener("unhandledrejection",function(e){env("erreur",{texte:"Promise rejetee : "+((e.reason&&e.reason.message)||e.reason)})});',
+  'window.addEventListener("load",function(){env("charge",{elements:document.querySelectorAll("*").length,titre:document.title||""})});',
+  '})();</scr' + 'ipt>',
+].join('');
+function integrerPont(html) {
+  const code = String(html == null ? '' : html);
+  const tete = /<head[^>]*>/i.exec(code);
+  if (tete) { const i = tete.index + tete[0].length; return code.slice(0, i) + PONT_INTERPRETEUR + code.slice(i); }
+  const doctype = /<!doctype[^>]*>/i.exec(code);
+  if (doctype) { const i = doctype.index + doctype[0].length; return code.slice(0, i) + PONT_INTERPRETEUR + code.slice(i); }
+  return PONT_INTERPRETEUR + code;
+}
+function executerInterpreteur() {
+  if (!interpreteurEl || interpreteurEl.hidden) return;
+  const code = interpreteurCodeEl ? interpreteurCodeEl.value : '';
+  if (interpreteurConsoleEl) interpreteurConsoleEl.textContent = '';
+  if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'exécution…';
+  journalInterpreteur('▶ exécution de ' + (interpreteurNomEl ? interpreteurNomEl.textContent : 'code.html'));
+  try {
+    if (interpreteurCadreEl) interpreteurCadreEl.srcdoc = integrerPont(code);
+  } catch (e) {
+    journalInterpreteur('✖ ' + (e && e.message), 'ligne-erreur');
+    if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'erreur';
+  }
+}
+function ouvrirInterpreteur(nom, code) {
+  if (!interpreteurEl) return;
+  if (interpreteurNomEl) interpreteurNomEl.textContent = nom || 'sans-titre.html';
+  if (interpreteurCodeEl) interpreteurCodeEl.value = code == null ? '' : String(code);
+  basculerPanneauFichiers(false);
+  interpreteurEl.hidden = false;
+  executerInterpreteur();
+}
+function fermerInterpreteur() {
+  if (!interpreteurEl || interpreteurEl.hidden) return;
+  interpreteurEl.hidden = true;
+  if (interpreteurCadreEl) interpreteurCadreEl.srcdoc = '';
+}
+window.addEventListener('message', (e) => {
+  const d = e && e.data;
+  if (!d || d.source !== 'athena-interpreteur' || !interpreteurEl || interpreteurEl.hidden) return;
+  if (d.type === 'console') {
+    journalInterpreteur((d.niveau || 'log') + ' : ' + d.texte, d.niveau === 'error' ? 'ligne-erreur' : '');
+  } else if (d.type === 'erreur') {
+    journalInterpreteur('✖ ' + d.texte, 'ligne-erreur');
+    if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'erreur';
+  } else if (d.type === 'charge') {
+    if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'rendu ✓ · ' + d.elements + ' éléments';
+    journalInterpreteur('✔ rendu : ' + d.elements + ' éléments' + (d.titre ? ' · « ' + d.titre + ' »' : ''), 'ligne-ok');
+  }
+});
+if (listeFichiersEl) listeFichiersEl.addEventListener('click', () => basculerPanneauFichiers());
+document.addEventListener('click', (e) => {
+  if (panneauFichiersEl && !panneauFichiersEl.hidden && zoneFichiersEl && !zoneFichiersEl.contains(e.target)) basculerPanneauFichiers(false);
+});
+if (interpreteurExeEl) interpreteurExeEl.addEventListener('click', executerInterpreteur);
+if (interpreteurFermerEl) interpreteurFermerEl.addEventListener('click', fermerInterpreteur);
+let minuteurInterpreteur = null;
+if (interpreteurCodeEl) interpreteurCodeEl.addEventListener('input', () => {
+  if (interpreteurStatutEl) interpreteurStatutEl.textContent = 'modifié';
+  clearTimeout(minuteurInterpreteur);
+  minuteurInterpreteur = setTimeout(executerInterpreteur, 900);
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (interpreteurEl && !interpreteurEl.hidden) { fermerInterpreteur(); return; }
+    if (panneauFichiersEl && !panneauFichiersEl.hidden) basculerPanneauFichiers(false);
+    return;
+  }
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && interpreteurEl && !interpreteurEl.hidden) {
+    e.preventDefault();
+    executerInterpreteur();
+  }
 });
 if (partagerEl) {
   partagerEl.addEventListener('click', async () => {

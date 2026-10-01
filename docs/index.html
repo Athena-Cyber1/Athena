@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925ck" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925cl" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -180,6 +180,22 @@
           <div class="chat-marque">
             <h1 id="titre-conversation">Nouvelle discussion</h1>
           </div>
+          <div class="zone-fichiers">
+            <button
+              id="liste-fichiers"
+              class="btn-fichiers"
+              type="button"
+              title="Fichiers de la conversation"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="panneau-fichiers"
+            >
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5h7A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
+              <span>Fichiers</span>
+              <span id="liste-fichiers-compteur" class="fichiers-compteur" hidden>0</span>
+            </button>
+            <div id="panneau-fichiers" class="panneau-fichiers" hidden role="menu" aria-label="Fichiers de la conversation"></div>
+          </div>
           <button id="partager" class="btn-partager" type="button" title="Copier la conversation">
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
             <span>Partager</span>
@@ -257,16 +273,39 @@
           <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabindex="-1" />
         </form>
       </main>
+
+      <!-- v20261001 : interpréteur HTML embarqué — le code est exécuté dans
+           une iframe sandboxée (aucun accès au stockage ni au DOM parent). -->
+      <div id="interpreteur" class="interpreteur" hidden role="dialog" aria-modal="true" aria-labelledby="interpreteur-nom">
+        <div class="interpreteur-tete">
+          <span class="interpreteur-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4m8-8 4 4-4 4"/></svg></span>
+          <span id="interpreteur-nom" class="interpreteur-nom">sans-titre.html</span>
+          <span id="interpreteur-statut" class="interpreteur-statut" aria-live="polite">prêt</span>
+          <div class="interpreteur-actions">
+            <button id="interpreteur-exe" class="btn-interpreteur btn-interpreteur-plein" type="button" title="Exécuter le code (Ctrl+Entrée)">Exécuter</button>
+            <button id="interpreteur-fermer" class="btn-interpreteur" type="button" title="Fermer l’interpréteur (Échap)" aria-label="Fermer l’interpréteur">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="interpreteur-corps">
+          <textarea id="interpreteur-code" class="interpreteur-code" spellcheck="false" aria-label="Code HTML à interpréter"></textarea>
+          <div class="interpreteur-apercu">
+            <iframe id="interpreteur-cadre" class="interpreteur-cadre" title="Rendu de l’interpréteur" sandbox="allow-scripts allow-modals allow-popups"></iframe>
+            <div id="interpreteur-console" class="interpreteur-console" aria-live="polite"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260925ck"></script>
-    <script src="./api-shim.js?v=20260925ck"></script>
+    <script src="./keys.js?v=20260925cl"></script>
+    <script src="./api-shim.js?v=20260925cl"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20260925ck"></script>
+    <script src="./chat-demo.js?v=20260925cl"></script>
   </div>
 </body>
 </html>

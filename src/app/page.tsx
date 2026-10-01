@@ -154,6 +154,22 @@ export default function Accueil() {
             <div className="chat-marque">
               <h1 id="titre-conversation">Nouvelle discussion</h1>
             </div>
+            <div className="zone-fichiers">
+              <button
+                id="liste-fichiers"
+                className="btn-fichiers"
+                type="button"
+                title="Fichiers de la conversation"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-controls="panneau-fichiers"
+              >
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5h7A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z" /></svg>
+                <span>Fichiers</span>
+                <span id="liste-fichiers-compteur" className="fichiers-compteur" hidden>0</span>
+              </button>
+              <div id="panneau-fichiers" className="panneau-fichiers" hidden role="menu" aria-label="Fichiers de la conversation"></div>
+            </div>
             <button id="partager" className="btn-partager" type="button" title="Copier la conversation">
               <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4" /><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></svg>
               <span>Partager</span>
@@ -231,12 +247,35 @@ export default function Accueil() {
             <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabIndex={-1} />
           </form>
         </main>
+
+        {/* v20261001 : interpréteur HTML embarqué — code exécuté dans une
+            iframe sandboxée (aucun accès au stockage ni au DOM parent). */}
+        <div id="interpreteur" className="interpreteur" hidden role="dialog" aria-modal="true" aria-labelledby="interpreteur-nom">
+          <div className="interpreteur-tete">
+            <span className="interpreteur-ico" aria-hidden="true"><svg className="ico" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4m8-8 4 4-4 4" /></svg></span>
+            <span id="interpreteur-nom" className="interpreteur-nom">sans-titre.html</span>
+            <span id="interpreteur-statut" className="interpreteur-statut" aria-live="polite">prêt</span>
+            <div className="interpreteur-actions">
+              <button id="interpreteur-exe" className="btn-interpreteur btn-interpreteur-plein" type="button" title="Exécuter le code (Ctrl+Entrée)">Exécuter</button>
+              <button id="interpreteur-fermer" className="btn-interpreteur" type="button" title="Fermer l’interpréteur (Échap)" aria-label="Fermer l’interpréteur">
+                <svg className="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+              </button>
+            </div>
+          </div>
+          <div className="interpreteur-corps">
+            <textarea id="interpreteur-code" className="interpreteur-code" spellCheck={false} aria-label="Code HTML à interpréter"></textarea>
+            <div className="interpreteur-apercu">
+              <iframe id="interpreteur-cadre" className="interpreteur-cadre" title="Rendu de l’interpréteur" sandbox="allow-scripts allow-modals allow-popups"></iframe>
+              <div id="interpreteur-console" className="interpreteur-console" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Script src="/design/theme-loader.js" strategy="beforeInteractive" />
-      <Script src="/keys.js?v=20260925ck" strategy="beforeInteractive" />
+      <Script src="/keys.js?v=20260925cl" strategy="beforeInteractive" />
       <Script src="/vendor/twemoji.min.js" strategy="beforeInteractive" />
-      <Script src="/chat-demo.js?v=20260925ck" strategy="beforeInteractive" />
+      <Script src="/chat-demo.js?v=20260925cl" strategy="beforeInteractive" />
     </div>
   );
 }
