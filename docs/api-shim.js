@@ -20,6 +20,11 @@
 
   var realFetch = window.fetch.bind(window);
 
+  /* v20261001 (HUD) : température DEMANDÉE dans le corps de la requête —
+     posée par gererChat, lue par corpsPour (var module : une seule requête
+     chat à la fois côté navigateur). */
+  var temperatureDemandee = null;
+
   /* Effort de raisonnement choisi dans le HUD (bouton à droite du sélecteur
      de modèle) : localStorage « athena_effort ». Échelle HUD = low / medium /
      high / max. Chaque entry MODELS peut déclarer `efforts` (les valeurs que
@@ -30,7 +35,11 @@
   function effortNvidia(entry) {
     var v = '';
     try { v = String(localStorage.getItem('athena_effort') || ''); } catch (e) { v = ''; }
-    if (EFFORTS_HUD.indexOf(v) < 0) v = 'max';
+    /* v20261001 (perf) : repli « medium » (avant « max ») — en max, le
+       raisonnement mange le budget et retarde le premier jeton sur les
+       modèles gratuits (TTFB 40-46 s mesuré). Seul le REPLI change ; le
+       choix explicite dans le HUD reste prioritaire. */
+    if (EFFORTS_HUD.indexOf(v) < 0) v = 'medium';
     var admis = (entry && entry.efforts) || EFFORTS_HUD;
     if (admis.indexOf(v) >= 0) return v;
     /* v20260926d (kimi) : repli vers l'échelon admis le plus PROCHE, en
@@ -67,9 +76,9 @@
        base = URL du proxy Worker (keys.js: nvidia_proxy, monture /nvidia/v1).
        sse: la réponse amont arrive en flux SSE (delta.reasoning_content
        puis delta.content) — agrégée ici, diffusée à l'UI en progress.
-        payload: cadrage NVIDIA par défaut (temperature 1, seed 0,
-        max_tokens 16384, reasoning_effort « max ») — une entry MODELS
-        peut le surcharger via son propre `payload` (voir plus bas). */
+         payload: cadrage NVIDIA par défaut (temperature 1, seed 0,
+         max_tokens 32768, reasoning_effort = effort HUD) — une entry MODELS
+         peut le surcharger via son propre `payload` (voir plus bas). */
     nvidia:       {
       baseKey: 'nvidia_proxy',
       label: 'nvidia · proxy CF',
@@ -77,8 +86,11 @@
       sse: true,      // le client n'envoie rien — plus de clé visible.
       payload: function (entry) {
         /* reasoning_effort = effort choisi dans le HUD (athena_effort),
-           replié sur l'échelon admis par CE modèle (voir effortNvidia). */
-        return { temperature: 1, max_tokens: 16384, seed: 0, reasoning_effort: effortNvidia(entry) };
+           replié sur l'échelon admis par CE modèle (voir effortNvidia).
+           v20261001 : max_tokens 16384 → 32768 — 16 384 coupait les réponses
+           longues (finish_reason 'length') alors que la fenêtre de sortie
+           réelle des modèles NVIDIA free est 32 768. */
+        return { temperature: 1, max_tokens: 32768, seed: 0, reasoning_effort: effortNvidia(entry) };
       },
     },
   };
@@ -94,7 +106,12 @@
        côté OpenRouter si l'un est rate-limité). */
     { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter' },
     { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter' },
-    { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter' },
+    /* v20261001 (perf) : modèle RAISONNEUR sans déclaration `efforts` →
+       watchdogs « non-raisonnement » (10 s premier octet / 30 s en-têtes) le
+       tuaient au démarrage (raisonnement = TTFB long) et le bouton effort du
+       HUD était sans effet. Déclaration + payload reasoning = mêmes bunnies :
+       l'échelle HUD s'applique réellement, watchdogs alignés. */
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter', efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
     { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'nemotron-3-ultra 550b free · openrouter' },
     { provider: 'openrouter', model: 'google/gemma-4-26b-a4b-it:free', name: 'gemma-4-26b free · openrouter' },
     { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'nemotron-3-super free · openrouter' },
@@ -222,13 +239,17 @@
 
   /* Garde-fou par tentative : une souche qui bloque (saturée, Turnstile,
      sans réponse) ne fait plus échouer la chaîne entière — on enchaîne sur
-     le modèle suivant après 60 s. */
-  function appelBorne(promise, ms) {
+     le modèle suivant après 60 s.
+     v20261001 (quota) : onTimeout peut ABANDONNER l'appel réel — rejeter la
+     seule promesse laissait la requête fantôme tourner en arrière-plan
+     (double POST pendant le retry → quota free gaspillé en 429). */
+  function appelBorne(promise, ms, onTimeout) {
     return new Promise(function (resolve, reject) {
       var fini = false;
       var t = setTimeout(function () {
         if (fini) return;
         fini = true;
+        if (onTimeout) { try { onTimeout(); } catch (e) {} }
         reject(new Error('timeout ' + ms + ' ms'));
       }, ms);
       promise.then(function (v) {
@@ -243,6 +264,27 @@
         reject(e);
       });
     });
+  }
+
+  /* v20261001 (quota) : AbortController PAR TENTATIVE — combiné au signal
+     client, branché sur onTimeout d'appelBorne : le timeout coupe le fetch
+     (et le flux SSE) au lieu de le laisser vivre pendant que le retry en
+     lance un second. */
+  function signalEssai(prioritaire) {
+    if (typeof AbortController === 'undefined') return { signal: prioritaire || undefined, ctrl: null };
+    var ctrl = new AbortController();
+    if (prioritaire) {
+      if (prioritaire.aborted) { try { ctrl.abort(); } catch (e) {} }
+      else {
+        try {
+          prioritaire.addEventListener('abort', function () { try { ctrl.abort(); } catch (e) {} }, { once: true });
+        } catch (e) {}
+      }
+    }
+    return { signal: ctrl.signal, ctrl: ctrl };
+  }
+  function abandonner(essai) {
+    return essai && essai.ctrl ? function () { try { essai.ctrl.abort(); } catch (e) {} } : null;
   }
 
   /* ---- Modèles tokenrouter : liste dynamique via GET /models -----
@@ -351,10 +393,12 @@
   ]);
 
   /* ---- Contexte : estimation + compression automatique ----
-     Jetons estimés en car/4 (+4 par message) — heuristique documentée
-     (pas de tokenizer dans le navigateur). Quand le prompt dépasse 85 %
-     de la limite du modèle visé, les anciens messages sont résumés par un
-     modèle gratuit (repli : troncature dure), jamais d'erreur 400 silencieuse. */
+      Jetons estimés en car/3.5 (+4 par message) — heuristique documentée
+      (pas de tokenizer dans le navigateur). v20261001 : car/4 sous-estimait
+      ~14 % et laissait des 400 « context length » passer avant la
+      compression. Quand le prompt dépasse 95 % de la limite du modèle visé,
+      les anciens messages sont résumés par un modèle gratuit (repli :
+      troncature dure), jamais d'erreur 400 silencieuse. */
   /* v1.2 (pleine puissance) : 32 768 était un repli CONSERVATEUR inherited
      d'un temps où les modèles plafonnaient bas. Il bridea��t openrouter
      générique (donc.space-bunny-alpha, le modèle des runs réels) à 32 K
@@ -377,6 +421,10 @@
     'cohere/north-mini-code:free': 262144, 'inclusionai/ling-3.0-flash-sante:free': 262144,
     'inclusionai/ling-3.0-flash-fin:free': 262144, 'dots-studio/dots-3-note-preview:free': 524288,
     'liquid/lfm-2.5-2.6b:free': 65536, 'stealth/space-bunny-alpha': 1048576,
+    /* v20261001 : le routeur « openrouter/free » puise dans n'importe quel
+       free du catalogue (fenêtres réelles ~32 K) — 262144 (défaut) laissait
+       la compression dormir jusqu'à 248 K puis rejet garanti. */
+    'openrouter/free': 32768,
   };
   function limiteModele(entry) {
     if (!entry) return LIMITE_DEFAUT;
@@ -389,32 +437,74 @@
   }
   function jetonsEstimes(msgs) {
     var n = 0;
-    (msgs || []).forEach(function (m) { n += Math.ceil(String((m && m.content) || '').length / 4) + 4; });
+    (msgs || []).forEach(function (m) { n += Math.ceil(String((m && m.content) || '').length / 3.5) + 4; });
     return n;
   }
-  /* v1.2 (pleine puissance) : combien de messages récents on garde INTACTS
-     quand la compression tombe. 12 amputait durement une tâche longue (run
-     réel de 239 commandes : le raisonnement en cours passait dans le
-     résumé). 40 messages récents + un résumé large des 60 000 premiers
-     caractères : la compression ne mord qu'en dernier recours, et le résumé
-     porte de la matière au lieu d'une liste de commandes. */
-  var RECENTS_GARDES = 40;
+  /* v1.2 (pleine puissance) : la compression ne mord qu'en dernier recurs
+     et le résumé porte de la matière au lieu d'une liste de commandes.
+     v20261001 (perf) : la garde PAR COMPTAGE (40 messages, jamais touchés)
+     ne protégeait pas d'un petit historique à messages GÉANTS — ces messages
+     survivaient aux deux compressions et le provider rejetait en boucle.
+     On garde désormais la QUEUE récente qui tient RÉELLEMENT dans 85 % de
+     la fenêtre, et on coupe les messages trop longs tête+queue. */
   var MATIERE_RESUME = 60000;
+  var TAILLE_MAX_MESSAGE = 24000; /* ~6 k jetons : tête + queue avec marqueur */
+  function tronquerGros(messages) {
+    var touche = 0;
+    var tete = Math.floor(TAILLE_MAX_MESSAGE * 0.6);
+    var queue = Math.floor(TAILLE_MAX_MESSAGE * 0.3);
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i];
+      if (!m || typeof m.content !== 'string' || m.content.length <= TAILLE_MAX_MESSAGE) continue;
+      messages[i] = {
+        role: m.role,
+        content: m.content.slice(0, tete)
+          + '\n\n[…message trop long pour la fenêtre du modèle : milieu coupé…]\n\n'
+          + m.content.slice(-queue),
+      };
+      touche += 1;
+    }
+    return touche;
+  }
   async function compresserSiPlein(msgs, entry, signal) {
     var limite = limiteModele(entry);
-    var utilises = jetonsEstimes(msgs);
-    /* v1.2 (anti-bâclage) : 12 messages récents + résumé de 25 lignes sur
-       24 000 caractères de matière (avant : 6 / 12 lignes / 8000 car. —
-       trop de perte). LIMITE_DEFAUT = 32768 vérifiée : simple repli pour les
-       modèles sans limite connue (openrouter générique, autres). */
-    /* v1.2 (pleine puissance) : seuil de compression 0.85 → 0.95. À 0.85 on
-       compressait alors qu'il restait 15 % de fenêtre libre ; le contexte
-       utile était amputé bien avant d'en avoir besoin. */
-    if (utilises <= limite * 0.95 || msgs.length <= RECENTS_GARDES) return { messages: msgs, note: null, utilises: utilises, limite: limite };
-    var systeme = msgs.filter(function (m) { return m && m.role === 'system'; });
-    var tous = msgs.filter(function (m) { return !m || m.role !== 'system'; });
-    var recents = tous.slice(-RECENTS_GARDES);
-    var anciens = tous.slice(0, -RECENTS_GARDES);
+    var travail = (msgs || []).slice();
+    var tronques = 0;
+    var utilises = jetonsEstimes(travail);
+    /* v20261001 : au-delà de 95 %, on COURE d'abord les messages géants
+       (un seul message > fenêtre = rejet 400 que ni le comptage ni
+       l'urgence ne réparaient), puis on juge à nouveau. */
+    if (utilises > limite * 0.95) tronques = tronquerGros(travail);
+    utilises = jetonsEstimes(travail);
+    var noteTronque = tronques
+      ? ('troncature : ' + tronques + ' message(s) géant(s) coupés tête+queue pour tenir la fenêtre')
+      : null;
+    /* v1.2 (pleine puissance) : seuil de compression 0.95. L'ancienne garde
+       « msgs.length <= 40 → ne jamais compresser » a été retirée. */
+    if (utilises <= limite * 0.95) {
+      return { messages: travail, note: noteTronque, utilises: utilises, limite: limite };
+    }
+    var systeme = travail.filter(function (m) { return m && m.role === 'system'; });
+    var tous = travail.filter(function (m) { return !m || m.role !== 'system'; });
+    /* Sélection guidée par la TAILLE : on remonte depuis le plus récent
+       jusqu'à 85 % de la fenêtre (au moins 4 messages) — au lieu de garder
+       40 messages coûte que coûte. */
+    var garder = [];
+    var tenu = 0;
+    var k = tous.length;
+    while (k > 0) {
+      var ct = jetonsEstimes([tous[k - 1]]);
+      if (garder.length >= 4 && tenu + ct > limite * 0.85) break;
+      garder.unshift(tous[k - 1]);
+      tenu += ct;
+      k -= 1;
+    }
+    var recents = garder;
+    var anciens = tous.slice(0, k);
+    if (!anciens.length) {
+      /* tout (re)tient après troncature : rien à résumer */
+      return { messages: travail, note: noteTronque, utilises: utilises, limite: limite };
+    }
     var resume = null;
     try {
       var cat = catalogue();
@@ -454,6 +544,7 @@
       compresse = systeme.concat(recents);
       note = 'contexte tronqué (' + anciens.length + ' anciens messages retirés, résumé impossible)';
     }
+    if (noteTronque) note = note + ' ; ' + noteTronque;
     return { messages: compresse, note: note, utilises: utilises, limite: limite };
   }
   /* v1.2 (audit) : plafond de sortie MAXIMAL par modèle — vérifié le
@@ -507,35 +598,12 @@
 
   /* v1.2 (anti-bâclage) : préambule général — le prompt système ne parlait
      que d'outils ; le modèle n'avait aucune consigne de complétude globale. */
-  /* v1.2 (langue) : le modèle parque du chinois/anglais au milieu d'une
-     phrase française — mesuré : « Le placement dépend d'un 迷宫 aléatoire ».
-     Ce n'est PAS un bug d'encodage (le flux SSE est décodé en UTF-8
-     correctement) : le modèle écrit son raisonnement dans une autre langue et
-     la fuite. Deux verrous : (1) on l'interdit explicitement, (2) le
-     raisonnement n'est JAMAIS renvoyé au modèle (il reste affiché pour
-     l'humain) — c'est ce qui faisait revenir la mélange à chaque tour. */
-  /* v1.2 (langue, MODE) : on impose MAINTENANT la langue de la DEMANDE et non
-     plus le français à tout prix. Mesuré : une règle « toujours français »
-     était régulièrement perdue face à une question écrite en anglais — le
-     modèle basculait, puis mélangeait. On donne donc une cible explicite
-     (détectée à la volée, cf. langueDemande) et on interdit le MÉLANGE, qui
-     est le vrai défaut quel que soit le camp. */
-  var ATHENA_SYSTEM_LANGUE =
-    'LANGUE : réponds dans la langue de la demande, et uniquement dans cette '
-    + 'langue. La langue de cette conversation est rappelée en toute fin de ce '
-    + 'prompt (« LANGUE DE LA CONVERSATION ») : c\'est elle qui prime, même si '
-    + 'un message plus ancien est rédigé dans une autre langue. Si le rappel '
-    + 'manque, déduis la langue du message de l\'utilisateur ; à défaut de '
-    + 'signal clair, le français.\n'
-    + 'RÈGLE DURE — JAMAIS DE MÉLANGE : aucun mot, aucun caractère d\'une autre '
-    + 'langue ne doit apparaître dans le texte que tu livres : ni dans une '
-    + 'phrase, ni dans une liste, ni dans un titre, ni dans un commentaire de '
-    + 'code, ni dans un nom de variable ou de fonction. Seuls restent dans leur '
-    + 'langue d\'origine un terme technique consacré, un nom de bibliothèque, '
-    + 'du code exécutable et une citation entre guillemets. Un seul caractère '
-    + 'd\'une autre langue que la tienne dans ta réponse est un défaut, pas une '
-    + 'touche. Tu peux PENSER dans la langue qui t\'arrange ; ce que tu livres '
-    + 'est intégralement dans la langue de la demande.';
+  /* v20261001 (perf) : le bloc LANGUE central (~1 k caractères, répété 4×
+     par tour via BASE + ligneLangue) est RETIRÉ. La contrainte vit en FIN
+     (tête + fin de prompt) et dans consigneFin() collé au dernier message
+     user — même fermeté (« JAMAIS DE MÉLANGE », cible = langue de la
+     demande), ~1 000 tokens de moins par tour. Le raisonnement n'étant
+     jamais renvoyé au modèle (lireSSE), la fuite de langage reste verrouillée. */
 
   /* v1.2 (anti-flemmard) : l'ancien texte autorisait explicitement « courte si
      simple » — le modèle en déduisait qu'une réponse expédiée suffisait (mesuré :
@@ -675,18 +743,23 @@
      forte. */
   var ATHENA_SYSTEM_FIN =
     'AVANT DE RÉPONDRE, relis ces deux règles :\n' +
-    '(1) LANGUE — ta réponse est dans la langue de la demande (rappelée juste '
-    + 'après, « LANGUE DE LA CONVERSATION ») et dans elle seule : aucun mot, '
-    + 'aucun caractère d\'une autre langue dans le texte que tu livres, y '
-    + 'compris dans les listes, les titres, les commentaires de code et les '
-    + 'noms propres inventés. Tu peux PENSER dans la langue qui t\'arrange ; ce '
-    + 'qui sort est uniforme, sans mélange.\n' +
+    '(1) LANGUE — ta réponse est dans la langue de la demande, et dans elle '
+    + 'seule : aucun mot, aucun caractère d\'une autre langue dans le texte que '
+    + 'tu livres, y compris dans les listes, les titres, les commentaires de '
+    + 'code et les noms propres inventés. Un seul caractère d\'une autre langue '
+    + 'est un défaut, pas une touche. Tu peux PENSER dans la langue qui '
+    + 't\'arrange ; ce qui sort est uniforme, sans mélange. Si le signal est '
+    + 'ambigu, déduis la langue du message de l\'utilisateur ; à défaut, le '
+    + 'français.\n' +
     '(2) ALLER AU BOUT — livre la réponse complète, sans abréger, sans résumer '
     + 'hâtiment, sans sauter de point demandé.';
 
   /* BASE = ce qui doit être présent dans TOUS les cas (même sans outils web),
-     OUTILS = BASE + les consignes d'exécution/fichiers. FIN reste en DERNIER. */
-  var ATHENA_SYSTEM_BASE = ATHENA_SYSTEM_GENERAL + '\n\n' + ATHENA_SYSTEM_LANGUE;
+     OUTILS = BASE + les consignes d'exécution/fichiers. FIN reste en DERNIER.
+     v20261001 (perf) : BASE = généralité SEULE (le bloc LANGUE central a été
+     retiré — voir plus haut) ; FIN porte la règle de langue, consigneFin() la
+     répète au dernier message user. */
+  var ATHENA_SYSTEM_BASE = ATHENA_SYSTEM_GENERAL;
   var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_BASE
     + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER
     + '\n\n' + ATHENA_SYSTEM_FIN;
@@ -984,9 +1057,9 @@
            proprement une troncature (finish_reason 'length'). */
       };
       /* cadrage spécifique : provider (nvidia → kimi-k3 : temperature 1,
-         seed 0, max_tokens 16384, reasoning_effort « max ») ; une entry
+         seed 0, max_tokens 32768, reasoning_effort = effort HUD) ; une entry
          peut le surcharger via son propre `payload` (objet ou fonction(entry))
-         pour un modèle qui refuse reasoning_effort ou plafonne sous 16 384 tokens. */
+         pour un modèle qui refuse reasoning_effort ou plafonne bas. */
       var pe = entry.payload;
       if (typeof pe === 'function') { try { pe = pe(entry); } catch (e) { pe = null; } }
       var opts = pe || (p.payload ? p.payload(entry) : null);
@@ -997,9 +1070,13 @@
          la source n°1 de réponses tronquées ; on délègue au provider. Les
          payloads explicites d'une entry (NVIDIA : 16384, trad : 2048) restent
          respectés — ce sont des valeurs propres au modèle, pas les nôtres. */
-      /* v1.2 : température choisie dans les réglages — sauf réglage propre
-         au modèle/provider (ex. NVIDIA temperature 1) qui reste prioritaire. */
-      if (!opts || opts.temperature === undefined) {
+      /* v20261001 (HUD) : ordre de température = corps de la requête
+         (réglage HUD) > payload provider (ex. NVIDIA temperature 1) >
+         localStorage > 0.6. Avant, le payload écrasait le réglage du HUD
+         sur NVIDIA — la voie principale restait donc insensible. */
+      if (temperatureDemandee !== null) {
+        c.temperature = temperatureDemandee;
+      } else if (!opts || opts.temperature === undefined) {
         var tPref = null;
         try {
           var prefs = JSON.parse(localStorage.getItem('chat-preferences') || '{}');
@@ -1104,7 +1181,10 @@
          glm-5.3 « max » met ~40-46 s avant le premier jeton (mesuré) : un
          plafond fixe de 20 s coupait le flux au démarrage. Échelle par
          effort, alignée sur delaiInactivite. */
-      var delaiPremier = !raisonneFlux ? 10000
+      /* v20261001 : non-raisonnement 10 → 25 s — les :free d'OpenRouter
+         marquent souvent 15-20 s avant le premier octet sous charge ;
+         10 s les écartait à tort (puis ×2 → provider condemné). */
+      var delaiPremier = !raisonneFlux ? 25000
         : efFlux === 'max' ? 150000
         : efFlux === 'high' ? 90000
         : efFlux === 'medium' ? 45000
@@ -1273,7 +1353,9 @@
         || (entry && entry.providerKey === 'nvidia');
       var efTete = 'low';
       if (raisonneTete) { try { efTete = effortNvidia(entry); } catch (e) {} }
-      var delaiTete = !raisonneTete ? 30000
+      /* v20261001 : en-têtes non-raisonnement 30 → 45 s (même raison que
+         delaiPremier : TTFB free sous charge > 30 s mesuré). */
+      var delaiTete = !raisonneTete ? 45000
         : efTete === 'max' ? 150000
         : efTete === 'high' ? 90000
         : efTete === 'medium' ? 45000
@@ -1424,9 +1506,37 @@
     return { chaine: chaine, choisiOk: !modelId || (parId[modelId] && parId[modelId].up), strict: true };
   }
 
+  /* v20261001 (perf) : prompt d'outils CONDITIONNEL — EXEC + FICHIER pèsent
+     ~6 000 caractères (~1 500 tokens) par tour alors qu'une conversation
+     purement discursive ne les utilisera jamais. Requis si : pièces jointes,
+     historique d'outils (```athena-exec / ```athena-file /
+     <resultat_commande>), conversation neuve (≤ 2 messages), ou intention
+     shell détectée dans le dernier message. Faux positif = quelques tokens
+     de trop ; faux négatif = le modèle ne sait plus écrire les blocs →
+     regex VOLONTAIREMENT large. */
+  function besoinOutils(msgs, body) {
+    if (body && body.outils === false) return false;
+    if (!msgs || msgs.length <= 2) return true;
+    if (Array.isArray(body && body.attachments) && body.attachments.length) return true;
+    for (var ib = 0; ib < msgs.length; ib++) {
+      var ci = String((msgs[ib] && msgs[ib].content) || '');
+      if (ci.indexOf('```athena-exec') >= 0 || ci.indexOf('```athena-file') >= 0
+          || ci.indexOf('<resultat_commande>') >= 0) return true;
+    }
+    var der = String((msgs[msgs.length - 1] && msgs[msgs.length - 1].content) || '');
+    return /commande|powershell|script|ex[eé]cut|lance|d[eé]marre|terminal|shell|console|fichier|dossier|réperto|reperto|liste|affiche|montre|cherche|Get-|Set-|New-|Remove-|Start-|npm |npx |git |python|pip |node |curl |ping |ipconfig|hostname|processus|registre|installer|lancer/i.test(der);
+  }
+
   async function gererChat(bodyStr, signal) {
     var body = {};
     try { body = JSON.parse(bodyStr || '{}'); } catch (e) { body = {}; }
+    /* v20261001 (HUD) : la température du client (réglage HUD) prime sur le
+       payload provider — voir corpsPour pour l'ordre complet. */
+    temperatureDemandee = null;
+    if (body && body.temperature !== undefined && body.temperature !== null
+        && Number.isFinite(+body.temperature)) {
+      temperatureDemandee = Math.max(0, Math.min(2, +body.temperature));
+    }
     var wantStream = body.stream === true;
     var messages = (Array.isArray(body.messages) ? body.messages : [])
       .filter(function (m) { return m && typeof m === 'object' && typeof m.content === 'string'; });
@@ -1476,30 +1586,24 @@
     /* Instructions système Pages : ```athena-exec (commandes) et ```athena-file
        (création de fichiers) — exécution/enregistrement automatiques via
        /api/exec + /api/write → local-agent, ou bouton UI + modale si
-       executionAuto est off. */
+       executionAuto est off.
+       v20261001 (perf) : EXEC/FICHIER CONDITIONNELS (besoinOutils) — la
+       conversation purement discursive ne paie plus ~1 500 tokens de prompt
+       d'outils par tour. La langue n'est plus rappelée en fin de prompt
+       (ligneLangue retirée) : FIN + consigneFin() portent la contrainte. */
     var aSystem = messages.some(function (m) { return m.role === 'system'; });
-    /* v1.2 (anti-bâclage) : outils désactivés (outils === false) = pas de
-       prompt d'outils — avant, il s'injectait quand même sans system.
-       v1.2 (langue) : outils ou non, le bloc de base (généralité + LANGUE +
-       rappel final) est TOUJOURS présent : sans lui, l'historique partait nu
-       et le modèle répondait dans n'importe quelle langue. */
-    /* v1.2 (langue, cible) : la langue n'est plus une constante mais celle de
-       la DEMANDE — déduite des messages utilisateur récents, et rappelée en
-       TOUTE FIN du prompt (position la plus forte avant le dialogue). */
-    var langue = langueDemande(messages);
-    var ligneLangue = '\n\nLANGUE DE LA CONVERSATION : ' + langue
-      + '. Réponds en ' + langue + ' et uniquement en ' + langue
-      + ', sans jamais mélanger une autre langue dans le texte livré.';
-    var consignes = (body.outils !== false ? ATHENA_SYSTEM_OUTILS : ATHENA_SYSTEM_SANS_OUTILS)
-      + ligneLangue;
+    var consignes = besoinOutils(messages, body) ? ATHENA_SYSTEM_OUTILS : ATHENA_SYSTEM_SANS_OUTILS;
     if (!aSystem) {
       messages = [{ role: 'system', content: consignes }].concat(messages);
+    } else if (messages[0] && messages[0].role === 'system') {
+      if (messages[0].content.indexOf(ATHENA_SYSTEM_FIN) < 0) {
+        messages = [{ role: 'system', content: messages[0].content + '\n\n' + consignes }].concat(messages.slice(1));
+      }
     } else {
-      messages = messages.map(function (m, idx) {
-        if (m.role !== 'system' || idx !== 0) return m;
-        if (m.content.indexOf(ATHENA_SYSTEM_FIN) >= 0) return m;
-        return { role: 'system', content: m.content + '\n\n' + consignes };
-      });
+      /* v20261001 : un system EXISTANT mais pas en position 0 (marqueur de
+         mémoire inséré au milieu de l'historique, cas > 400 messages) ne
+         déclenchait AUCUNE injection — la requête partait nue. On préfixe. */
+      messages = [{ role: 'system', content: consignes }].concat(messages);
     }
 
     var plan = construireChaine(typeof body.model_id === 'string' ? body.model_id : '');
@@ -1575,8 +1679,11 @@
       for (var i = 0; i < plan.chaine.length; i++) {
         var entry = plan.chaine[i];
         var pkEssai = entry.providerKey || entry.provider || entry.id;
+        /* v20261001 (quota) : essai abortable — au timeout, le fetch réel
+           est coupé (sinon double POST pendant le retry → quota free). */
+        var essaiJ = signalEssai(signal);
         try {
-          var texte = await appelBorne(callModel(entry, messages, signal), bornePour(entry));
+          var texte = await appelBorne(callModel(entry, messages, essaiJ.signal), bornePour(entry), abandonner(essaiJ));
           return json(assembler(entry, texte).payload);
         } catch (err) {
           if (err && err.name === 'AbortError') throw err;
@@ -1599,6 +1706,10 @@
             messages = sysF.concat(nonSysF.slice(-gardeF));
             noteCompression = 'contexte compressé d\'urgence ('
               + (nonSysF.length - gardeF) + ' messages retirés, le provider a refusé la fenêtre)';
+            /* v20261001 : i-- manquait (le flux le fait déjà) — sans lui, la
+               boucle passait au SUIVANT modèle (ou sortait sur chaîne de 1)
+               et la compression d'urgence ne servait à rien. */
+            i--;
             continue;
           }
           dernierErr = err;
@@ -1671,7 +1782,11 @@
               var plafond = efBorne === 'max' ? 1200000 : efBorne === 'high' ? 900000 : 600000;
               if (borne < plafond) borne = plafond;
             }
-            var texte = await appelBorne(callModel(entry, messages, signal, onDelta), borne);
+            /* v20261001 (quota) : essai abortable — au timeout de la borne,
+               le fetch + le flux SSE réels sont coupés (sinon la boucle
+               lireSSE tournait en fond pendant toute la cascade). */
+            var essaiS = signalEssai(signal);
+            var texte = await appelBorne(callModel(entry, messages, essaiS.signal, onDelta), borne, abandonner(essaiS));
             var fin = assembler(entry, texte);
             /* v20260926g : pas de progress « Réponse générée via X » — nom
                technique masqué, le final suffit. */

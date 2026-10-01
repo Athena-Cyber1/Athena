@@ -4128,7 +4128,7 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
    le contexte — milieux de messages remplacés par « tronqué », fins de tâche
    bâclées par manque d'infos. Les modèles actuels avalent 10× plus : on ne
    coupe qu'au-delà de 100 messages / 60000 car., et la compression auto du
-   shim (85 % de la limite) prend le relais proprement par résumé. */
+   shim (95 % de la limite) prend le relais proprement par résumé. */
 /* v1.2 (pleine puissance) : 100 messages / 60 000 car. bridaient le contexte
    bien avant saturation. Le shim sait compresser intelligemment (résumé LLM
    à 95 % de la fenêtre réelle) : on lui laisse le travail et on ne multiplie
@@ -5070,11 +5070,11 @@ async function genererReponse(convo, opts) {
         }
         /* v1.2 (anti-bâclage) : réponse coupée par le budget (finish length) —
            badge persistant dans la bulle + toast : ce n'est pas le modèle qui
-           bâcle, c'est la limite. Monter l'effort ou raccourcir la demande. */
+           bâcle, c'est la limite. Demandez la suite ou raccourcissez la demande. */
         if (r.tronquee) {
           const badge = document.createElement('div');
           badge.className = 'coupe-badge';
-          badge.textContent = 'Réponse coupée par la limite du modèle — demandez la suite ou montez l’effort.';
+          badge.textContent = 'Réponse coupée par la limite du modèle — demandez la suite.';
           conteneurTour.appendChild(badge);
           notifier('Réponse coupée par la limite du modèle (pas un bâclage).');
         }
@@ -5887,11 +5887,15 @@ let catalogueEffortsCharge = false;
 const CLE_EFFORT = 'athena_effort';
 const EFFORTS = [
   { v: 'low', nom: 'low', aide: 'Rapide — raisonnement court' },
-  { v: 'medium', nom: 'medium', aide: 'Équilibré — raisonnement moyen' },
+  { v: 'medium', nom: 'medium', aide: 'Équilibré — raisonnement moyen (défaut)' },
   { v: 'high', nom: 'high', aide: 'Approfondi — raisonnement long' },
-  { v: 'max', nom: 'max', aide: 'Maximal — le plus profond (défaut)' },
+  { v: 'max', nom: 'max', aide: 'Maximal — le plus profond' },
 ];
-const EFFORT_DEFAUT = 'max';
+/* v20261001 (perf) : défaut « medium » (avant « max ») — en max permanent,
+   le raisonnement mange le budget et retarde le premier jeton sur les
+   modèles gratuits (TTFB 40-46 s mesuré). Miroir de effortNvidia() côté
+   shim (repli « medium » si localStorage vide). */
+const EFFORT_DEFAUT = 'medium';
 let effortChoisi = EFFORT_DEFAUT;
 
 try {
@@ -5899,11 +5903,14 @@ try {
   if (typeof brutEffort === 'string' && EFFORTS.some((e) => e.v === brutEffort)) {
     effortChoisi = brutEffort;
   }
-} catch { /* stockage optionnel — « max » par défaut */ }
+} catch { /* stockage optionnel — « medium » par défaut */ }
 /* v1.2 : limites de contexte PARTOUT avant tout usage — ces consts sont lues
    par majBadgeContexte() dès l'init (initHudModele) ; déclarées après, c'est
-   une TDZ qui tue tout le chargement (boutons morts, sidebar vide). */
-const LIMITE_DEFAUT_CTX = 32768;
+   une TDZ qui tue tout le chargement (boutons morts, sidebar vide).
+   v20261001 : défaut 32768 → 262144 = LIMITE_DEFAUT du shim — le badge
+   mentait (« 87 % ») pour tout modèle sans limite connue alors que la
+   compression réelle part à 95 % de 262144. */
+const LIMITE_DEFAUT_CTX = 262144;
 const LIMITES_CTX = {
   'pollinations:openai-fast': 131072, 'pollinations:openai': 131072,
   'openrouter:google/gemma-4-31b-it:free': 262144, 'openrouter:google/gemma-4-26b-a4b-it:free': 262144,
@@ -6293,7 +6300,10 @@ function rendreHudTemp() {
 function jetonsDiscussion() {
   const c = typeof conversationOuverte === 'function' ? conversationOuverte() : null;
   let n = 0;
-  ((c && c.messages) || []).forEach((m) => { n += Math.ceil(String((m && m.content) || '').length / 4) + 4; });
+  /* v20261001 : car/3.5 (avant /4) — aligné sur jetonsEstimes() du shim :
+     /4 sous-estimait ~14 % et la jauge ne montrait la saturation qu'après
+     le vrai seuil de compression (95 %). */
+  ((c && c.messages) || []).forEach((m) => { n += Math.ceil(String((m && m.content) || '').length / 3.5) + 4; });
   return n;
 }
 function limiteDiscussion() {
@@ -6321,8 +6331,8 @@ function majBadgeContexte() {
   el.textContent = lim ? formatK(u) + '/' + formatK(lim) : formatK(u);
   const bouton = document.getElementById('btn-contexte');
   if (bouton) bouton.title = lim
-    ? `Contexte : ${u} tokens estimés / ${lim} (${Math.round((u / lim) * 100)} %) — compression auto à 85 %`
-    : `Contexte : ${u} tokens estimés (mode auto — limite selon le modèle) — compression auto à 85 %`;
+    ? `Contexte : ${u} tokens estimés / ${lim} (${Math.round((u / lim) * 100)} %) — compression auto à 95 %`
+    : `Contexte : ${u} tokens estimés (mode auto — limite selon le modèle) — compression auto à 95 %`;
 }
 function fermerHudContexte() {
   const panneau = document.getElementById('hud-contexte');
@@ -6359,7 +6369,7 @@ function rendreHudContexte() {
   });
   const note = document.createElement('div');
   note.className = 'hud-note';
-  note.textContent = 'Estimation : caractères / 4. Au-delà de 85 % de la limite, les anciens messages sont résumés automatiquement.';
+  note.textContent = 'Estimation : caractères / 3.5. Au-delà de 95 % de la limite, les anciens messages sont résumés automatiquement.';
   panneau.appendChild(note);
 }
 (function initHudContexte() {
