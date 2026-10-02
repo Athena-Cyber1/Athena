@@ -658,8 +658,9 @@ window.addEventListener('storage', (e) => {
    (ex. « ```athena-file… » affiché tel quel dans la liste). */
 function nettoyerApercu(texte) {
   let t = String(texte || '');
-  t = t.replace(/```\s*athena-file\s+([^\n`]+)[\s\S]*?(?:```|$)/gi, '[fichier : $1]');
-  t = t.replace(/```\s*athena-exec\b[\s\S]*?(?:```|$)/gi, '[commande]');
+    t = t.replace(/```\s*athena-file\s+([^\n`]+)[\s\S]*?(?:```|$)/gi, '[fichier : $1]');
+    t = t.replace(/```\s*athena-browser\b[\s\S]*?(?:```|$)/gi, '[navigateur]');
+    t = t.replace(/```\s*athena-exec\b[\s\S]*?(?:```|$)/gi, '[commande]');
   t = t.replace(/```/g, '');
   t = t.replace(/^\s*(#{1,6}\s+|>+\s*|[-*•]\s+|\d+[.)]\s+)/gm, '');
   return t.replace(/\s+/g, ' ').trim();
@@ -2259,6 +2260,27 @@ function creerBlocCode(langage, code) {
     });
     pre.appendChild(executer);
   }
+  /* v1.3 (navigateur) : ```athena-browser → bouton Lancer (même promesse
+     que Exécuter : clic → [428 → modale] → résultat rendu au modèle). */
+  if ((langage || '').toLowerCase() === 'athena-browser') {
+    pre.classList.add('nav-bloc');
+    const lancer = document.createElement('button');
+    lancer.type = 'button';
+    lancer.className = 'code-exec code-nav';
+    lancer.title = 'Piloter Firefox via l’agent local (127.0.0.1:3020)';
+    lancer.setAttribute('aria-label', 'Lancer l’action navigateur');
+    lancer.textContent = 'Lancer';
+    lancer.addEventListener('click', async () => {
+      const c = conversationOuverte();
+      if (c && c._budgetEpuise) {
+        notifier('Budget de commandes épuisé : réponds par ton verdict, plus aucune action ne sera lancée.');
+        return;
+      }
+      const d = await lancerActionNavigateur(code, lancer, codeEl);
+      if (d) enchainerApresExec(c, [d], codeEl.closest ? (codeEl.closest('.bubble') || null) : null);
+    });
+    pre.appendChild(lancer);
+  }
   /* v20261001 : HTML/SVG → bouton « Interpréter » (rendu immédiat dans le
      HUD à droite, iframe sandboxée + console des erreurs). */
   if (/^(html?|xhtml|svg)$/i.test((langage || '').trim())) {
@@ -2861,6 +2883,148 @@ function conclureExec(codeEl, brut, d, auto, convoId) {
   return d;
 }
 
+/* ==== v1.3 : navigateur Firefox intégré (bloc ```athena-browser) ==== */
+const NAV_ACTIONS = ['ouvrir', 'snapshot', 'texte', 'html', 'cliquer', 'taper',
+  'js', 'capture', 'attente', 'fermer'];
+
+/* Une action par bloc : 1er jeton = action, le RESTE = argument (peut
+   contenir des espaces et des sauts de ligne, ex. une expression JS). */
+function parserActionNavigateur(ligne) {
+  const t = String(ligne || '').trim();
+  if (!t) return null;
+  const i = t.search(/\s/);
+  const action = (i < 0 ? t : t.slice(0, i)).toLowerCase();
+  const arg = i < 0 ? '' : t.slice(i + 1).trim();
+  if (!NAV_ACTIONS.includes(action)) return null;
+  return { action, arg };
+}
+
+/* Poste l'action à /api/browser (shim → agent local :3020).
+   manuel : confirme:false d'abord → 428 → modale → confirme:true ;
+            si 200 direct, l'action tournait déjà (pas de re-POST).
+   auto   : UN SEUL POST confirme:true, sans modale.
+   Retourne {commande, navigateur:true, ok, stdout, stderr, url, titre, ...}. */
+async function lancerActionNavigateur(ligne, bouton, codeEl, opts) {
+  const auto = Boolean(opts && opts.auto);
+  if (bouton && bouton.disabled) return null;
+  const brut = String(ligne || '').trim();
+  if (!brut) return null;
+  const convoId = idConversation;
+  const zone = () => codeEl.closest('pre')?.querySelector('.exec-sortie')
+    || (() => {
+      const d = document.createElement('div');
+      d.className = 'exec-sortie';
+      codeEl.closest('pre')?.appendChild(d);
+      return d;
+    })();
+  /* Jamais de throw : l'erreur doit ARRIVER au modèle (sinon la boucle
+     s'arrête pile dessus et il ne peut pas corriger son action). */
+  const clore = (d) => {
+    try { ajouterTraceActivite(codeEl, d); } catch (_) {}
+    try { memoriserTraceActivite(brut, d, convoId); } catch (_) {}
+    if (bouton) { bouton.disabled = false; bouton.textContent = 'Lancer'; }
+    return d;
+  };
+  const echec = (raison, code) => clore({
+    commande: brut, navigateur: true,
+    action: (parserActionNavigateur(brut) || {}).action || null,
+    ok: false,
+    stdout: '', stderr: raison,
+    code: (code === undefined ? null : code), duree_ms: null,
+  });
+
+  const p = parserActionNavigateur(brut);
+  if (!p) {
+    return echec('Action navigateur invalide dans le bloc : ' + brut.split('\n')[0].slice(0, 80)
+      + ' — actions autorisées : ' + NAV_ACTIONS.join(', ') + '.');
+  }
+  if (bouton) { bouton.disabled = true; bouton.textContent = '…'; }
+
+  const poster = (confirme) => fetch('/api/browser', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: p.action, arg: p.arg || undefined, confirme: confirme === true }),
+  });
+
+  try {
+    let r;
+    if (auto) {
+      r = await poster(true);
+    } else {
+      r = await poster(false);
+      if (r.status === 428) {
+        const dj = await r.json().catch(() => ({}));
+        const confirme = await boiteModale({
+          titre: p.action === 'ouvrir' ? 'Ouvrir ce site dans le navigateur ?'
+            : 'Évaluer du JavaScript dans la page ?',
+          message: (dj.origine ? 'Site : ' + dj.origine + '\n' : '')
+            + 'Action : ' + brut.slice(0, 200)
+            + '\nAgent local 127.0.0.1:3020 — Firefox est piloté par le modèle.',
+          labelOk: 'Lancer',
+          danger: p.action === 'js',
+        });
+        if (!confirme) {
+          zone().textContent = 'Annulé.';
+          zone().className = 'exec-sortie';
+          if (bouton) { bouton.disabled = false; bouton.textContent = 'Lancer'; }
+          return null;
+        }
+        r = await poster(true);
+      }
+    }
+    const d = await r.json().catch(() => ({}));
+    /* L'agent répond {erreur: '…'} SANS champ ok sur les 400/403/428/503 :
+       la condition devait lire l'HTTP, sinon tout échec passait pour un succès. */
+    if (d.erreur && (r.ok === false || d.ok === false)) {
+      const aide = d.aide ? ' — ' + d.aide : '';
+      const z = zone();
+      z.textContent = d.erreur + aide;
+      z.className = 'exec-sortie err';
+      return clore({
+        commande: brut, navigateur: true, action: p.action, ok: false,
+        stdout: '', stderr: d.erreur + aide,
+        code: (r.status && r.status !== 200) ? r.status : null,
+        duree_ms: typeof d.duree_ms === 'number' ? d.duree_ms : null,
+      });
+    }
+    if (!r.ok) {
+      return echec('Agent navigateur : HTTP ' + r.status, r.status);
+    }
+    /* Texte LISIBLE pour le modèle (et la trace UI). */
+    const morceaux = [];
+    if (d.url) morceaux.push('url : ' + d.url);
+    if (d.titre) morceaux.push('titre : ' + d.titre);
+    const corps = d.snapshot || d.texte || d.html || d.sortie;
+    if (corps) morceaux.push(p.action + ' :\n' + corps);
+    if (d.message) morceaux.push(d.message);
+    if (d.chemin) morceaux.push('capture PNG : ' + d.chemin);
+    const sortieNav = morceaux.join('\n');
+    const z = zone();
+    z.className = 'exec-sortie';
+    z.textContent = sortieNav.length > 600 ? sortieNav.slice(0, 600) + ' […]' : sortieNav;
+    if (d.image) {
+      const img = document.createElement('img');
+      img.className = 'nav-capture';
+      img.src = d.image;
+      img.alt = 'Capture d’écran de la page';
+      z.appendChild(document.createElement('br'));
+      z.appendChild(img);
+    }
+    return clore({
+      commande: brut, navigateur: true, action: p.action, ok: true,
+      stdout: sortieNav, stderr: '',
+      url: d.url, titre: d.titre, image: d.image, chemin: d.chemin,
+      code: 0, duree_ms: typeof d.duree_ms === 'number' ? d.duree_ms : null,
+    });
+  } catch (e) {
+    const z = zone();
+    z.textContent = 'Agent navigateur injoignable : ' + String((e && e.message) || e).slice(0, 200)
+      + ' — démarrez node mini-services/local-agent/index.js';
+    z.className = 'exec-sortie err';
+    return echec('Agent navigateur injoignable : ' + String((e && e.message) || e).slice(0, 200));
+  }
+}
+
 /* Envoie la commande à /api/exec (shim → local-agent 127.0.0.1:3020 — le
    shell tourne SUR LE POSTE, jamais dans le navigateur). Deux chemins :
    - manuel (défaut, ou préférence executionAuto off) :
@@ -3020,7 +3184,9 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
    rendu neuf (genererReponse) : recharger ou rouvrir une conversation
    ne ré-exécute JAMAIS rien. */
 function autoExecBlocs(bulleEl) {
-  const blocs = bulleEl ? [...bulleEl.querySelectorAll('.exec-bloc')] : [];
+  /* v1.3 : les blocs navigateur suivent EXACTEMENT la même chaîne que les
+     commandes (même budget, même fenêtre, même restitution au modèle). */
+  const blocs = bulleEl ? [...bulleEl.querySelectorAll('.exec-bloc, .nav-bloc')] : [];
   if (!blocs.length) return Promise.resolve([]);
   /* v1.2 : budget d'exécution épuisé → on ne lance plus rien (une commande
      exécutée sans personne pour la lire ferait avancer le modèle à l'aveugle). */
@@ -3036,8 +3202,11 @@ function autoExecBlocs(bulleEl) {
       const codeEl = pre.querySelector('code');
       const bouton = pre.querySelector('.code-exec');
       if (!codeEl || !bouton || pre.dataset.execAuto === '1') continue;
+      const estNav = pre.classList.contains('nav-bloc');
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
-      const d = await lancerCommandeLocale(codeEl.textContent, bouton, codeEl, { auto: true });
+      const d = estNav
+        ? await lancerActionNavigateur(codeEl.textContent, bouton, codeEl, { auto: true })
+        : await lancerCommandeLocale(codeEl.textContent, bouton, codeEl, { auto: true });
       if (d) resultats.push(d);
     }
     return resultats;
@@ -3072,6 +3241,27 @@ function corpsPourModele(d, repete) {
     ? t.slice(0, MAX_SORTIE_EXEC_MODELE)
       + '\n[…sortie tronquée : ' + t.length + ' caractères au total…]'
     : t);
+  /* v1.3 : action navigateur → enveloppe dédiée. Le SAVOIR-FAIRE attendu
+     est différent d'une commande shell : le modèle doit lire l'état de la
+     PAGE (url + snapshot), pas un code de retour. */
+  if (d && d.navigateur) {
+    const corps = ['<resultat_navigateur>', 'action : ' + String(d.commande || '')];
+    corps.push('succes : ' + (d.ok ? 'oui' : 'non'));
+    if (d.url) corps.push('url : ' + d.url);
+    if (d.titre) corps.push('titre : ' + d.titre);
+    if (sortie.trim()) corps.push('resultat :\n' + coupe(sortie));
+    if (err.trim()) corps.push('erreur :\n' + coupe(err));
+    if (!sortie.trim() && !err.trim()) corps.push('(aucun retour)');
+    corps.push('duree_ms : ' + ((d.duree_ms == null) ? 'n/c' : d.duree_ms));
+    if (repete) corps.push('ATTENTION : tu as déjà lancé cette action exacte — '
+      + 'elle est déjà faite, ne la réémet pas. Passe à l\'étape suivante.');
+    if (d.ok && d.action === 'ouvrir') {
+      corps.push('PROCHAINE ÉTAPE ATTENDUE : lis l\'état avec un bloc snapshot avant '
+        + 'de cliquer — ne présume jamais du contenu d\'une page que tu n\'as pas relue.');
+    }
+    corps.push('</resultat_navigateur>');
+    return corps.join('\n');
+  }
   const corps = ['<resultat_commande>', 'commande : ' + String((d && d.commande) || '')];
   corps.push('succes : ' + (d && d.ok ? 'oui' : 'non'));
   corps.push('code : ' + ((d && d.code) == null ? 'n/c' : d.code)
@@ -3134,7 +3324,7 @@ function relancerSiPromesse(convo, bulleEl) {
     if (!convo || convo._relanceFaite || convo._budgetEpuise) return;
     if (!Number(convo._toursExec)) return;          // aucune tâche en cours
     const b = bulleEl || null;
-    if (b && b.querySelector('.exec-bloc')) return; // il a agit : rien à relancer
+    if (b && b.querySelector('.exec-bloc, .nav-bloc')) return; // il a agit : rien à relancer
     const reponse = b ? texteRepre(b) : '';
     /* v1.2 (anti-bouclecognitive) : le cas le plus destructeur n'est pas la
        promesse, c'est la RÉTRO-ANALYSE. Run réel mesuré : le modèle a
@@ -3535,7 +3725,7 @@ function markdownVersFragment(texte) {
       let langage = ouverture[2] || '';
       let resteLigne = ouverture[3] || '';
       const bas = langage.toLowerCase();
-      ['athena-exec', 'athena-file'].forEach((spec) => {
+      ['athena-exec', 'athena-file', 'athena-browser'].forEach((spec) => {
         if (bas.indexOf(spec) === 0 && langage.length > spec.length) {
           resteLigne = langage.slice(spec.length) + resteLigne;
           langage = spec;

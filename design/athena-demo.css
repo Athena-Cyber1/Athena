@@ -3854,6 +3854,26 @@ details.trace-cmd.echec .trace-cmd-status {
 .exec-manuel .exec-bloc {
   display: block;
 }
+/* v1.3 : bloc ```athena-browser — visible ENCORE PLUS que le bloc exec
+   (masqué en mode auto) : c'est lui qui montre où va le modèle ET reçoit
+   la capture d'écran (une capture dans un pre[display:none] serait invisible). */
+.nav-bloc {
+  display: block;
+}
+.nav-capture {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+  border: 1px solid var(--bord-fort);
+  border-radius: 8px;
+}
+html[data-theme="light"] .nav-capture {
+  border-color: var(--bord);
+}
+/* bouton Lancer : libellé plus large que « Exécuter » */
+.code-nav {
+  right: 42px;
+}
 /* v20260926e (kimi) : indicateur « le modèle réfléchit » — trois points
    pulsants, CSS pur, monochrome. Désactivé par .reduce-animation (global)
    et prefers-reduced-motion (ci-dessous). */

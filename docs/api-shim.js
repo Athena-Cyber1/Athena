@@ -735,6 +735,41 @@
     'Dans les deux cas, une correction non écrite n\'est PAS une correction : si ' +
     'tu as trouvé des bugs, écris le fichier. Ne termine jamais sur un constat ' +
     'sans avoir rien modifié.';
+
+  /* v1.3 (navigateur) : Firefox intégré piloté par le modèle — même
+     paradigm que athena-exec (bloc → exécution → résultat renvoyé), mais
+     l'état est une SESSION qui persiste d'un bloc à l'autre. */
+  var ATHENA_SYSTEM_NAVIGATEUR =
+    'NAVIGATEUR INTÉGRÉ (Firefox) : pour consulter ou manipuler une page web — ' +
+    'lire un site, remplir un formulaire, cliquer, vérifier le rendu d\'une page ' +
+    'que tu viens d\'écrire — réponds avec un bloc de code fenced de langage exact ' +
+    'athena-browser contenant UNE action, par exemple:\n' +
+    '```athena-browser\nouvrir https://exemple.com\n```\n' +
+    'Une action par bloc ; tu peux enchaîner plusieurs blocs dans la même réponse ' +
+    'et ils partent dans l\'ordre. Actions disponibles (syntaxe exacte) :\n' +
+    '  ouvrir <url>        http(s):// ou file:// — ouvre la page (demande confirmation ' +
+    'sur chaque nouveau site, puis plus rien)\n' +
+    '  snapshot            arbre accessible de la page (rôles + libellés + URLs) : ' +
+    'C\'EST ce que tu lis pour t\'orienter, préfère-le au HTML\n' +
+    '  texte               texte visible de la page\n' +
+    '  html                source HTML\n' +
+    '  cliquer <cible>     ex. text=Se connecter ou un sélecteur CSS comme #bouton\n' +
+    '  taper <texte>       frappe au clavier dans l\'élément DÉJÀ focus (cliquer d\'abord)\n' +
+    '  js <expression>     JS évalué dans la page (demande confirmation)\n' +
+    '  capture             capture d\'écran → chemin PNG + aperçu dans la conversation\n' +
+    '  attente <ms>        pause, max 10000 (attends un rendu asynchrone)\n' +
+    '  fermer              ferme la session\n' +
+    'MÉTHODE : ouvrir → snapshot → clique → snapshot → … , et tu relis le snapshot ' +
+    'APRÈS chaque action : un clic ouvre souvent une nouvelle page. Chaque action ' +
+    'te revient dans le message suivant, encadrée par <resultat_navigateur> ; ' +
+    'enchaîne jusqu\'au bout sans attendre ma validation. ' +
+    'Erreur « aucun élément ne correspond à ce sélecteur » = ton libellé est faux : ' +
+    'relis le snapshot et prends le libellé exact, ne réessaie pas à l\'aveugle. ' +
+    'Un site déjà ouvert ne demande plus aucune confirmation. ' +
+    'Pour un rendu rapide d\'un fichier local SANS interaction, le Chrome headless ' +
+    'décrit plus haut (screenshot + dump-dom) reste plus rapide ; pour INTERAGIR ' +
+    '(formulaire, clic, navigation), utilise ce navigateur.';
+
   /* v1.2 (langue, fin de bloc) : la contrainte de langue était UNIQUEMENT en
      tête d'un bloc de ~6500 caractères suivie de plusieurs milliers d'autres —
      mesuré : le raisonnement partait en anglais et des caractères chinois
@@ -762,6 +797,7 @@
   var ATHENA_SYSTEM_BASE = ATHENA_SYSTEM_GENERAL;
   var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_BASE
     + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_FICHIER
+    + '\n\n' + ATHENA_SYSTEM_NAVIGATEUR
     + '\n\n' + ATHENA_SYSTEM_FIN;
   var ATHENA_SYSTEM_SANS_OUTILS = ATHENA_SYSTEM_BASE + '\n\n' + ATHENA_SYSTEM_FIN;
   /* v1.2 (langue, proximité) : même avec FIN en fin de system, plusieurs
@@ -996,6 +1032,50 @@
         detail: String((e && e.message) || e).slice(0, 160),
       }, 503);
     }
+  }
+
+  /* v1.3 (navigateur) : proxy vers l'agent local — même plombage que
+     agentLocalExec (loopback, borne, 503 honnête si injoignable). */
+  async function agentLocalBrowser(payload, signal) {
+    try {
+      var reqInit = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: signal || undefined,
+      };
+      try {
+        var reqObj = new Request(LOCAL_AGENT + '/browser', reqInit);
+        if ('targetAddressSpace' in reqObj) reqObj.targetAddressSpace = 'loopback';
+        var r = await appelBorne(realFetch(reqObj), 30000);
+      } catch (eReq) {
+        if (eReq && eReq.name === 'AbortError') throw eReq;
+        var r = await appelBorne(realFetch(LOCAL_AGENT + '/browser', reqInit), 30000);
+      }
+      var t = await r.text();
+      var d = null;
+      try { d = JSON.parse(t); } catch (e) { d = null; }
+      if (!d) return json({ erreur: 'agent local : réponse illisible' }, 502);
+      return json(d, r.status || 200);
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      return json({
+        erreur: 'Agent local injoignable ou Local Network bloqué — démarrez node mini-services/local-agent/index.js, puis autorisez le site (⋮ → Local Network → Allow).',
+        detail: String((e && e.message) || e).slice(0, 160),
+      }, 503);
+    }
+  }
+
+  async function gererBrowser(bodyStr, signal) {
+    var body = {};
+    try { body = JSON.parse(bodyStr || '{}'); } catch (e) { body = {}; }
+    var action = String(body.action || '').trim().toLowerCase();
+    if (!action) return json({ erreur: 'action absente' }, 400);
+    return agentLocalBrowser({
+      action: action,
+      arg: typeof body.arg === 'string' ? body.arg : undefined,
+      confirme: body.confirme === true,
+    }, signal);
   }
 
   async function gererWrite(bodyStr, signal) {
@@ -1521,7 +1601,9 @@
     for (var ib = 0; ib < msgs.length; ib++) {
       var ci = String((msgs[ib] && msgs[ib].content) || '');
       if (ci.indexOf('```athena-exec') >= 0 || ci.indexOf('```athena-file') >= 0
-          || ci.indexOf('<resultat_commande>') >= 0) return true;
+          || ci.indexOf('```athena-browser') >= 0
+          || ci.indexOf('<resultat_commande>') >= 0
+          || ci.indexOf('<resultat_navigateur>') >= 0) return true;
     }
     var der = String((msgs[msgs.length - 1] && msgs[msgs.length - 1].content) || '');
     return /commande|powershell|script|ex[eé]cut|lance|d[eé]marre|terminal|shell|console|fichier|dossier|réperto|reperto|liste|affiche|montre|cherche|Get-|Set-|New-|Remove-|Start-|npm |npx |git |python|pip |node |curl |ping |ipconfig|hostname|processus|registre|installer|lancer/i.test(der);
@@ -1903,6 +1985,26 @@
     }
     if (path === '/api/write') {
       if (method === 'POST') return gererWrite(body, signal);
+      return json({ erreur: 'méthode' }, 405);
+    }
+    if (path === '/api/browser') {
+      if (method === 'POST') return gererBrowser(body, signal);
+      if (method === 'GET') {
+        try {
+          var hsReqN = new Request(LOCAL_AGENT + '/sante');
+          if ('targetAddressSpace' in hsReqN) hsReqN.targetAddressSpace = 'loopback';
+          var hsN;
+          try { hsN = await appelBorne(realFetch(hsReqN), 2000); }
+          catch (eHN) { hsN = await appelBorne(realFetch(LOCAL_AGENT + '/sante'), 2000); }
+          return json(await hsN.json(), hsN.status);
+        } catch (eN) {
+          return json({
+            ok: false,
+            erreur: 'agent local injoignable ou Local Network bloqué — autorisez le site (⋮ → Local Network → Allow)',
+            port: 3020,
+          }, 503);
+        }
+      }
       return json({ erreur: 'méthode' }, 405);
     }
     if (path === '/api/modeles') {

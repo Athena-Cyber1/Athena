@@ -30,13 +30,30 @@ const os = require('os');
 
 const PORT = 3020;
 const HOST = '127.0.0.1';
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 const AUTO = process.argv.includes('--auto');
 const TIMEOUT_MS = 60000;
 const TIMEOUT_MIN_MS = 100;
 const MAX_OUT = 64 * 1024;
 /* v1.1 (direct) : écriture de fichiers créés par le modèle. */
 const MAX_WRITE = 2 * 1024 * 1024;
+/* ---- v1.3 (navigateur) : Firefox intégré piloté par le modèle ----
+   Session Playwright persistante en mémoire : une seule fenêtre vivante,
+   réutilisée d'une action à l'autre (sinon chaque bloc relancerait un
+   navigateur = 2-3 s et aucun état conservé). */
+const NAV_ACTIONS = [
+  'ouvrir', 'snapshot', 'texte', 'html', 'cliquer', 'taper',
+  'js', 'capture', 'attente', 'fermer',
+];
+const NAV_ARG_MAX = 4000;             // argument d'action (1 ligne, jamais un script)
+const NAV_URL_MAX = 2048;
+const NAV_TIMEOUT = 15000;            // par action (goto inclus)
+const NAV_MAX_TEXTE = 40000;          // texte/html borné (même borne que stdout)
+const NAV_CAPTURE_MAX = 500 * 1024;   // data-URL au-delà = chemin seul
+const NAV_IDLE_MS = 10 * 60 * 1000;   // session seule : fermeture automatique
+/* Schémas refusés : ni exécution de code dans l'agent, ni pages « internes »
+   (about:config, prefs) — le modèle navigue, il ne pilote pas Firefox. */
+const NAV_URL_REFUS = /^(javascript|about|data|blob|view-source|resource|chrome|moz-extension):/i;
 const DENY_WRITE = [
   /^[a-z]:\\windows([\\\/]|$)/i,
   /\\system32([\\\/]|$)/i,
@@ -127,6 +144,203 @@ function journaliser(entree) {
 
 /* v1.2 (audit) : enfants actifs suivis pour l'arrêt propre (SIGINT). */
 const enfantsActifs = new Set();
+
+/* ==== v1.3 : session navigateur Firefox (Playwright) ==== */
+let pw = null;
+try { pw = require('playwright'); } catch (_) { pw = null; }
+const nav = { browser: null, page: null, ferme: false, fermePour: null, dernier: 0 };
+const navOriginesValidees = new Set();  // origines confirmées par l'utilisateur
+let navVerrou = Promise.resolve();   // sérialise les actions (1 page = 1 flux)
+
+function navEtat() {
+  if (!pw) return 'absent';
+  if (nav.page && !nav.ferme) return 'pret';
+  return 'inactif';
+}
+
+async function navFermer(raison) {
+  const b = nav.browser;
+  nav.page = null;
+  nav.browser = null;
+  nav.ferme = true;
+  nav.fermePour = raison || 'fermeture';
+  navOriginesValidees.clear();
+  if (b) { try { await b.close(); } catch (_) {} }
+}
+
+async function navObtenirPage() {
+  /* Relance une session si l'utilisateur l'a fermée (nav.ferme), si la page
+     a crashé ou si le process a redémarré — le modèle ne doit pas voir
+     « aucune session » sur un simple restart. */
+  if (nav.page && nav.page.__athenaCrash) { nav.page = null; nav.browser = null; }
+  if (nav.ferme && !nav.browser) { nav.ferme = false; nav.fermePour = null; }
+  if (nav.browser && nav.page) {
+    try { if (nav.page.isClosed()) { nav.page = null; nav.browser = null; } } catch (_) {}
+  }
+  if (!nav.browser) {
+    const ctx = await pw.firefox.launchPersistentContext(
+      /* profil isolé dans le dossier temporaire : ni l'historique ni les
+         cookies du Firefox réel de l'utilisateur ne sont concernés. */
+      require('path').join(require('os').tmpdir(), 'athena-firefox-profile'),
+      {
+        headless: false,
+        viewport: { width: 1280, height: 900 },
+        ignoreHTTPSErrors: true,
+        args: [],
+      },
+    );
+    nav.browser = ctx;
+    const pages = ctx.pages();
+    nav.page = pages.length ? pages[0] : await ctx.newPage();
+  } else if (!nav.page) {
+    const pages = nav.browser.pages();
+    nav.page = pages.length ? pages[0] : await nav.browser.newPage();
+  }
+  nav.dernier = Date.now();
+  return nav.page;
+}
+
+/* Attache un gestionnaire d'erreur UNE FOIS par page : sans lui, une page
+   qui crashe au milieu d'une action laisse la promesse pendre jusqu'au
+   timeout et le modèle croit à un navigateur gelé. */
+function navEcouter(page) {
+  if (page.__athenaEcoute) return;
+  page.__athenaEcoute = true;
+  const marquer = () => { try { page.__athenaCrash = true; } catch (_) {} };
+  page.on('close', marquer);
+  page.on('crash', marquer);
+}
+
+function navBorne(p, ms) {
+  let timer = null;
+  const e = new Promise((_, rej) => {
+    timer = setTimeout(() => {
+      const err = new Error('action navigateur dépassée (' + ms + ' ms)');
+      err.code = 'NAVTMO';
+      rej(err);
+    }, ms);
+  });
+  return Promise.race([p, e]).finally(() => clearTimeout(timer));
+}
+
+/* Coupe le texte lu dans la page : borne + fin marquée (sinon le modèle
+   croit que la page est terminée alors que c'est nous qui avons coupé). */
+function navCouper(t, n) {
+  const s = String(t == null ? '' : t);
+  if (s.length <= n) return { texte: s, tronque: false };
+  return { texte: s.slice(0, n) + '\n[…tronqué : ' + s.length + ' caractères au total…]', tronque: true };
+}
+
+async function navAction(action, arg) {
+  if (action === 'fermer') {
+    await navFermer('action fermer');
+    return { ok: true, message: 'session fermée (le prochain ouvrir relancera Firefox)' };
+  }
+  const page = await navObtenirPage();
+  navEcouter(page);
+  const url = () => { try { return page.url(); } catch (_) { return null; } };
+
+  if (action === 'ouvrir') {
+    await navBorne(page.goto(arg, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT }), NAV_TIMEOUT);
+    /* Laisse le JS de chargement se poser : un snapshot juste après goto
+       lit une page vide et le modèle conclut à tort « page cassée ». */
+    await navBorne(page.waitForLoadState('domcontentloaded').catch(() => {}), 3000);
+    const titre = await page.title().catch(() => '');
+    return { ok: true, url: url(), titre, action: 'ouvrir' };
+  }
+
+  if (action === 'snapshot') {
+    /* Arbre accessible : C'EST ce que le modèle lit pour s'orienter
+       (roles + noms), pas le HTML complet. */
+    const snap = await navBorne(page.locator('body').ariaSnapshot({ timeout: NAV_TIMEOUT }), NAV_TIMEOUT);
+    const c = navCouper(snap, NAV_MAX_TEXTE);
+    return { ok: true, snapshot: c.texte, tronque: c.tronque, url: url() };
+  }
+
+  if (action === 'texte') {
+    const brut = await navBorne(
+      page.evaluate(() => (document.body ? document.body.innerText : ''), null).catch(() => ''),
+      NAV_TIMEOUT,
+    );
+    const c = navCouper(brut, NAV_MAX_TEXTE);
+    return { ok: true, texte: c.texte, tronque: c.tronque, url: url() };
+  }
+
+  if (action === 'html') {
+    const brut = await navBorne(page.content().catch(() => ''), NAV_TIMEOUT);
+    const c = navCouper(brut, NAV_MAX_TEXTE);
+    return { ok: true, html: c.texte, tronque: c.tronque, url: url() };
+  }
+
+  if (action === 'cliquer') {
+    /* Échec RAPIDE et lisible si le sélecteur ne correspond à rien : sans
+       ça, Playwright attend la pleine durée du timeout puis renvoie un
+       « locator.click: Timeout » sans dire que l'élément est INEXISTANT —
+       le modèle croit à un navigateur gelé et recommence à l'aveugle.
+       4 s de grâce (DOM dynamique) puis erreur explicite + rappel snapshot. */
+    const loc = page.locator(arg).first();
+    let trouve = true;
+    try {
+      await navBorne(loc.waitFor({ state: 'attached', timeout: 4000 }), 4500);
+    } catch (_) { trouve = false; }
+    if (!trouve) {
+      const n = await page.locator(arg).count().catch(() => 0);
+      if (n === 0) {
+        const e = new Error('aucun élément ne correspond à ce sélecteur : ' + arg
+          + ' (0 correspondance). Relis le snapshot pour obtenir le libellé exact'
+          + ' — ex. text=Libellé ou un sélecteur CSS.');
+        e.code = 'NAVPASLU';
+        throw e;
+      }
+    }
+    await navBorne(loc.click({ timeout: NAV_TIMEOUT }), NAV_TIMEOUT);
+    await navBorne(page.waitForLoadState('domcontentloaded').catch(() => {}), 3000);
+    const titre = await page.title().catch(() => '');
+    return { ok: true, url: url(), titre };
+  }
+
+  if (action === 'taper') {
+    /* Frappe dans l'élément DÉJÀ focus : clique d'abord (cliquer) puis
+       taper. Une seule grammaire, pas de devinettes sur les sélecteurs. */
+    await navBorne(page.keyboard.type(arg, { delay: 15 }), NAV_TIMEOUT);
+    return { ok: true, url: url() };
+  }
+
+  if (action === 'js') {
+    const brut = await navBorne(page.evaluate((code) => {
+      try {
+        const v = (0, eval)(code);   // eslint-disable-line no-eval
+        if (v === undefined) return 'undefined';
+        if (typeof v === 'string') return v;
+        try { return JSON.stringify(v, null, 2); } catch (_) { return String(v); }
+      } catch (e) { return 'ERREUR: ' + String((e && e.message) || e); }
+    }, arg), NAV_TIMEOUT);
+    const c = navCouper(brut, NAV_MAX_TEXTE);
+    return { ok: true, sortie: c.texte, tronque: c.tronque, url: url() };
+  }
+
+  if (action === 'capture') {
+    const buf = await navBorne(page.screenshot({ type: 'png' }), NAV_TIMEOUT);
+    const nom = 'athena-nav-' + Date.now().toString(36) + '.png';
+    const chemin = require('path').join(require('os').tmpdir(), nom);
+    require('fs').writeFileSync(chemin, buf);
+    const rep = { ok: true, chemin, octets: buf.length, url: url() };
+    if (buf.length <= NAV_CAPTURE_MAX) rep.image = 'data:image/png;base64,' + buf.toString('base64');
+    else rep.message = 'capture trop volumineuse pour l\'aperçu (' + buf.length + ' o) — chemin fourni';
+    return rep;
+  }
+
+  if (action === 'attente') {
+    const ms = Math.max(0, Math.min(10000, parseInt(arg, 10) || 0));
+    await new Promise((r) => setTimeout(r, ms));
+    return { ok: true, message: 'attendu ' + ms + ' ms', url: url() };
+  }
+
+  const e = new Error('action non implémentée : ' + action);
+  e.code = 'NAVINCONNU';
+  throw e;
+}
+
 
 function cors(origin, req) {
   const o = origin || '';
@@ -418,6 +632,9 @@ const serveur = http.createServer(async (req, res) => {
            pendant qu'une tâche travaille. */
         en_cours: enfantsActifs.size,
         platform: process.platform,
+        /* v1.3 : navigateur — absent = Playwright non installé (npm i). */
+        navigateur: navEtat(),
+        version_agent: VERSION,
       }, origin, req);
       return;
     }
@@ -710,7 +927,113 @@ const serveur = http.createServer(async (req, res) => {
       return;
     }
 
-    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, POST /exec, POST /write)' }, origin, req);
+    /* ==== v1.3 : navigateur Firefox intégré (Playwright) ====
+       {action, arg?, confirme?} — UNE action par requête, sérialisées sur
+       une session unique. Le résultat contient ce que le modèle doit LIRE
+       (snapshot/texte/erreur), jamais le flux interne. */
+    if (req.method === 'POST' && chemin === '/browser') {
+      let brutn;
+      try { brutn = await lireCorps(req, 16 * 1024); }
+      catch (e) {
+        json(res, (e && e.code) || 400, { erreur: (e && e.message) || 'corps illisible' }, origin, req);
+        return;
+      }
+      let corpsn = {};
+      try { corpsn = JSON.parse(brutn || '{}'); } catch (_) {}
+      if (corpsn !== null && typeof corpsn !== 'object') {
+        json(res, 400, { erreur: 'corps JSON objet attendu' }, origin, req);
+        return;
+      }
+      const action = String(corpsn.action || '').trim().toLowerCase();
+      const arg = String(corpsn.arg || corpsn.url || '').trim();
+      if (!NAV_ACTIONS.includes(action)) {
+        json(res, 400, {
+          erreur: 'action inconnue : ' + (action || '(vide)'),
+          actions: NAV_ACTIONS,
+        }, origin, req);
+        return;
+      }
+      if (arg.length > NAV_ARG_MAX || arg.includes('\0')) {
+        json(res, 400, { erreur: 'argument trop long (' + NAV_ARG_MAX + ' caractères max, reçu : ' + arg.length + ')' }, origin, req);
+        return;
+      }
+      if (!pw) {
+        json(res, 503, {
+          erreur: 'navigateur indisponible : Playwright non installé',
+          aide: 'cd mini-services/local-agent && npm install playwright && npx playwright install firefox',
+        }, origin, req);
+        return;
+      }
+      if ((action === 'ouvrir' || action === 'taper') && !arg) {
+        json(res, 400, { erreur: 'argument requis pour l\'action ' + action }, origin, req);
+        return;
+      }
+      /* Schémas refusés : javascript:, about:, data: — le modèle navigue,
+         il ne crée pas de page-script. file:// reste autorisé (tester une
+         page locale écrite par athena-file est le cas d'usage n° 1). */
+      if (action === 'ouvrir' && NAV_URL_REFUS.test(arg)) {
+        json(res, 400, { erreur: 'schéma d\'URL refusé', url: arg.slice(0, 120) }, origin, req);
+        return;
+      }
+      /* Confirmation : ouvrir un SITE hors des origines déjà validées, ou
+         évaluer du JS (équivalent d'une commande) demandent l'accord.
+         Les actions de lecture dans la page ouverte ne redemandent pas. */
+      const confirmeN = corpsn.confirme === true || AUTO;
+      let origineCible = null;
+      if (action === 'ouvrir') {
+        try { origineCible = new URL(arg).origin; } catch (_) { origineCible = null; }
+        if (!origineCible) {
+          json(res, 400, { erreur: 'URL invalide (http(s):// ou file:// attendu)', url: arg.slice(0, 120) }, origin, req);
+          return;
+        }
+        if (arg.startsWith('file:')) origineCible = 'file://';
+      }
+      const exigeConfirm = (action === 'ouvrir' && origineCible && !navOriginesValidees.has(origineCible))
+        || action === 'js';
+      if (exigeConfirm && !confirmeN) {
+        json(res, 428, {
+          erreur: 'confirmation requise',
+          action,
+          origine: origineCible,
+          pret: true,
+          hint: 'Renvoyez avec confirme:true après validation utilisateur',
+        }, origin, req);
+        return;
+      }
+      const debut = Date.now();
+      let resultat;
+      try {
+        /* Une seule action à la fois : la page est un état partagé. */
+        const precedent = navVerrou;
+        let liberer = null;
+        navVerrou = new Promise((r) => { liberer = r; });
+        try { await precedent; } catch (_) {}
+        try {
+          resultat = await navAction(action, arg);
+        } finally { if (liberer) liberer(); }
+        if (origineCible && action === 'ouvrir') navOriginesValidees.add(origineCible);
+      } catch (e) {
+        const tmo = e && e.code === 'NAVTMO';
+        resultat = {
+          ok: false,
+          erreur: String((e && e.message) || e).slice(0, 600),
+          timeout: Boolean(tmo),
+        };
+      }
+      const duree = Date.now() - debut;
+      const entreeN = {
+        ts: debut,
+        navigation: action + (arg ? ' ' + arg.slice(0, 120) : ''),
+        ok: resultat.ok !== false,
+        duree_ms: duree,
+      };
+      journaliser(entreeN);
+      console.log(`[local-agent] NAV ${entreeN.ok ? 'OK' : 'ERR'} ${duree}ms :: ${entreeN.navigation}`);
+      json(res, 200, { ...resultat, action, duree_ms: duree, navigateur: navEtat() }, origin, req);
+      return;
+    }
+
+    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, POST /exec, POST /write, POST /browser)' }, origin, req);
   } catch (e) {
     json(res, 500, { erreur: String((e && e.message) || e).slice(0, 200) }, origin, req);
   }
@@ -721,14 +1044,27 @@ serveur.listen(PORT, HOST, () => {
   console.log(`  auto=${AUTO} allow=${ALLOW_DIR || '(tout)'}`);
   console.log('  POST /exec {commande, confirme:true, cwd?, timeout_ms?, flux?} (flux:true = NDJSON en direct)');
   console.log('  POST /write {chemin, contenu, confirme:true, ecraser?} (428 = confirmation requise)');
+  console.log(`  POST /browser {action, arg?, confirme?} (navigateur : ${pw ? 'playwright ok' : 'playwright ABSENT — npm install playwright && npx playwright install firefox'})`);
+  console.log(`  actions navigateur : ${NAV_ACTIONS.join(', ')}`);
 });
+
+/* v1.3 : session navigateur seule = fermeture automatique. Sans ça, une
+   fenêtre Firefox ouverte oubliée reste affichée indéfiniment après la
+   dernière action du modèle. */
+setInterval(() => {
+  if (nav.browser && Date.now() - nav.dernier > NAV_IDLE_MS) {
+    console.log('[local-agent] navigateur : session inactive > 10 min → fermeture');
+    navFermer('inactivité').catch(() => {});
+  }
+}, 60000).unref();
 
 /* v1.2 (audit) : arrêt propre — avant, SIGINT tuait le process en laissant
    les enfants tourner (zombies) et les requêtes en plan. */
-function arretPropre(signal) {
+async function arretPropre(signal) {
   console.log(`[local-agent] ${signal} : arrêt (${enfantsActifs.size} commande(s) en cours)…`);
   for (const e of [...enfantsActifs]) { try { tuerArbre(e); } catch (_) {} }
   enfantsActifs.clear();
+  try { await navFermer('arrêt agent'); } catch (_) {}
   serveur.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000);
 }
