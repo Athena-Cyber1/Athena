@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    Athéna Pages — api-shim.js
    Intercepte window.fetch pour les routes API de l'UI
    (/api/chat, /chat-attache, /api/modeles, /api/files,
@@ -297,7 +297,12 @@
     /* v20260928 : tokenrouter retiré du catalogue (quota épuisé) —
        pas d'appel réseau, même si une vieille clé traîne en localStorage. */
     DYN = { ts: Date.now(), models: [], err: '' };
-    return;
+    /* v20260928 : plus d'appel réseau (tokenrouter retiré). Le corps de
+       l'ancien rafraîchissement est conservé pour référence mais n'est plus
+       jamais atteint — il est mis DANS la branche pour que Firefox n'émette
+       plus « unreachable code after return statement » (2 avertissements
+       console qui polluaient chaque relevé de test). */
+    if (false) {
     var p = PROVIDERS.tokenrouter;
     var base = baseFor(p);
     var key = keyFor('tokenrouter');
@@ -329,6 +334,7 @@
       };
     } catch (e) {
       DYN = { ts: Date.now(), models: [], err: purgerCles(String((e && e.message) || e)).slice(0, 80) };
+    }
     }
   }
 
@@ -747,28 +753,51 @@
     '```athena-browser\nouvrir https://exemple.com\n```\n' +
     'Une action par bloc ; tu peux enchaîner plusieurs blocs dans la même réponse ' +
     'et ils partent dans l\'ordre. Actions disponibles (syntaxe exacte) :\n' +
-    '  ouvrir <url>        http(s):// ou file:// — ouvre la page (demande confirmation ' +
-    'sur chaque nouveau site, puis plus rien)\n' +
-    '  snapshot            arbre accessible de la page (rôles + libellés + URLs) : ' +
-    'C\'EST ce que tu lis pour t\'orienter, préfère-le au HTML\n' +
+    '  ouvrir <url>        http(s):// ou file:// — ouvre la page (confirmation sur ' +
+    'chaque origine nouvelle : le site, puis plus rien)\n' +
+    '  snapshot            arbre accessible de la page (rôles, libellés, URLs) avec la ' +
+    'référence de CHAQUE élément [ref=e13] et sa boîte écran [box=x,y,l,h] (iframes ' +
+    'comprises) : C\'EST ce que tu lis pour t\'orienter, préfère-le au HTML\n' +
     '  texte               texte visible de la page\n' +
     '  html                source HTML\n' +
-    '  cliquer <cible>     ex. text=Se connecter ou un sélecteur CSS comme #bouton\n' +
-    '  taper <texte>       frappe au clavier dans l\'élément DÉJÀ focus (cliquer d\'abord)\n' +
+    '  cliquer <cible>     UNE référence du snapshot — cliquer e13 (préféré : ni libellé à ' +
+    'deviner, ni CSS qui bouge) — ou un sélecteur classique : text=Se connecter, #bouton ; ' +
+    'traverse aussi les iframes. Un lien vers un AUTRE domaine redemande la confirmation\n' +
+    '  taper <texte>       frappe au clavier dans l\'élément DÉJÀ focus (cliquer d\'abord) ; ' +
+    'si aucun champ n\'est focus, tu reçois un avertissement — corrige, ne réessaie pas\n' +
+    '  touche <touche>     une touche ou un raccourci : Enter, Tab, Backspace, ArrowDown, ' +
+    'Control+a — ou un caractère simple (« é », « . », espace)\n' +
+    '  defiler <dx,dy>     molette : defiler 0,800 descend, defiler 0,-800 remonte\n' +
+    '  attente <ms|sel>    pause (max 10000) OU attends qu\'un sélecteur apparaisse — ' +
+    'attente text=Bienvenue. Préfère-le aux boucles « attente 1000 » + snapshot\n' +
+    '  retour              revient à la page précédente\n' +
+    '  suivant             avance à la page suivante\n' +
+    '  recharger           recharge la page courante\n' +
+    '  survol <x,y>        place le pointeur SANS cliquer (repère écran = taille ' +
+    'de la boîte .navigateur-corps) — pour ' +
+    'les menus qui ne s\'ouvrent qu\'au survol\n' +
+    '  glisser <x1,y1,x2,y2>  presse-glider-relâche (sélection de texte, poignée ' +
+    'de scrollbar, déplacement) — 12 micro-pas par défaut\n' +
     '  js <expression>     JS évalué dans la page (demande confirmation)\n' +
     '  capture             capture d\'écran → chemin PNG + aperçu dans la conversation\n' +
-    '  attente <ms>        pause, max 10000 (attends un rendu asynchrone)\n' +
     '  fermer              ferme la session\n' +
-    'MÉTHODE : ouvrir → snapshot → clique → snapshot → … , et tu relis le snapshot ' +
-    'APRÈS chaque action : un clic ouvre souvent une nouvelle page. Chaque action ' +
-    'te revient dans le message suivant, encadrée par <resultat_navigateur> ; ' +
-    'enchaîne jusqu\'au bout sans attendre ma validation. ' +
-    'Erreur « aucun élément ne correspond à ce sélecteur » = ton libellé est faux : ' +
-    'relis le snapshot et prends le libellé exact, ne réessaie pas à l\'aveugle. ' +
-    'Un site déjà ouvert ne demande plus aucune confirmation. ' +
-    'Pour un rendu rapide d\'un fichier local SANS interaction, le Chrome headless ' +
-    'décrit plus haut (screenshot + dump-dom) reste plus rapide ; pour INTERAGIR ' +
-    '(formulaire, clic, navigation), utilise ce navigateur.';
+    'MÉTHODE : ouvrir → snapshot → clique e13 → snapshot → … , et tu relis le snapshot ' +
+    'APRÈS chaque action : un clic ouvre souvent une nouvelle page, ou un nouvel ONGLET ' +
+    'qui devient automatiquement la page courante. Les références [ref=eN] ne valent que ' +
+    'pour le snapshot que tu viens de lire — refais un snapshot après une navigation ou ' +
+    'dès que « 0 correspondance » les a invalidées, ne réessaie jamais la même ref. ' +
+    'Chaque action te revient dans le ' +
+    'message suivant, encadrée par <resultat_navigateur> ; enchaîne jusqu\'au bout sans ' +
+    'attendre ma validation. Erreur « aucun élément ne correspond à ce sélecteur » = ta ' +
+    'cible est fausse ou périmée : refais un snapshot et reprends une ref/cible fraîche, ' +
+    'ne réessaie pas à ' +
+    'l\'aveugle. Un résultat contenant `dialogue` = la page a affiché alert()/confirm() : ' +
+    'dis-moi son contenu, ne recommence pas le clic. Un résultat contenant `cadres` = des ' +
+    'iframes sont présentes (leur contenu est décrit dans le snapshot via des refs f…e…). ' +
+    'Un site déjà ouvert ne demande plus aucune confirmation. Pour un rendu rapide d\'un ' +
+    'fichier local SANS interaction, le Chrome headless décrit plus haut (screenshot + ' +
+    'dump-dom) reste plus rapide ; pour INTERAGIR (formulaire, clic, navigation), utilise ' +
+    'ce navigateur.';
 
   /* v1.2 (langue, fin de bloc) : la contrainte de langue était UNIQUEMENT en
      tête d'un bloc de ~6500 caractères suivie de plusieurs milliers d'autres —
@@ -1075,6 +1104,13 @@
       action: action,
       arg: typeof body.arg === 'string' ? body.arg : undefined,
       confirme: body.confirme === true,
+      /* v1.3.6 : la taille de .navigateur-corps doit ARRIVER à l'agent (il
+         setViewportSize avant de capturer) — sans elle, le relais marche mais
+         l'image reste au viewport par défaut (854x600). */
+      taille: (body.taille && typeof body.taille === 'object'
+        && Number.isFinite(body.taille.w) && Number.isFinite(body.taille.h))
+        ? { w: Math.round(body.taille.w), h: Math.round(body.taille.h) }
+        : undefined,
     }, signal);
   }
 
@@ -2055,6 +2091,13 @@
       if (url.indexOf('/api/') === -1 && url.indexOf('/chat-attache') === -1) return realFetch(input, init);
       if (/^https?:\/\//.test(url)) return realFetch(input, init);
     }
+    /* P4 : /api/browser?flux=W,H = flux BINAIRE poussé — on ne l'intercepte
+       JAMAIS : la réponse est un stream, pas du JSON, et c'est le relais
+       Next qui le sert quand le direct 127.0.0.1 est interdit (https, host
+       distant). Sans ce passe-droit, handleApi() répondait à la volée avec
+       le JSON de /sante : le HUD ne recevait qu'une seule « trame » de
+       600 o puis voyait le flux se terminer. */
+    if (/^\/api\/browser\?/.test(url) && /[?&]flux=/.test(url)) return realFetch(input, init);
     /* v20260926d (kimi) : le préfixe doit être suivi de /, ? ou fin de
        chaîne — '/chat-attachements' n'est pas une route. */
     if (/^\/(api([\/\?]|$)|chat-attache([\/\?]|$))/.test(url)) return handleApi(url, input, init || {});

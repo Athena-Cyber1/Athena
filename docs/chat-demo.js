@@ -2883,9 +2883,16 @@ function conclureExec(codeEl, brut, d, auto, convoId) {
   return d;
 }
 
-/* ==== v1.3 : navigateur Firefox intégré (bloc ```athena-browser) ==== */
+/* ==== v1.3 : navigateur Firefox intégré (bloc ```athena-browser) ====
+   v1.6 : on accepte TOUTES les actions de l'agent (19, voir NAV_ACTIONS du
+   local-agent) — avec une liste à 10, les blocs `defiler`, `retour`,
+   `recharger`, `survol`... étaient refusés côté UI alors que l'agent les
+   exécute. `point`/`cadre` restent la surface de l'humain dans le panneau,
+   mais on les autorise aussi (un modèle qui les invente ne doit pas se
+   faire jeter). v1.7 : + `glisser` (vraie souris : presser-glider-relâcher). */
 const NAV_ACTIONS = ['ouvrir', 'snapshot', 'texte', 'html', 'cliquer', 'taper',
-  'js', 'capture', 'attente', 'fermer'];
+  'js', 'capture', 'attente', 'fermer', 'point', 'defiler', 'touche', 'cadre',
+  'retour', 'suivant', 'recharger', 'survol', 'glisser'];
 
 /* Une action par bloc : 1er jeton = action, le RESTE = argument (peut
    contenir des espaces et des sauts de ligne, ex. une expression JS). */
@@ -2909,6 +2916,16 @@ async function lancerActionNavigateur(ligne, bouton, codeEl, opts) {
   if (bouton && bouton.disabled) return null;
   const brut = String(ligne || '').trim();
   if (!brut) return null;
+  /* v1.5 (parité avec conclureExec) : autoExecBlocs repère les blocs déjà
+     exécutés via pre.dataset.execAuto === '1'. Les blocs athena-exec le
+     posaient dans conclureExec ; les blocs athena-browser ne le posaient
+     JAMAIS, donc un conteneur repris au tour suivant relançait l'action
+     (mesuré : « 2 commandes » pour un SEUL ouvrir). On le pose AVANT le
+     premier await, pour qu'aucun recouvrement ne puisse relancer. */
+  if (auto && codeEl && codeEl.closest) {
+    const pre = codeEl.closest('pre');
+    if (pre) pre.dataset.execAuto = '1';
+  }
   const convoId = idConversation;
   const zone = () => codeEl.closest('pre')?.querySelector('.exec-sortie')
     || (() => {
@@ -2922,6 +2939,8 @@ async function lancerActionNavigateur(ligne, bouton, codeEl, opts) {
   const clore = (d) => {
     try { ajouterTraceActivite(codeEl, d); } catch (_) {}
     try { memoriserTraceActivite(brut, d, convoId); } catch (_) {}
+    /* v1.3 : alimente le HUD navigateur (journal + badge « actif »). */
+    try { noterActionNavigateur(d); } catch (_) {}
     if (bouton) { bouton.disabled = false; bouton.textContent = 'Lancer'; }
     return d;
   };
@@ -2939,6 +2958,9 @@ async function lancerActionNavigateur(ligne, bouton, codeEl, opts) {
       + ' — actions autorisées : ' + NAV_ACTIONS.join(', ') + '.');
   }
   if (bouton) { bouton.disabled = true; bouton.textContent = '…'; }
+  /* v1.6 : badge « occupé » pendant toute l'action du modèle. */
+  hnavOccupe = true;
+  majBadgeNavigateur();
 
   const poster = (confirme) => fetch('/api/browser', {
     method: 'POST',
@@ -2954,6 +2976,9 @@ async function lancerActionNavigateur(ligne, bouton, codeEl, opts) {
       r = await poster(false);
       if (r.status === 428) {
         const dj = await r.json().catch(() => ({}));
+        /* v1.5 : pendant qu'il lit la modale, Firefox démarre tout seul —
+           la confirmation qui suit ne paie plus les ~1,9 s de lancement. */
+        hnavPrechauffer();
         const confirme = await boiteModale({
           titre: p.action === 'ouvrir' ? 'Ouvrir ce site dans le navigateur ?'
             : 'Évaluer du JavaScript dans la page ?',
@@ -3014,6 +3039,7 @@ async function lancerActionNavigateur(ligne, bouton, codeEl, opts) {
       commande: brut, navigateur: true, action: p.action, ok: true,
       stdout: sortieNav, stderr: '',
       url: d.url, titre: d.titre, image: d.image, chemin: d.chemin,
+      etat: d.navigateur,
       code: 0, duree_ms: typeof d.duree_ms === 'number' ? d.duree_ms : null,
     });
   } catch (e) {
@@ -3357,8 +3383,10 @@ function relancerSiPromesse(convo, bulleEl) {
       genererReponse(convo, partagee ? { suiteDe: partagee } : undefined).catch(() => {});
       return;
     }
-    return;
-    /* (code conservé ci-dessous pour référence — plus atteint) */
+    /* (code conservé ci-dessous pour référence — jamais exécuté : la branche
+       if(false) remplace l'ancien `return;` qui, lui, déclenchait chez Firefox
+       « unreachable code after return statement » — avertissement console
+       compté comme erreur dans relevés et tests.) */
     if (false) {
     convo.messages.push({
       role: 'user',
@@ -5767,11 +5795,14 @@ function evaluerAdaptationHud() {
   const ouvertInterp = !!interpreteurEl && !interpreteurEl.hidden;
   const hudFichier = document.getElementById('hud-fichier');
   const ouvertHudf = !!hudFichier && !hudFichier.hidden;
-  if ((!ouvertInterp && !ouvertHudf) || adaptationHudManuelle || app.classList.contains('sidebar-fermee')) {
+  const hudNav = document.getElementById('hud-navigateur');
+  const ouvertNav = !!hudNav && !hudNav.hidden;
+  if ((!ouvertInterp && !ouvertHudf && !ouvertNav) || adaptationHudManuelle
+    || app.classList.contains('sidebar-fermee')) {
     app.classList.remove('hud-economie');
     return;
   }
-  const ouvert = ouvertInterp ? interpreteurEl : hudFichier;
+  const ouvert = ouvertInterp ? interpreteurEl : (ouvertNav ? hudNav : hudFichier);
   const hud = Math.round(ouvert.getBoundingClientRect().width);
   app.classList.toggle('hud-economie', hud > 0 && (window.innerWidth - hud) < 920);
 }
@@ -5792,8 +5823,10 @@ function ouvrirInterpreteur(nom, code, opts) {
   if (interpreteurCodeEl) interpreteurCodeEl.value = code == null ? '' : String(code);
   basculerCodeInterpreteur(!!(opts && opts.code === true));
   basculerPanneauFichiers(false);
-  /* Exclusion stricte : jamais le rendu et l'aperçu de code côte à côte. */
+  /* Exclusion stricte : jamais le rendu et l'aperçu de code côte à côte —
+     ni le navigateur, qui occupe la même place à droite. */
   fermerHudFichier();
+  fermerHudNavigateur();
   const largeurHud = largeurHudEnregistree();
   if (largeurHud) appliquerLargeurHud(largeurHud);
   else document.documentElement.style.removeProperty('--hud-largeur');
@@ -6160,6 +6193,9 @@ function fermerHud() {
   fermerHudEffort();
   fermerHudTemp();
   fermerHudContexte();
+  /* Le navigateur est un HUD DOCKÉ (comme le rendu) : il ne ferme pas au clic
+     extérieur, sinon on ne pourrait plus cliquer la conversation en naviguant.
+     Il se ferme par son bouton, le bouton d'en-tête, ou Échap. */
 }
 
 function itemModeleHud(m, selectionCourante) {
@@ -6296,7 +6332,10 @@ async function chargerModelesHud(rafraichir = false) {
   bouton.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!panneau.hidden) { fermerHud(); return; }
-    fermerHudEffort(); /* un seul panneau ouvert à la fois */
+    /* v1.3 : fermerHud() ferme TOUS les panneaux (modèle, effort, temp,
+       contexte, navigateur) — fermerHudEffort() seul laissait temp et
+       contexte ouverts en même temps que le sélecteur de modèle. */
+    fermerHud();
     panneau.hidden = false;
     bouton.setAttribute('aria-expanded', 'true');
     if (!hudCharge) chargerModelesHud(false);
@@ -6593,6 +6632,1191 @@ function rendreHudContexte() {
     bouton.setAttribute('aria-expanded', 'true');
   });
   panneau.addEventListener('click', (e) => e.stopPropagation());
+})();
+
+/* ---------- HUD — NAVIGATEUR DU MODÈLE (v1.3, surface interactive) ----------
+   Le panneau EST le navigateur : une image de la page que la personne peut
+   cliquer, faire défiler et sur laquelle elle tape — chaque geste part vers
+   l'agent (point / defiler / touche) en coordonnées de la capture.
+   Les captures prises ICI ne passent PAS par lancerActionNavigateur : elles
+   n'écrivent donc ni trace de bulle ni historique envoyé au modèle (sinon le
+   contexte du modèle serait noyé sous nos rafraîchissements). */
+/* v1.8 (fluidité) : OBJECTIF 50 i/s MINIMUM.
+   Mesures de départ (probe-fps.cjs) : agent seul 16 ms/image (62 i/s) ;
+   le MÊME appel à travers le proxy Next coûte 49 ms (20 i/s) — 33 ms de
+   surcoût pur. Deux causes remontées :
+   1. le HUD passait PAR Next (/api/browser) pour chaque image ;
+   2. la cadence était plafonnée à 200 ms par conception.
+   On appelle donc l'agent DIRECTEMENT (127.0.0.1:3020, CORS localhost déjà
+   ouvert côté agent) et on laisse la boucle tourner sur le temps réel de la
+   capture. GitHub Pages garde /api/browser : aucun poste distant n'atteint
+   un 127.0.0.1 local, et le proxy reste la seule voie valable là-bas. */
+const HNAV_RAFRAICHIR_MS = 8;         /* cadence de LANCEMENT d'une image, pas
+   des images : la boucle demande une capture toutes les 8 ms et la file
+   (2 en vol max) laissée à la vitesse de page.screenshot — c'est l'agent qui
+   règle le débit réel, le temporisateur ne fait que nourrir la file. */
+const HNAV_ETAT_MS = 8000;           // /sante : bien moins souvent que le flux
+const HNAV_REPRISE_MS = 2000;   // tant que l'agent est muet, on re-sonde vite
+const HNAV_TENTATIVES = 3;      // /sante : on ne conclut pas « injoignable » au 1er essai
+const HNAV_DELAI_MS = 400;
+const HNAV_ROUE_MS = 140;           // la molette s'accumule avant d'envoyer
+const HNAV_TAMPON_MS = 150;          // frappe : on envoie un MOT, pas 14 requêtes
+const HNAV_AGENT = 'http://127.0.0.1:3020';
+let hnavEtat = 'inconnu';   // pret | inactif | absent | inconnu
+let hnavSeq = 0;            // anti-course : invalide les réponses /sante périmées
+let hnavTimer = null;
+let hnavCaptureEnCours = false;
+let hnavVol = 0;            // captures en vol (file de 2) — pipeline v1.8
+let hnavImageId = 0;        // numéro d'ordre des images demandées
+let hnavImagePosee = 0;     // dernière image posée (réponses périmées ignorées)
+let hnavRespireJusqua = 0;  // page occupée par le modèle : on relâche 80 ms
+let hnavCapture = '';       // data-url de la dernière capture affichée
+let hnavSaisie = 0;         // geste en vol → on suspend le flux (pas de rafraîchissement parasite)
+let hnavFile = Promise.resolve();  // gestes sérialisés : même file que le verrou de l'agent
+let hnavRoue = null;
+let hnavRoueTimer = null;
+/* v1.7 (frappe) : les lettres s'accumulent 150 ms puis partent en UNE action
+   `taper`. Avant, chaque lettre envoyait `touche` + une capture : 14 lettres
+   = 28 requêtes en série, le panneau gelait pendant toute la saisie. */
+let hnavTampon = '';
+let hnavTamponTimer = null;
+/* v1.7 (vraie souris) : presser-glider-relâcher ≠ cliquer. On ne décide
+   qu'au relâchement : un déplacement ≥ 5 px sous bouton enfoncé = `glisser`,
+   sinon le clic normal s'en occupe. */
+let hnavGlisse = null;
+let hnavClicIgnore = false;
+let hnavUrl = '';           // page courante, affichée dans l'en-tête du HUD
+/* P0 (anti-lag) : FLUX POUSSÉ. Au lieu d'une requête par image (en-têtes
+   HTTP + JSON + base64 par cadence), le HUD ouvre UNE connexion GET /flux et
+   l'agent lui pousse des trames binaires [type:1][w:2][h:2][len:4][charge].
+   Deux panneaux de même taille partagent une seule capture. `cadre` reste
+   uniquement en REPLI (flux refusé/coupé), sans jamais disparaître. */
+let hnavFluxCtrl = null;     // AbortController de la connexion en cours
+let hnavFluxActif = false;   // une connexion de flux est ouverte
+let hnavFluxAttente = 0;     // prochaine tentative de (ré)ouverture (ms)
+let hnavFluxTaille = null;   // taille {w,h} demandée à l'ouverture
+let hnavFluxTampon = null;   // Uint8Array réutilisé : zéro allocation par trame
+let hnavFluxN = 0;           // octets utiles reçus dans le tampon
+let hnavFluxRedimTimer = null;
+/* Génération de flux : un lecteur qui se termine APRÈS qu'un nouveau flux a
+   démarré (redimensionnement, coupure/reprise) ne doit RIEN réinitialiser —
+   sinon son `finally` remettait hnavFluxActif à false et replaçait 3 s de
+   backoff sur un flux sain : le HUD retombait alors sur le repli `cadre`
+   (1 requête/image). Chaque ouverture incrémente la génération, chaque
+   arrêt aussi : seul le lecteur encore « courant » touche l'état global. */
+let hnavFluxGen = 0;
+/* P4 : le relais /api/browser est-il présent (Next) ou absent (statique) ? */
+let hnavFluxProxyArret = 0;
+/* P2 (blob) : les object URLs ne sont JAMAIS libérées par le navigateur —
+   sans révocation, 50 i/s × 35 Ko = 2 Mo/s de fuite. On ne garde QUE deux
+   URLs vivantes : celle affichée, celle en cours de décodage. */
+let hnavBlobAffiche = '';
+let hnavBlobAttente = '';
+/* v1.6 : état affiché à l'utilisateur, au-delà du simple « actif ». */
+let hnavOccupe = false;     // une action (modèle ou geste) est en cours
+let hnavFermePour = null;   // pourquoi la session s'est fermée (inactivité…)
+/* v1.5 : preuve AFFICHÉE — moteur réellement piloté + version, lus dans
+   /sante (userAgent de la page, jamais une étiquette inventée) : on écrit
+   « Firefox 155.0 » et non un vague « navigateur ». */
+let hnavMoteur = null;
+let hnavVersion = null;
+/* Un Firefox VIVANT est déjà là (préchauffage) mais aucun onglet n'est ouvert :
+   le panneau le dit au lieu d'afficher un « Aucune session » qui fait croire
+   que le navigateur est mort. */
+let hnavPret = false;
+
+function hudNavigateurOuvert() {
+  const p = document.getElementById('hud-navigateur');
+  return Boolean(p && !p.hidden);
+}
+
+function hnavNomMoteur() {
+  if (hnavVersion) return (hnavMoteur === 'firefox' || !hnavMoteur ? 'Firefox ' : hnavMoteur + ' ') + hnavVersion;
+  return hnavMoteur === 'firefox' ? 'Firefox' : (hnavMoteur || 'navigateur');
+}
+
+function majBadgeNavigateur() {
+  const el = document.getElementById('navigateur-actif-nom');
+  if (!el) return;
+  const txt = hnavOccupe ? '…'
+    : hnavEtat === 'pret' ? 'actif'
+      : hnavEtat === 'inactif' ? 'arrêté'
+        : hnavEtat === 'absent' ? 'sans pw'
+          : '…';
+  if (el.textContent !== txt) el.textContent = txt;
+  const btn = document.getElementById('btn-navigateur');
+  if (btn) {
+    btn.classList.toggle('nav-actif', hnavEtat === 'pret');
+    /* v1.6 : « occupé » — avant, le badge disait « actif » pendant tout un
+       snapshot : impossible de voir que la page était en train de bouger. */
+    btn.classList.toggle('nav-occupe', hnavOccupe);
+    btn.title = 'Navigateur du modèle — ' + hnavNomMoteur() + ' — session ' + (hnavOccupe ? 'occupé' : txt)
+      + (hnavEtat === 'absent' ? ' (playwright non installé)' : '')
+      + (hnavEtat === 'inconnu' ? ' (agent local injoignable)' : '');
+  }
+}
+
+/* v1.6 : bandeau d'état du HUD (rangée 3 de l'en-tête). Vide = caché. */
+function hnavInfo(msg, err) {
+  const el = document.getElementById('navigateur-info');
+  if (!el) return;
+  const t = msg ? String(msg) : '';
+  if (!t) {
+    if (!el.hidden) { el.hidden = true; el.textContent = ''; el.classList.remove('hnav-info-err'); }
+    return;
+  }
+  if (el.textContent !== t) el.textContent = t;
+  el.classList.toggle('hnav-info-err', Boolean(err));
+  el.hidden = false;
+}
+
+/* Dernière action du MODÈLE — appelé depuis clore(). On n'y garde QUE l'état
+   et la page atteinte : le panneau affiche le navigateur, pas un journal. */
+function noterActionNavigateur(d) {
+  if (!d || d.navigateur !== true) return;
+  hnavOccupe = false;
+  hnavSeq++; /* une action vient de se produire : toute /sante en vol est périmée */
+  if (typeof d.etat === 'string' && d.etat) hnavEtat = d.etat;
+  else if (d.action !== 'fermer') hnavEtat = 'pret';
+  /* v1.5 : un Firefox préchauffé meurt à la session, pas avant. */
+  if (d.action === 'fermer') hnavPret = false;
+  if (typeof d.url === 'string' && d.url) hnavUrl = d.url;
+  majBadgeNavigateur();
+  /* v1.6 : sans ça, une action refusée (ou un alert() de la page) était
+     invisible — le modèle croyait avoir cliqué, l'utilisateur ne voyait rien. */
+  if (d.ok === false) hnavInfo(d.stderr || d.message || 'action refusée', true);
+  else hnavInfo('');
+  if (hudNavigateurOuvert()) rendreHudNavigateur();
+}
+
+/* v1.8 : VOIE DIRECTE. En local, le HUD parle à l'agent sans le détour par
+   Next (33 ms/image mesurés). Trois garde-fous :
+   - jamais hors localhost (une page GitHub Pages n'a pas de 127.0.0.1) ;
+   - si le direct casse (agent redémarré, port fermé), on bascule SUR LE MOMENT
+     sur /api/browser au lieu de laisser le flux s'arrêter ;
+   - après un échec réseau on retente le direct seulement 5 s plus tard, pour
+     ne pas payer deux requêtes ratées par image. */
+let hnavDirectArret = 0;
+function hnavDirectOk() {
+  if (Date.now() < hnavDirectArret) return false;
+  const h = location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+}
+async function hudNavApi(payload) {
+  const poster = async (url) => {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return { st: r.status, d: await r.json().catch(() => ({})) };
+  };
+  if (hnavDirectOk()) {
+    try {
+      return await poster(HNAV_AGENT + '/browser');
+    } catch (_) {
+      hnavDirectArret = Date.now() + 5000;
+    }
+  }
+  return poster('/api/browser');
+}
+
+/* v1.5 : Firefox se lance SUR INTENTION — jamais en veille, jamais au chargement
+   de la page. Ce déclencheur part en ARRIVÉE dès qu'une action est imminente,
+   pour glisser les ~1,9 s de démarrage dans le temps de l'humain :
+   - ouverture du panneau (il lit / regarde la page) ;
+   - modale 428 : il lit la confirmation pendant que Firefox démarre ;
+   - saisie d'adresse : il tape pendant que Firefox démarre.
+   Single-flight : HUD + modale + barre d'adresse peuvent le demander dans
+   la même seconde — l'agent attend déjà un seul lancement, on ne lui en
+   envoie pas quatre. */
+let hnavPrechauffe = null;
+function hnavPrechauffer() {
+  if (!hnavPrechauffe) {
+    hnavPrechauffe = hudNavApi({ action: 'prechauffer' })
+      .catch(() => null)
+      .then((r) => {
+        hnavPrechauffe = null;
+        const d = r && r.d;
+        if (r && r.st === 200 && d && d.ok) {
+          /* Réponse immédiate du prechauffage : moteur + version + état,
+             SANS attendre la prochaine /sante. */
+          if (typeof d.moteur === 'string' && d.moteur) hnavMoteur = d.moteur;
+          if (typeof d.version === 'string' && d.version) hnavVersion = d.version;
+          hnavPret = true;
+          majBadgeNavigateur();
+          /* Le bandeau « relance un bloc » devient faux dès que le moteur
+             tourne : on le raccroche à la réalité. */
+          if (hudNavigateurOuvert() && hnavEtat !== 'pret' && hnavFermePour) hnavInfo(hnavTexteFermeture(), false);
+          if (hudNavigateurOuvert()) rendreHudNavigateur();
+        }
+        return r;
+      });
+  }
+  return hnavPrechauffe;
+}
+
+/* Message du bandeau quand la session n'existe plus. Si Firefox a été
+   PRÉCHAUFFÉ entre-temps, dire « relance un bloc » serait faux : le moteur
+   tourne déjà, il ne manque qu'un onglet. */
+function hnavTexteFermeture() {
+  return 'Session fermée : ' + (hnavFermePour || 'fermeture')
+    + (hnavPret
+      ? ' — ' + hnavNomMoteur() + ' est déjà démarré : ouvre un bloc ```athena-browser ou entre une adresse.'
+      : ' — relance un bloc ```athena-browser pour la rouvrir.');
+}
+
+/* GET /api/browser → /sante de l'agent (shim Pages + proxy Next confondus).
+   Deux garde-fous :
+   - séquence (hnavSeq) : une /sante lancée AVANT une action du modèle ne
+     doit pas revenir APRÈS elle et réécrire l'état ;
+   - patience : la 1re requête part souvent pendant la compilation de la
+     route par Next (réponse HTML → r.json() lève) ou pendant un
+     redémarrage de l'agent. Une seule tentative affichait « injoignable »
+     à tort, alors que l'agent répond une demi-seconde plus tard. */
+async function hudNavEtat() {
+  const seq = hnavSeq;
+  for (let tentative = 0; tentative < HNAV_TENTATIVES; tentative++) {
+    let etat = null;
+    /* `d` est déclaré ICI et non dans le `try` : la lecture des champs
+       v1.6 (nav_occupe / nav_ferme_pour) se fait APRÈS le bloc. */
+    let d = null;
+    try {
+      /* v1.8 : même voie directe que le flux d'images (voir hudNavApi) —
+         /sante passe aussi par Next uniquement en secours. */
+      const url = hnavDirectOk() ? HNAV_AGENT + '/sante' : '/api/browser';
+      const r = await fetch(url, { cache: 'no-store' });
+      d = await r.json();
+      if (seq !== hnavSeq) return hnavEtat;
+      if (d && typeof d.navigateur === 'string') etat = d.navigateur;
+    } catch (_) {
+      hnavDirectArret = Date.now() + 5000;   /* 3020 fermé : on retente plus tard */
+      if (seq !== hnavSeq) return hnavEtat;
+    }
+    if (etat !== null) {
+      hnavEtat = etat;
+      /* v1.6 : /sante porte aussi l'état occupé et le motif de fermeture. */
+      if (d && typeof d.nav_occupe === 'boolean') hnavOccupe = d.nav_occupe;
+      hnavFermePour = (d && typeof d.nav_ferme_pour === 'string') ? d.nav_ferme_pour : null;
+      /* v1.5 : moteur + version réels, pour afficher « Firefox 155.0 ». */
+      if (d && typeof d.nav_moteur === 'string' && d.nav_moteur) hnavMoteur = d.nav_moteur;
+      if (d && typeof d.nav_version === 'string' && d.nav_version) hnavVersion = d.nav_version;
+      if (d && typeof d.nav_pret === 'boolean') hnavPret = d.nav_pret;
+      majBadgeNavigateur();
+      if (hudNavigateurOuvert() && hnavEtat !== 'pret' && hnavFermePour) {
+        hnavInfo(hnavTexteFermeture(), false);
+      }
+      return hnavEtat;
+    }
+    if (tentative + 1 < HNAV_TENTATIVES) {
+      await new Promise((r) => setTimeout(r, HNAV_DELAI_MS));
+    }
+  }
+  if (seq !== hnavSeq) return hnavEtat;
+  hnavEtat = 'inconnu';
+  majBadgeNavigateur();
+  return hnavEtat;
+}
+
+/* v1.9 : LE RENDU PREND LA TAILLE DE LA BOÎTE. Chaque `cadre` porte la taille
+   réelle de .navigateur-corps : le viewport de Firefox suit donc le panneau
+   au pixel près.
+   - plus de barre noire : l'image (max-*:100%) remplit exactement la boîte ;
+    - plus de sur-capture : on ne paie page.screenshot QUE ce qui est affiché
+      (boîte × dpr, bornée à 700 kpx) — c'est le premier poste de latence ;
+    - 1 px capturé = 1 px écran affiché : le texte reste net au lieu d'être
+      ré-échantillonné ×2 sur un écran dense (dpr 2).
+   La mesure est portée par un ResizeObserver (on ne lit JAMAIS le layout au
+   rythme du flux), et l'agent ne redimensionne QUE si la taille a changé. */
+let hnavBoite = { w: 0, h: 0 };
+let hnavBoiteSuivie = false;
+/* Plafond de pixels écran (miroir de NAV_VUE_MAX_PX côté agent, calibré par
+   balayage : 700 kpx = 52,6 i/s, 794 kpx = 50,0, 1 Mpx = 41,7 ECHEC). Au-delà
+   on baisse le multiplicateur au lieu de laisser l'agent rogner — le ratio est
+   conservé, donc l'image remplit toujours la boîte au plus près. */
+const HNAV_BOITE_MAX_PX = 700000;
+function hnavLireBoite() {
+  const corps = document.getElementById('navigateur-corps');
+  if (!corps) return { w: 0, h: 0 };
+  const r = corps.getBoundingClientRect();
+  /* v1.9 : pixels ÉCRAN, pas pixels CSS. Sur un écran dense (devicePixelRatio
+     2) ou avec un zoom Brave, une image taillée à la taille CSS est ré-échantillonnée
+     ×2 par le navigateur → « affichage zoomé et pixélisé ». On capture donc en
+     × dpr, et si ça dépasse le plafond on réduit dpr (même ratio, donc pas de
+     barre noire) : 1 px capturé = 1 px écran affiché. */
+  const dprNat = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+  const wcss = Math.max(0, Math.min(2400, r.width));
+  const hcss = Math.max(0, Math.min(1600, r.height));
+  const dpr = Math.min(dprNat, Math.sqrt(HNAV_BOITE_MAX_PX / Math.max(1, wcss * hcss)));
+  return {
+    w: Math.max(0, Math.round(wcss * dpr)),
+    h: Math.max(0, Math.round(hcss * dpr)),
+  };
+}
+function hnavSuivreBoite() {
+  const corps = document.getElementById('navigateur-corps');
+  if (!corps) return false;
+  hnavBoite = hnavLireBoite();
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => { hnavBoite = hnavLireBoite(); hnavFluxRedimensionner(); }).observe(corps);
+  }
+  hnavBoiteSuivie = true;
+  return true;
+}
+
+/* v1.8 : PIPELINE À 2 IMAGES. On n'attend pas la réponse pour demander la
+   suivante : pendant que le client décode/paint l'image N, l'agent capture
+   déjà la N+1. Mesure (probe-fps2) : sans ça, période = capture (24 ms) +
+   transport/décodage (5 ms) + temporisateur (4 ms) = 33 ms → 30 i/s. Avec
+   la file, le transport et le temporisateur se cachent DANS le temps de
+   page.screenshot, qui devient le seul plafond.
+   - `hnavVol >= 2` : jamais plus de deux captures en vol (la file ne
+     gonfle pas, un geste n'attend jamais derrière une montagne d'images) ;
+   - `hnavImageId` : une réponse arrivée hors ordre ne recouvre JAMAIS une
+     image plus récente (deux sockets fetch peuvent se croiser). */
+async function hudNavCapture(prioritaire) {
+  if (hnavVol >= (prioritaire === true ? 3 : 2)) return null;
+  hnavVol++;
+  hnavCaptureEnCours = true;
+  const id = ++hnavImageId;
+  try {
+    /* `cadre` = JPEG compressé sans écriture disque : c'est le flux
+       d'aperçu. `capture` (PNG sur disque) reste l'action du MODÈLE. */
+    if (!hnavBoiteSuivie) hnavSuivreBoite();
+    const rep = await hudNavApi({
+      action: 'cadre',
+      confirme: true,
+      /* taille de la boîte d'affichage (agent : setViewportSize si changée) */
+      taille: (hnavBoite.w >= 240 && hnavBoite.h >= 200) ? hnavBoite : undefined,
+    });
+    const d = rep.d || {};
+    hnavSeq++;
+    if (typeof d.navigateur === 'string') hnavEtat = d.navigateur;
+    if (rep.st === 200 && d.ok !== false && typeof d.image === 'string') {
+      /* Page occupée par une action du modèle : l'agent renvoie l'ancienne
+         image en 3 ms. On laisse respirer 80 ms au lieu de tourner à vide. */
+      if (d.occupe === true) hnavRespireJusqua = Date.now() + 80;
+      if (id > hnavImagePosee) {
+        hnavImagePosee = id;
+        hnavCapture = d.image;
+        hnavEchoSurImage();            /* P3 : la page montre le texte saisi */
+        if (typeof d.url === 'string' && d.url) hnavUrl = d.url;
+        /* On PEINT À L'ARRIVÉE : l'image ne attend pas le prochain tick. */
+        if (hudNavigateurOuvert()) rendreHudNavigateur();
+      }
+      return d;
+    }
+    if (rep.st !== 200 && id > hnavImagePosee) hnavCaptureVider();
+    return null;
+  } catch (_) {
+    return null;
+  } finally {
+    hnavVol--;
+    hnavCaptureEnCours = hnavVol > 0;
+  }
+}
+
+/* ================= FLUX POUSSÉ (P0) =================
+   Le client ne demande plus rien : il lit. Une connexion, un tampon réutilisé,
+   des trames accolées. Le verrou de l'agent rend le MAÎTRE des cadences (priorité
+   aux actions humaines), le client ne fait que rendre. */
+function hnavRevoquer(u) {
+  if (u && u.indexOf('blob:') === 0) { try { URL.revokeObjectURL(u); } catch (_) {} }
+}
+
+function hnavCaptureVider() {
+  if (hnavBlobAttente) hnavRevoquer(hnavBlobAttente);
+  hnavBlobAttente = '';
+  if (hnavCapture) hnavRevoquer(hnavCapture);
+  hnavCapture = '';
+}
+
+/* Réouverture débouncée quand la boîte change de taille (le flux porte sa
+   taille : l'agent ne peut pas la voir bouger sans reconnexion). */
+function hnavFluxRedimensionner() {
+  if (!hnavFluxActif) return;
+  const t = hnavBoite;
+  if (hnavFluxTaille && t && t.w === hnavFluxTaille.w && t.h === hnavFluxTaille.h) return;
+  if (hnavFluxRedimTimer) return;
+  hnavFluxRedimTimer = setTimeout(() => {
+    hnavFluxRedimTimer = null;
+    hnavFluxAttente = 0;   /* réouverture immédiate à la bonne taille */
+    hnavFluxArreter();
+  }, 300);
+}
+
+function hnavFluxDemarrer() {
+  if (hnavFluxActif || !hudNavigateurOuvert()) return;
+  /* P4 : hors localhost le navigateur INTERDIT http://127.0.0.1 (mixed
+     content) — le flux part alors par le relais Next /api/browser?flux=W,H.
+     Hébergement statique (aucune route) → 404 : une tentative toutes les
+     60 s suffit, sinon on martèlerait un 404 pendant toute la session. */
+  const direct = hnavDirectOk();
+  if (!direct && Date.now() < hnavFluxProxyArret) return;
+  if (Date.now() < hnavFluxAttente) return;
+  if (!hnavBoiteSuivie) hnavSuivreBoite();
+  const t = hnavBoite;
+  if (!t || t.w < 240 || t.h < 200) return;
+  hnavFluxActif = true;
+  hnavFluxTaille = { w: t.w, h: t.h };
+  hnavFluxTampon = new Uint8Array(256 * 1024);
+  hnavFluxN = 0;
+  const ctrl = new AbortController();
+  hnavFluxCtrl = ctrl;
+  const gen = ++hnavFluxGen;
+  const url = direct
+    ? HNAV_AGENT + '/flux?w=' + t.w + '&h=' + t.h
+    : '/api/browser?flux=' + t.w + ',' + t.h;
+  (async () => {
+    let st = 0;
+    try {
+      const r = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+      st = r.status;
+      if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
+      hnavFluxAttente = 0;
+      await hnavFluxLire(r);
+    } catch (_) { /* coupé : on retombe sur `cadre` et on réessaiera */ }
+    finally {
+      if (gen === hnavFluxGen) {
+        if (!direct && (st === 403 || st === 404 || st === 405)) {
+          hnavFluxProxyArret = Date.now() + 60000;
+        }
+        if (hnavFluxCtrl === ctrl) hnavFluxCtrl = null;
+        hnavFluxActif = false;
+        hnavFluxN = 0;
+        hnavFluxTaille = null;
+        hnavFluxAttente = Date.now() + 3000;   /* vraie panne : 3 s de répit */
+      }
+      /* gen différent : un redimensionnement a déjà rouvert le flux — on ne
+         touche à RIEN (sinon son `finally` étouffait le flux sain : repli
+         `cadre` à 1 requête/image + 3 s d'attente). */
+    }
+  })();
+}
+
+function hnavFluxArreter() {
+  hnavFluxGen++;                   /* le lecteur en cours devient « périmé » */
+  if (hnavFluxCtrl) {
+    try { hnavFluxCtrl.abort(); } catch (_) {}
+    hnavFluxCtrl = null;
+  }
+  hnavFluxActif = false;
+  hnavFluxN = 0;
+  hnavFluxTaille = null;
+}
+
+async function hnavFluxLire(res) {
+  const lecteur = res.body.getReader();
+  for (;;) {
+    const lu = await lecteur.read();
+    if (lu.done) return;
+    const v = lu.value;
+    if (!v || !v.length) continue;
+    if (hnavFluxN + v.length > hnavFluxTampon.length) {
+      /* rare : trame plus grosse que prévu — on grossit en gardant l'entrée */
+      const gros = new Uint8Array(Math.max(hnavFluxTampon.length * 2, hnavFluxN + v.length + 65536));
+      gros.set(hnavFluxTampon.subarray(0, hnavFluxN));
+      hnavFluxTampon = gros;
+    }
+    hnavFluxTampon.set(v, hnavFluxN);
+    hnavFluxN += v.length;
+    let d = 0;
+    const b = hnavFluxTampon;
+    while (hnavFluxN - d >= 9) {
+      const type = b[d];
+      const w = (b[d + 1] << 8) | b[d + 2];
+      const h = (b[d + 3] << 8) | b[d + 4];
+      const len = b[d + 5] * 16777216 + b[d + 6] * 65536 + b[d + 7] * 256 + b[d + 8];
+      if (len <= 0 || len > 8 * 1024 * 1024) { d = hnavFluxN; break; }   /* trame corrompue */
+      if (hnavFluxN - d - 9 < len) break;                                  /* incomplète */
+      const charge = b.subarray(d + 9, d + 9 + len);
+      if (type === 1) hnavFluxImage(charge, w, h);
+      else if (type === 2) hnavFluxMeta(charge);
+      d += 9 + len;
+    }
+    if (d > 0) {
+      if (d >= hnavFluxN) hnavFluxN = 0;
+      else { b.copyWithin(0, d, hnavFluxN); hnavFluxN -= d; }
+    }
+  }
+}
+
+/* L'écho de frappe ne cède la place qu'à une VRAIE image : c'est elle qui
+   montre le texte saisi. (Pas au tick ni à un changement d'état — sinon
+   l'écho disparaîtrait ~8 ms après l'envoi, avant que la page ne l'affiche.) */
+function hnavEchoSurImage() {
+  if (hnavEchoAPrets && !hnavTampon) hnavEchoTexte('');
+}
+
+/* Image : copie minimale (le Blob recopie les octets) puis pose. */
+function hnavFluxImage(charge, w, h) {
+  hnavEchoSurImage();
+  const u = URL.createObjectURL(new Blob([charge], { type: 'image/jpeg' }));
+  if (hnavBlobAttente && hnavBlobAttente !== u) hnavRevoquer(hnavBlobAttente);
+  hnavBlobAttente = u;
+  hnavCapture = u;
+  if (hudNavigateurOuvert()) rendreHudNavigateur();
+}
+
+/* Métadonnées : changement d'URL / d'état poussé avec l'image. */
+function hnavFluxMeta(charge) {
+  try {
+    const m = JSON.parse(new TextDecoder().decode(charge));
+    if (m && typeof m.url === 'string' && m.url) hnavUrl = m.url;
+    if (m && typeof m.navigateur === 'string' && m.navigateur && m.navigateur !== hnavEtat) {
+      hnavEtat = m.navigateur;
+      hnavSeq++;
+      majBadgeNavigateur();
+      if (hudNavigateurOuvert() && hnavEtat !== 'pret') rendreHudNavigateur();
+    }
+  } catch (_) { /* méta illisible : l'image reste affichée */ }
+}
+
+/* L'en-tête nomme la page (comme l'interpréteur nomme le fichier) — c'est
+   le seul élément autour de l'image, et il porte la fermeture. */
+function hnavLibellePage() {
+  const u = String(hnavUrl || '');
+  if (!u) return 'Navigateur du modèle';
+  try {
+    const p = new URL(u);
+    const chemin = (p.pathname || '/') + (p.search || '') + (p.hash || '');
+    return (p.host || p.protocol.replace(':', '')) + (chemin === '/' ? '' : chemin);
+  } catch (_) { return u; }
+}
+
+/* ---- P3 : ÉCHO LOCAL (latence perçue) --------------------------------
+   Une trame poussée arrive ~20-40 ms après le geste ; pendant ce délai la
+   surface a l'air Morte (« ça ne réagit pas »). On affiche donc IMMÉDIATEMENT,
+   en local, ce que l'agent confirmera juste après :
+   - un point de visée suivi du curseur (aussi fort à l'appui du bouton) ;
+   - la frappe en attente, tant que le lot n'est pas parti.
+   Aucun nœud n'est ajouté au DOM : le corps doit contenir UNIQUEMENT la page
+   (contrat de test) — tout repose sur les pseudo-éléments CSS + variables. */
+let hnavEchoTimer = null;
+let hnavEchoClicTimer = null;
+let hnavEchoTexteTimer = null;
+let hnavEchoVu = '';          /* dernier texte affiché : zéro travail par image */
+/* L'écho n'est remis en cause qu'après la CONFIRMATION du geste `taper` :
+   la prochaine image est alors la première qui contient vraiment la lettre. */
+let hnavEchoAPrets = false;
+
+function hnavEchoEffacer() {
+  const corps = document.getElementById('navigateur-corps');
+  if (!corps) return;
+  corps.classList.remove('hnav-echo-on', 'hnav-echo-clic');
+}
+
+function hnavEchoClicFin() {
+  const corps = document.getElementById('navigateur-corps');
+  if (corps) corps.classList.remove('hnav-echo-clic');
+}
+
+function hnavEchoPoint(ev, force) {
+  const corps = document.getElementById('navigateur-corps');
+  if (!corps || hnavEtat !== 'pret') return;
+  const r = corps.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const x = ev.clientX - r.left;
+  const y = ev.clientY - r.top;
+  if (x < 4 || y < 4 || x > r.width - 4 || y > r.height - 4) return;
+  corps.style.setProperty('--hnav-echo-x', Math.round(x) + 'px');
+  corps.style.setProperty('--hnav-echo-y', Math.round(y) + 'px');
+  corps.classList.toggle('hnav-echo-clic', force === true);
+  corps.classList.add('hnav-echo-on');
+  if (hnavEchoTimer) clearTimeout(hnavEchoTimer);
+  /* Une vraie souris ne clignote pas : le point reste tant que le curseur est
+     sur la page, et disparaît seul (ou à `mouseleave`) si plus rien ne bouge. */
+  hnavEchoTimer = setTimeout(hnavEchoEffacer, 3000);
+  if (force) {
+    /* l'appui est un FLASH (pression) : le point, lui, reste. */
+    if (hnavEchoClicTimer) clearTimeout(hnavEchoClicTimer);
+    hnavEchoClicTimer = setTimeout(hnavEchoClicFin, 220);
+  }
+}
+
+function hnavEchoTexte(txt) {
+  const v = txt ? String(txt) : '';
+  if (v === hnavEchoVu) return;           /* déjà affiché (50 images/s : rien à faire) */
+  const corps = document.getElementById('navigateur-corps');
+  if (!corps) { if (v) return; hnavEchoVu = ''; return; }   /* fermé : rien à effacer */
+  hnavEchoVu = v;
+  if (hnavEchoTexteTimer) { clearTimeout(hnavEchoTexteTimer); hnavEchoTexteTimer = null; }
+  if (!v) {
+    corps.classList.remove('hnav-echo-texte');
+    corps.style.removeProperty('--hnav-echo-text');
+    return;
+  }
+  /* `content: var()` impose une chaîne CSS : on échappe comme JSON (compatible
+     avec les guillemets CSS) et on aplatie les retours à la ligne. */
+  corps.style.setProperty('--hnav-echo-text', JSON.stringify(String(txt).replace(/[\r\n]+/g, ' ')));
+  corps.classList.add('hnav-echo-texte');
+  hnavEchoTexteTimer = setTimeout(() => hnavEchoTexte(''), 2000);
+}
+
+function rendreHudNavigateur() {
+  const panneau = document.getElementById('navigateur-corps');
+  if (!panneau) return;
+  const nom = document.getElementById('navigateur-nom');
+  if (nom) {
+    const libelle = hnavLibellePage();
+    if (nom.textContent !== libelle) { nom.textContent = libelle; nom.title = hnavUrl || ''; }
+  }
+  /* v1.6 : barre d'adresse — on ne l'écrit QUE si elle n'est pas focalisée,
+     sinon on écraserait la saisie en cours à chaque image. */
+  const champ = document.getElementById('navigateur-url');
+  if (champ && document.activeElement !== champ) {
+    const voulu = hnavUrl || '';
+    if (champ.value !== voulu) champ.value = voulu;
+  }
+  const actif = hnavEtat === 'pret';
+
+  /* v1.6 : la barre d'outils (← → ⟳ session) ne vit que s'il y a une session.
+     On ne la grise PAS selon l'historique : l'agent répond de lui-même
+     « aucune page précédente (historique vide) » quand la piste est vide. */
+  for (const id of ['navigateur-precedent', 'navigateur-suivant',
+    'navigateur-recharger', 'navigateur-session']) {
+    const b = document.getElementById(id);
+    if (b && b.disabled !== !actif) b.disabled = !actif;
+  }
+
+  if (hnavCapture && actif) {
+    /* ON NE RECRÉE PAS L'IMG À CHAQUE IMAGE : remplacer le nœud à 2 images/s
+       clignote et perd le focus du corps (donc le clavier). On change
+       seulement `src`. */
+    let img = panneau.querySelector('img.hnav-img');
+    if (!img) {
+      panneau.replaceChildren();
+      img = document.createElement('img');
+      img.className = 'hnav-img';
+      img.alt = 'Page affichée par le modèle — clique dessus pour naviguer';
+      img.decoding = 'async';
+      img.draggable = false;   /* sinon Firefox lance un glisser-déposer d'image */
+      panneau.appendChild(img);
+    }
+    if (img.getAttribute('src') !== hnavCapture) {
+      /* v1.7 (affichage) : on n'affecte JAMAIS une source encore à décoder.
+         Changer `src` vide la boîte pendant le décodage : le panneau clignote
+         en noir entre deux images (l'« affichage bizarre »). On décode d'abord
+         HORS DOM, puis on pose — les mêmes octets étant déjà en cache, le
+         passage est immédiat. `data-hnav-src` évite de rejouer un décodage
+         si une image plus récente est déjà en vol. */
+      const url = hnavCapture;
+      const cle = url.length + ':' + url.slice(-64);
+      if (img.dataset.hnavSrc !== cle) {
+        img.dataset.hnavSrc = cle;
+        const chargeur = new Image();
+        const poser = () => {
+          if (!img.isConnected || img.dataset.hnavSrc !== cle) return;
+          img.src = chargeur.src;
+          /* P2 (blob) : une seule URL vivante — l'ancienne est révoquée ICI,
+             à l'instant où elle cesse d'être affichée. */
+          const ancien = hnavBlobAffiche;
+          hnavBlobAffiche = url;
+          if (hnavBlobAttente === url) hnavBlobAttente = '';
+          if (ancien && ancien !== url) hnavRevoquer(ancien);
+        };
+        chargeur.src = url;
+        if (typeof chargeur.decode === 'function') chargeur.decode().then(poser).catch(poser);
+        else chargeur.onload = poser;
+      }
+    }
+    return;
+  }
+
+  panneau.replaceChildren();
+  const vide = document.createElement('div');
+  vide.className = 'hud-vide hnav-vide';
+  vide.textContent = actif ? 'Ouverture de la page…'
+    : hnavEtat === 'absent' ? 'Playwright non installé (npm install playwright)'
+      : hnavEtat === 'inconnu'
+        ? 'Agent local injoignable (127.0.0.1:3020).\nDémarrez-le : node mini-services/local-agent/index.js\nLe panneau réessaie tout seul toutes les 2 s.'
+        : hnavPret
+          ? hnavNomMoteur() + ' démarré — aucun onglet ouvert.\nLance un bloc ```athena-browser ou entre une adresse.'
+          : 'Aucune session : lance un bloc ```athena-browser pour ouvrir le navigateur.';
+  panneau.appendChild(vide);
+}
+
+function hudNavArreterRafraichissement() {
+  if (hnavTimer) { clearTimeout(hnavTimer); hnavTimer = null; }
+  hnavFluxArreter();
+}
+
+function hudNavDemarrerRafraichissement() {
+  hudNavArreterRafraichissement();
+  let derniereSonde = 0;
+  const tic = async () => {
+    hnavTimer = null;
+    const debut = Date.now();
+    /* v1.7 : LA BOUCLE NE MEURT JAMAIS. Avant, la moindre exception levée
+       dans le corps (agent redémarré, réseau coupé, DOM recréé par un rejeu)
+       empêchait la ligne `hnavTimer = setTimeout(...)` d'être atteinte : le
+       flux s'arrêtait NET et ne reprenait qu'à la réouverture du panneau —
+       vu de l'extérieur comme « il se coupe au bout de 2 s ». */
+    try {
+      if (!hudNavigateurOuvert()) { hnavFluxArreter(); return; }
+      /* /sante au plus toutes les 8 s (et dès la 1re image) : compté en
+         TEMPS, pas en ticks — à 50 i/s, « 40 ticks » ne serait plus 8 s. */
+      const sonde = (Date.now() - derniereSonde) >= HNAV_ETAT_MS || hnavEtat !== 'pret';
+      if (sonde) { derniereSonde = Date.now(); await hudNavEtat(); }
+      /* P0 : les images arrivent POUSSÉES par /flux — on ne nourrit plus la
+         file `cadre` que si le flux n'est pas là (repli, agent redémarré,
+         page hors localhost). La (ré)ouverture est déléguée au tick pour
+         rester dans le même thread et ne jamais lancer deux connexions. */
+      if (!hnavFluxActif) hnavFluxDemarrer();
+      if (hnavEtat === 'pret' && !hnavSaisie && Date.now() >= hnavRespireJusqua) {
+        if (!hnavFluxActif) hudNavCapture();
+      } else if (hnavEtat === 'inconnu') hnavCaptureVider();
+      /* La peinture se fait à l'arrivée de chaque image (hudNavCapture) :
+         ce rendu ne sert qu'aux changements d'état (bandeau, adresse). */
+      if (hudNavigateurOuvert() && !hnavSaisie) rendreHudNavigateur();
+    } catch (_) { /* on retentera au tick suivant : jamais d'arrêt brutal */ }
+    if (!hudNavigateurOuvert()) return;
+    /* Tant que l'agent est muet on re-sonde toutes les 2 s : le message
+       d'injoignabilité doit disparaître SEUL dès qu'il revient, sans que
+       l'utilisateur ait à recharger la page. */
+    const cible = hnavEtat === 'inconnu' ? HNAV_REPRISE_MS
+      : hnavEtat === 'pret' ? HNAV_RAFRAICHIR_MS : HNAV_ETAT_MS;
+    /* Cadence DÉRIVÉE : on dort le RESTE du temps de la cible (8 ms pour
+       nourrir la file de 2). Le débit réel reste donné par page.screenshot :
+       si le tick dépasse la cible, on ne dort PLUS (setTimeout(0)) plutôt
+       que de glisser vers le bas — le défaut ancien (603 ms mesurés pour une
+       cible de 600) venait d'un délai fixe ajouté à chaque image. */
+    const reste = Math.max(0, cible - (Date.now() - debut));
+    hnavTimer = setTimeout(tic, reste);
+  };
+  hnavTimer = setTimeout(tic, 10);
+}
+
+/* ================= GESTES HUMAINS SUR LA PAGE =================
+   Une image ne peut pas être un vrai navigateur (X-Frame-Options/CSP
+   interdisent l'encastrement), donc on simule la surface : l'écran affiche
+   un cadre, et le clic/la molette/le clavier sont REJOUÉS par l'agent
+   Firefox aux mêmes coordonnées. Pour la personne, c'est un navigateur. */
+
+/* Écran → page. L'image occupe 100 % de la largeur du panneau et garde son
+   ratio, donc l'échelle est uniforme ; on calcule chaque axe de son côté
+   pour rester exact même si un jour le CSS change de `object-fit`. */
+function hnavVersPage(panneau, ev) {
+  const img = panneau.querySelector(':scope > img.hnav-img');
+  if (!img || !img.naturalWidth || !img.complete) return null;
+  const r = img.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const kx = r.width / img.naturalWidth;
+  const ky = r.height / img.naturalHeight;
+  const x = Math.round((ev.clientX - r.left) / kx);
+  const y = Math.round((ev.clientY - r.top) / ky);
+  if (x < 0 || y < 0 || x > img.naturalWidth || y > img.naturalHeight) return null;
+  return { x: x, y: y };
+}
+
+/* File d'attente : un clic puis une frappe arrivent DANS l'ordre, exactement
+   comme le verrou `navVerrou` côté agent — sinon les gestes se croisent. */
+function hnavGeste(action, arg, opts) {
+  const o = opts || {};
+  hnavFile = hnavFile.then(async () => {
+    hnavSaisie++;
+    hnavOccupe = true;
+    majBadgeNavigateur();
+    try {
+      const rep = await hudNavApi({ action: action, arg: arg, confirme: true });
+      const d = rep.d || {};
+      hnavSeq++;
+      if (typeof d.navigateur === 'string') hnavEtat = d.navigateur;
+      else if (rep.st === 200 && d.ok !== false) hnavEtat = 'pret';
+      if (typeof d.url === 'string' && d.url) hnavUrl = d.url;
+      /* v1.6 : un geste refusé était SILENCIEUX — on tapait une lettre, rien
+         ne bougeait, aucun message. C'est comme ça que le bug de saisie a
+         tenu aussi longtemps. */
+      if (rep.st !== 200 || d.ok === false) {
+        hnavInfo(d.erreur || ('geste refusé (HTTP ' + rep.st + ')'), true);
+      } else if (d.dialogue) {
+        hnavInfo('La page a affiché ' + d.dialogue.type + ' : ' + d.dialogue.message, false);
+      } else if (d.avertissement) {
+        hnavInfo(d.avertissement, false);
+      } else if (d.erreur) {
+        hnavInfo(d.erreur, true);
+      } else if (action === 'fermer') {
+        hnavInfo('Session fermée — le prochain bloc ```athena-browser la relancera.', false);
+      } else if (!o.silencieux) {
+        hnavInfo('');
+      }
+      majBadgeNavigateur();
+      /* v1.7 : le geste ne FORCE PLUS sa propre capture. Chaque action
+         envoyait `cadre` juste derrière (2 requêtes par geste) et bloquait
+         le flux pendant toute la file : la boucle 200 ms peint de toute
+         façon, et bien plus vite. `capturer: true` reste possible au cas par
+         cas (une navigation qu'on veut voir tout de suite). */
+      if (o.capturer === true) await hudNavCapture(true);
+      if (hudNavigateurOuvert()) rendreHudNavigateur();
+    } finally {
+      /* Le geste est traité côté agent : l'image qui suit contient la lettre
+         — c'est LE moment où l'écho doit céder la place. */
+      if (action === 'taper') hnavEchoAPrets = true;
+      hnavSaisie--; hnavOccupe = false; majBadgeNavigateur();
+    }
+  }).catch(() => { hnavEchoAPrets = true; hnavOccupe = false; majBadgeNavigateur(); });
+  return hnavFile;
+}
+
+/* v1.6 : adresse tapée dans la barre. Une personne qui écrit une URL a
+   CHOISI le site : on garde la modale 428 de l'agent (défense en profondeur)
+   mais on la valide ici, exactement comme pour un bloc manuel. */
+function hnavOuvrirAdresse(brut) {
+  const url = String(brut || '').trim();
+  if (!url) return Promise.resolve();
+  const avecScheme = /^(https?:|file:)/i.test(url) ? url : 'https://' + url;
+  const poster = (confirme) => hudNavApi({ action: 'ouvrir', arg: avecScheme, confirme: confirme === true });
+  return hnavFile = hnavFile.then(async () => {
+    hnavSaisie++;
+    hnavOccupe = true;
+    majBadgeNavigateur();
+    try {
+      let rep = await poster(false);
+      if (rep.st === 428) {
+        hnavPrechauffer();   /* v1.5 : Firefox démarre pendant qu'il lit la modale */
+        const confirme = await boiteModale({
+          titre: 'Ouvrir ce site dans le navigateur ?',
+          message: (rep.d && rep.d.origine ? 'Site : ' + rep.d.origine + '\n' : '')
+            + 'Adresse : ' + avecScheme.slice(0, 200)
+            + '\nAgent local 127.0.0.1:3020 — Firefox est piloté par le modèle.',
+          labelOk: 'Lancer',
+        });
+        if (!confirme) { hnavInfo('Ouverture annulée.', false); return; }
+        rep = await poster(true);
+      }
+      const d = rep.d || {};
+      hnavSeq++;
+      if (typeof d.navigateur === 'string') hnavEtat = d.navigateur;
+      if (typeof d.url === 'string' && d.url) hnavUrl = d.url;
+      if (rep.st !== 200 || d.ok === false) hnavInfo(d.erreur || ('HTTP ' + rep.st), true);
+      else hnavInfo('');
+      majBadgeNavigateur();
+      await hudNavCapture(true);
+      if (hudNavigateurOuvert()) rendreHudNavigateur();
+    } finally { hnavSaisie--; hnavOccupe = false; majBadgeNavigateur(); }
+  }).catch((e) => {
+    hnavOccupe = false; majBadgeNavigateur();
+    hnavInfo('Agent navigateur injoignable : ' + String((e && e.message) || e).slice(0, 160), true);
+  });
+}
+
+/* La molette déclenche beaucoup d'événements : on cumule pendant un
+   quart de seconde puis on envoie UN seul défilement. */
+function hnavCumulerRoue(g) {
+  if (!hnavRoue) hnavRoue = { x: g.x, y: g.y, dx: 0, dy: 0 };
+  hnavRoue.dx += g.dx;
+  hnavRoue.dy += g.dy;
+  if (hnavRoueTimer) return;
+  hnavRoueTimer = setTimeout(() => {
+    hnavRoueTimer = null;
+    const r = hnavRoue;
+    hnavRoue = null;
+    if (r) hnavGeste('defiler', [r.x, r.y, Math.round(r.dx), Math.round(r.dy)].join(','));
+  }, HNAV_ROUE_MS);
+}
+
+/* Une seule frappe → le nom de touche attendu par Playwright. Les simples
+   modificateurs (Shift tout seul) ne produisent rien : on les ignore. */
+function hnavNomTouche(e) {
+  const k = e.key;
+  if (!k || k === 'Dead' || k === 'Unidentified') return null;
+  if (k === 'Shift' || k === 'Control' || k === 'Alt' || k === 'Meta' || k === 'CapsLock'
+    || k === 'AltGraph' || k === 'OS') return null;
+  let s = '';
+  if (e.ctrlKey) s += 'Control+';
+  if (e.altKey) s += 'Alt+';
+  if (e.metaKey) s += 'Meta+';
+  if (e.shiftKey && k.length > 1) s += 'Shift+';
+  s += k;
+  return s.length <= 40 ? s : null;
+}
+
+/* ---- v1.7 : FRAPPE EN LOT ----------------------------------------------
+   Une lettre = une requête `touche` + une capture = 2 aller-retours par
+   caractère : taper « Bonjour » gelait le panneau pendant toute la saisie
+   (et donnait l'impression que le navigateur « se coupait »). On accumule
+   150 ms puis on envoie UN `taper` — Playwright tape alors le mot d'un coup,
+   à 15 ms par lettre. Les touches non-caractères (Entrée, Retour, raccourcis)
+   sont vidées PUIS envoyées : l'ordre tapé est toujours l'ordre reçu. */
+function hnavViderTampon() {
+  if (hnavTamponTimer) { clearTimeout(hnavTamponTimer); hnavTamponTimer = null; }
+  const t = hnavTampon;
+  hnavTampon = '';
+  if (!t) return null;
+  hnavEchoAPrets = false;      /* P3 : la lettre part vers l'agent, l'écho tient */
+  return hnavGeste('taper', t, { silencieux: true });
+}
+
+function hnavFrappe(k) {
+  if (k.length === 1) {
+    hnavTampon += k;
+    hnavEchoTexte(hnavTampon);          /* P3 : on voit la lettre tout de suite */
+    if (!hnavTamponTimer) {
+      hnavTamponTimer = setTimeout(() => { hnavTamponTimer = null; hnavViderTampon(); }, HNAV_TAMPON_MS);
+    }
+    return;
+  }
+  hnavViderTampon();
+  hnavGeste('touche', k);
+}
+
+/* Fermeture d'un HUD docké : on rend la largeur à la page (sauf si
+   l'interpréteur occupe toujours la place — un seul HUD à droite à la fois). */
+function fermerHudNavigateur() {
+  hudNavArreterRafraichissement();
+  /* v1.3.6 : fermer = TOUT couper. Sans ça, la molette/les frappes mises en
+     tampon (150/400 ms) repartaient vers la page APRÈS la fermeture, et la
+     dernière trame blob restait allouée jusqu'au rechargement de la page. */
+  if (hnavRoueTimer) { clearTimeout(hnavRoueTimer); hnavRoueTimer = null; }
+  if (hnavTamponTimer) { clearTimeout(hnavTamponTimer); hnavTamponTimer = null; }
+  hnavCaptureVider();
+  const panneau = document.getElementById('hud-navigateur');
+  const bouton = document.getElementById('btn-navigateur');
+  if (!panneau || panneau.hidden) return;
+  panneau.hidden = true;
+  if (bouton) bouton.setAttribute('aria-expanded', 'false');
+  const interp = document.getElementById('interpreteur');
+  if (pageDemoEl && (!interp || interp.hidden)) pageDemoEl.classList.remove('hud-ouvert');
+  evaluerAdaptationHud();
+}
+
+function ouvrirHudNavigateur() {
+  const panneau = document.getElementById('hud-navigateur');
+  const corps = document.getElementById('navigateur-corps');
+  const bouton = document.getElementById('btn-navigateur');
+  if (!panneau) return;
+  fermerHud();                       /* ferme les popups du composeur */
+  fermerInterpreteur();              /* exclusivité : jamais deux HUD à droite */
+  hnavInfo('');
+  const largeur = largeurHudEnregistree();
+  if (largeur) appliquerLargeurHud(largeur);
+  else document.documentElement.style.removeProperty('--hud-largeur');
+  if (pageDemoEl) pageDemoEl.classList.add('hud-ouvert');
+  panneau.hidden = false;
+  if (bouton) bouton.setAttribute('aria-expanded', 'true');
+  evaluerAdaptationHud();
+  if (corps) {
+    corps.replaceChildren();
+    const attente = document.createElement('div');
+    attente.className = 'hud-vide hnav-vide';
+    attente.textContent = 'Interrogation de l’agent…';
+    corps.appendChild(attente);
+    corps.focus({ preventScroll: true });   /* le clavier part vers la page */
+  }
+  rendreHudNavigateur();
+  (async () => {
+    /* v1.5 : intention = le panneau vient de s'ouvrir. Firefox démarre ici,
+       pendant l'affichage et la lecture de la page, jamais en arrière-plan
+       au chargement du site. */
+    hnavPrechauffer();
+    await hudNavEtat();
+    if (hnavEtat === 'pret') await hudNavCapture(true);
+    rendreHudNavigateur();
+    if (hudNavigateurOuvert()) hudNavDemarrerRafraichissement();
+  })();
+}
+
+(function initHudNavigateur() {
+  const bouton = document.getElementById('btn-navigateur');
+  const panneau = document.getElementById('hud-navigateur');
+  const corps = document.getElementById('navigateur-corps');
+  const fermer = document.getElementById('navigateur-fermer');
+  const bord = document.getElementById('navigateur-bord');
+  const precedent = document.getElementById('navigateur-precedent');
+  const suivant = document.getElementById('navigateur-suivant');
+  const recharger = document.getElementById('navigateur-recharger');
+  const session = document.getElementById('navigateur-session');
+  const adresse = document.getElementById('navigateur-url');
+  if (!bouton || !panneau || !corps) return;
+  majBadgeNavigateur();
+
+  bouton.addEventListener('click', () => {
+    if (!panneau.hidden) fermerHudNavigateur();
+    else ouvrirHudNavigateur();
+  });
+  if (fermer) fermer.addEventListener('click', (e) => { e.stopPropagation(); fermerHudNavigateur(); });
+
+  /* ---- v1.6 : barre d'outils (← → ⟳) + session + adresse ----
+     Un panneau qui affiche une page sans retour arrière n'est pas un
+     navigateur : un clic raté ne se rattrapait pas, il fallait tout
+     re-ouvrir à la main. */
+  const versPage = (action) => { hnavInfo(''); hnavGeste(action); };
+  if (precedent) precedent.addEventListener('click', (e) => { e.stopPropagation(); versPage('retour'); });
+  if (suivant) suivant.addEventListener('click', (e) => { e.stopPropagation(); versPage('suivant'); });
+  if (recharger) recharger.addEventListener('click', (e) => { e.stopPropagation(); versPage('recharger'); });
+  if (session) session.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hnavInfo('');
+    hnavGeste('fermer');
+  });
+  if (adresse) {
+    /* v1.5 : l'intention est NÉE de la saisie — le démarrage de Firefox se
+       glisse dans la frappe, donc le Enter arrive sur un moteur prêt. */
+    adresse.addEventListener('input', () => { if (adresse.value.trim()) hnavPrechauffer(); });
+    adresse.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        hnavOuvrirAdresse(adresse.value);
+        return;
+      }
+      /* Les frappes de la barre ne partent pas vers la PAGE (sinon on
+         taperait l'adresse dans le site affiché), sauf Échap. */
+      if (e.key !== 'Escape') e.stopPropagation();
+    });
+    adresse.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  /* ---- Surface : clic, molette, clavier → gestes rejoués par l'agent ----
+     Le HUD est DOCKÉ (comme le rendu) : il ne se ferme PAS au clic extérieur,
+     sinon on ne pourrait plus cliquer la conversation pendant qu'on navigue. */
+  corps.addEventListener('click', (e) => {
+    e.stopPropagation();
+    /* Un glisser vient de se terminer : le navigateur émet quand même un
+       `click` à la fin du trajet — on ne doit PAS cliquer une 2e fois. */
+    if (hnavClicIgnore) { hnavClicIgnore = false; return; }
+    const p = hnavVersPage(corps, e);
+    if (!p) return;
+    e.preventDefault();
+    hnavGeste('point', p.x + ',' + p.y);
+    corps.focus({ preventScroll: true });
+  });
+  /* ---- v1.7 : GLISSER (vraie souris) --------------------------------
+     presser → bouger (≥ 5 px) → relâcher = un seul geste `glisser` côté
+     agent (Playwright maintient le bouton). En dessous de 5 px, c'est un
+     simple clic : le chemin d'origine, inchangé. */
+  corps.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    hnavEchoPoint(e, true);              /* P3 : appui visible AVANT la trame */
+    hnavClicIgnore = false;                 /* nouvelle pression, mémoire vierge */
+    if (hnavEtat !== 'pret') return;
+    const p = hnavVersPage(corps, e);
+    if (!p) return;
+    hnavGlisse = { x: p.x, y: p.y, id: e.pointerId, bouge: false };
+  });
+  corps.addEventListener('pointermove', (e) => {
+    if (!hnavGlisse || hnavGlisse.id !== e.pointerId) return;
+    const p = hnavVersPage(corps, e);
+    if (!p) return;
+    if (Math.abs(p.x - hnavGlisse.x) >= 5 || Math.abs(p.y - hnavGlisse.y) >= 5) hnavGlisse.bouge = true;
+  });
+  const finirGlisse = (e, annule) => {
+    if (!hnavGlisse || hnavGlisse.id !== e.pointerId) return;
+    const g = hnavGlisse;
+    hnavGlisse = null;
+    if (annule || !g.bouge) return;
+    const p = hnavVersPage(corps, e) || { x: g.x, y: g.y };
+    hnavClicIgnore = true;
+    hnavGeste('glisser', [g.x, g.y, p.x, p.y].join(','));
+    corps.focus({ preventScroll: true });
+  };
+  corps.addEventListener('pointerup', (e) => finirGlisse(e, false));
+  corps.addEventListener('pointercancel', (e) => finirGlisse(e, true));
+  /* Clic droit : ouvre le menu de la PAGE, pas celui d'Athena. */
+  corps.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hnavEchoPoint(e, true);
+    const p = hnavVersPage(corps, e);
+    if (p) hnavGeste('point', p.x + ',' + p.y + ',3');
+  });
+  corps.addEventListener('wheel', (e) => {
+    hnavEchoPoint(e, true);              /* P3 : la molette répond sur-le-champ */
+    e.preventDefault();
+    e.stopPropagation();
+    const p = hnavVersPage(corps, e);
+    if (p) hnavCumulerRoue({ x: p.x, y: p.y, dx: e.deltaX, dy: e.deltaY });
+  }, { passive: false });
+  corps.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') return;          /* Échap ferme le HUD (ci-dessous) */
+    e.stopPropagation();
+    const k = hnavNomTouche(e);
+    if (!k) return;
+    e.preventDefault();
+    hnavFrappe(k);
+  });
+  /* v1.7 : coller du texte = une action `taper`, pas une touche par caractère
+     (et impossible avec `touche` : un raccourci n'est pas un texte). */
+  corps.addEventListener('paste', (e) => {
+    const t = e.clipboardData ? e.clipboardData.getData('text') : '';
+    if (!t) return;
+    e.preventDefault();
+    e.stopPropagation();
+    hnavViderTampon();
+    hnavGeste('taper', t);
+  });
+  /* v1.6 : SURVOL. Avant, mouse.move n'existait qu'au moment d'un clic :
+     aucun lien ne se surlignait, aucun menu :hover ne s'ouvrait — on ne
+     voyait pas où le clic allait atterrir. v1.7 : throttle 200 → 80 ms et
+     seuil 12 → 5 px, sinon le surlignage arrivait APRÈS mon geste suivant
+     (« ce n'est pas une vraie souris »). */
+  let survolT = 0;
+  let survolX = -1;
+  let survolY = -1;
+  corps.addEventListener('mousemove', (e) => {
+    /* P3 : le point suit la souris SANS attendre le throttle de 80 ms (ni le
+       aller-retour `survol`) — c'est lui qui prouve que la surface est vivante. */
+    hnavEchoPoint(e);
+    if (hnavEtat !== 'pret' || hnavSaisie || hnavGlisse) return;
+    const maintenant = Date.now();
+    if (maintenant - survolT < 80) return;
+    const p = hnavVersPage(corps, e);
+    if (!p) return;
+    if (Math.abs(p.x - survolX) < 5 && Math.abs(p.y - survolY) < 5) return;
+    survolT = maintenant;
+    survolX = p.x;
+    survolY = p.y;
+    /* silencieux : ne gâche pas un message d'erreur affiché par un clic ;
+       pas de capture non plus, la boucle 200 ms suffit à montrer le survol. */
+    hnavGeste('survol', p.x + ',' + p.y, { silencieux: true, capturer: false });
+  });
+  /* P5 : la souris sort de l'image → le point aussi (comme un vrai curseur). */
+  corps.addEventListener('mouseleave', hnavEchoEffacer);
+  /* On rend le focus au corps quand on clique dedans : sans ça, après un
+     clic sur un lien la frappe repart vers le composeur de messages. */
+  corps.addEventListener('mousedown', () => corps.focus({ preventScroll: true }));
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !panneau.hidden) fermerHudNavigateur();
+  });
+
+  /* Poignée de redimensionnement : même mécanique (et même largeur mémorisée)
+     que #interpreteur-bord — un seul --hud-largeur pour les deux HUD. */
+  if (bord) {
+    let glisse = false;
+    bord.addEventListener('pointerdown', (e) => {
+      glisse = true;
+      bord.classList.add('drague');
+      try { bord.setPointerCapture(e.pointerId); } catch (err) { /* capture facultative */ }
+      e.preventDefault();
+    });
+    bord.addEventListener('pointermove', (e) => {
+      if (!glisse) return;
+      appliquerLargeurHud(window.innerWidth - e.clientX);
+    });
+    const finGlisse = () => {
+      if (!glisse) return;
+      glisse = false;
+      bord.classList.remove('drague');
+      const w = Math.round(panneau.getBoundingClientRect().width);
+      if (w > 0) {
+        try { localStorage.setItem('athena_largeur_hud', String(w)); } catch (err) { /* stockage facultatif */ }
+      }
+    };
+    bord.addEventListener('pointerup', finGlisse);
+    bord.addEventListener('pointercancel', finGlisse);
+  }
+
+  /* Une seule requête au chargement : badge juste dès la première frame
+     (une session survivant à un rechargement reste visible). Borné à
+     ~30 s : si l'agent est vraiment mort on cesse de sonder, et c'est
+     l'ouverture du panneau qui reprend la main. */
+  let tentatives = 0;
+  const sonder = async () => {
+    await hudNavEtat();
+    tentatives++;
+    if (hnavEtat === 'inconnu' && tentatives < 15) setTimeout(sonder, HNAV_REPRISE_MS);
+  };
+  sonder();
 })();
 
 /* ---------- INITIALISATION — v7.2.2 : déplacée ICI (fin de module) ----------

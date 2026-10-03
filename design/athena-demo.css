@@ -2609,6 +2609,305 @@ span.think:not(details .think) {
   cursor: wait;
 }
 
+/* ————— HUD navigateur (v1.5) : DOCKÉ À DROITE, coquille du rendu —————
+   Même mécanique que .interpreteur (L.~5034) : position fixed à droite,
+   largeur --hud-largeur réservée en padding par .page-demo.hud-ouvert (la
+   conversation se rétracte, jamais recouverte), poignée #navigateur-bord,
+   en-tête + fermeture. Le CONTENU est la page du modèle.
+   Le corps dimensionne l'IMAGE au plus près du cadre (width/height auto +
+   max-*) : la boîte de l'img vaut alors exactement son rendu, ce qui rend
+   le clic reconverti en coordonnée PAGE exact — un object-fit:cover ferait
+   mentir la conversion. */
+.navigateur-hud {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: var(--hud-largeur, 640px);
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  background: var(--fond);
+  border-left: 1px solid var(--bord-fort);
+  border-radius: var(--rayon-l) 0 0 var(--rayon-l);
+  box-shadow: var(--ombre);
+  animation: hud-entree 0.18s ease;
+}
+.navigateur-hud[hidden] {
+  display: none;
+}
+.navigateur-bord {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  width: 10px;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  transition: background 0.12s;
+}
+.navigateur-bord:hover,
+.navigateur-bord.drague {
+  background: var(--primaire);
+}
+.navigateur-tete {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  row-gap: 7px;
+  flex-wrap: wrap;          /* v1.6 : barre d'outils sur 2 lignes (rangée + URL) */
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--bord);
+  border-radius: var(--rayon-l) 0 0 0;
+  background: var(--carte);
+}
+.navigateur-ico .ico {
+  width: 16px;
+  height: 16px;
+  color: var(--texte-doux);
+  flex: none;
+}
+.navigateur-nom {
+  flex: 1 1 auto;
+  min-width: 0;             /* sinon l'ellipsis ne s'applique jamais */
+  font-size: 0.88rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.navigateur-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.btn-navigateur-fermer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-s);
+  background: transparent;
+  color: var(--texte);
+  cursor: pointer;
+}
+.btn-navigateur-fermer:hover {
+  border-color: var(--primaire);
+  color: var(--primaire);
+}
+.btn-navigateur-fermer .ico {
+  width: 15px;
+  height: 15px;
+}
+/* ————— v1.6 : barre d'outils du navigateur (← → ⟳ | session | ✕) —————
+   Même bouton que la fermeture pour rester dans la même famille visuelle,
+   en plus compact, avec état désactivé explicite quand l'historique est vide. */
+.hnav-outil {
+  width: 30px;
+  height: 30px;
+}
+.hnav-outil:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.hnav-outil:disabled:hover {
+  border-color: var(--bord);
+  color: var(--texte);
+}
+/* barre d'adresse : pleine largeur, seconde rangée de l'en-tête */
+.hnav-url {
+  flex: 1 1 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-s);
+  background: var(--fond);
+  color: var(--texte);
+  font: inherit;
+  font-size: 0.82rem;
+}
+.hnav-url:focus {
+  outline: none;
+  border-color: var(--primaire);
+}
+.hnav-url::placeholder {
+  color: var(--texte-doux);
+}
+/* bandeau d'état : erreurs de geste, « occupé », session fermée.
+   hidden au repos (le test de coquille compte les enfants de #hud-navigateur). */
+.hnav-info {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding-left: 7px;
+  border-left: 2px solid var(--bord);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--texte-doux);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hnav-info[hidden] {
+  display: none;
+}
+.hnav-info.hnav-info-err {
+  border-left-color: var(--danger-bord);
+  color: var(--danger-texte);
+}
+/* P5 — panneau épuré : le bandeau d'état sort du rendu (l'état d'une action
+   se lit dans l'image du flux, pas dans une ligne de texte sous l'en-tête).
+   Le nœud reste dans le DOM et le JS continue de le remplir : les tests
+   lisent .hidden, .textContent et la classe .hnav-info-err. */
+.hnav-info { display: none !important; }
+/* Sauf quand c'est une ERREUR : « geste refusé », « agent injoignable »,
+   « ouverture annulée » doivent rester lisibles — masquer le bandeau neutre
+   ne doit pas masquer ce que l'utilisateur a besoin de savoir. */
+.hnav-info.hnav-info-err { display: block !important; }
+.navigateur-corps {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+  border-radius: 0 0 0 var(--rayon-l);
+  /* v1.7 : la surface est une ZONE DE SAISIE autant qu'une page —
+     pas de défilement tactile parasite, et la souris est une vraie flèche
+     (un réticule dit « outil de mesure », pas « navigateur »). */
+  touch-action: none;
+  cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="24" viewBox="0 0 20 24"><path d="M2 1.6 L2 19.2 L6.5 14.9 L9.3 21.6 L12.6 20 L9.8 13.5 L15.7 13.2 Z" fill="%23fff" stroke="%23111" stroke-width="1.5" stroke-linejoin="round"/></svg>') 2 1, default;
+}
+/* v1.7 : `:focus` et non `:focus-visible` — on veut VOIR que le clavier est
+   braqué sur la page dès qu'on l'a cliquée (sinon on tape dans le vide sans
+   s'en rendre compte). */
+.navigateur-corps:focus {
+  outline: 2px solid var(--ok);
+  outline-offset: -2px;
+}
+/* P3 — ÉCHO LOCAL : une image poussée arrive ~20-40 ms après le geste, et
+   pendant ce temps la surface a l'air MORTE (« ça ne réagit pas »). On montre
+   donc tout de suite, en local, ce que l'agent confirmera juste après :
+   `::after` = point de visée suivi du curseur (aussi fort à l'appui),
+   `::before` = frappe en attente avant son envoi. Tout passe par des
+   pseudo-éléments pilotés en variables CSS : le corps ne reçoit AUCUN nœud,
+   il doit contenir UNIQUEMENT la page (contrat de test). */
+.navigateur-corps {
+  position: relative;
+}
+/* P5 — l'écho devient une VRAIE souris Windows : même tracé que le curseur
+   du panneau (voir `cursor:` ci-dessus), la pointe (point chaud 2,1) tombe
+   pile sur --hnav-echo-x/y. Zéro nœud DOM : pseudo-élément seul. */
+.navigateur-corps::after {
+  content: "";
+  position: absolute;
+  left: var(--hnav-echo-x, -50px);
+  top: var(--hnav-echo-y, -50px);
+  width: 20px;
+  height: 24px;
+  margin: -1px 0 0 -2px;
+  background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="24" viewBox="0 0 20 24"><path d="M2 1.6 L2 19.2 L6.5 14.9 L9.3 21.6 L12.6 20 L9.8 13.5 L15.7 13.2 Z" fill="%23fff" stroke="%23111" stroke-width="1.5" stroke-linejoin="round"/></svg>') no-repeat left top;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .55));
+  opacity: 0;
+  transform: translateY(3px) scale(.8);
+  transform-origin: 2px 1px;
+  transition: opacity .12s ease, transform .12s ease;
+  pointer-events: none;
+  z-index: 3;
+}
+.navigateur-corps.hnav-echo-on::after {
+  opacity: 1;
+  transform: none;
+}
+.navigateur-corps.hnav-echo-clic::after {
+  transform: scale(.9);
+  filter: drop-shadow(0 0 5px rgba(88, 196, 255, .95));
+  transition-duration: .06s;
+}
+.navigateur-corps::before {
+  content: var(--hnav-echo-text, "");
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(6, 12, 20, .88);
+  color: #e6eef7;
+  font: 13px/1.35 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .14s ease, transform .14s ease;
+  pointer-events: none;
+  z-index: 3;
+}
+.navigateur-corps.hnav-echo-texte::before {
+  opacity: 1;
+  transform: translateY(0);
+}
+.hnav-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;       /* la boîte = le rendu : conversion de clic exacte */
+  cursor: inherit;        /* la flèche vient du panneau (v1.7) */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.navigateur-corps .hud-vide {
+  width: 100%;
+  color: var(--texte-doux);
+}
+.hud-vide.hnav-vide {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.5;
+  padding: 18px 16px;
+  white-space: pre-line;
+}
+/* badge d'état dans le bouton d'en-tête (à gauche de « Partager ») */
+.hnav-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--bord);
+  border-radius: 999px;
+  font-size: 0.64rem;
+  line-height: 1.5;
+  color: var(--texte-doux);
+}
+/* P5 — panneau épuré : le badge session n'est plus affiché (le texte reste
+   mis à jour par majBadgeNavigateur → les tests lisent textContent). */
+.hnav-badge { display: none !important; }
+.btn-nav.nav-actif .hnav-badge {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+/* v1.6 : « occupé » = une action du modèle tourne. Avant, le badge disait
+   « actif » pendant tout un snapshot — impossible de voir que la page bouge. */
+.btn-nav.nav-occupe .hnav-badge {
+  border-color: var(--primaire);
+  color: var(--primaire);
+  animation: hnav-pulse 1.1s ease-in-out infinite;
+}
+@keyframes hnav-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 @media (max-width: 720px) {
   .btn-modele {
     max-width: 110px;
@@ -3128,6 +3427,10 @@ details.raisonnement summary {
   }
 
   .btn-partager span {
+    display: none;
+  }
+
+  .btn-nav .hnav-lbl {
     display: none;
   }
 

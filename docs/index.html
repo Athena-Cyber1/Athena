@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925cp" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925cq" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -195,6 +195,16 @@
             </button>
             <div id="panneau-fichiers" class="panneau-fichiers" hidden role="menu" aria-label="Fichiers de la conversation"></div>
           </div>
+          <!-- v1.5 : le bouton ouvre un HUD DOCKÉ À DROITE (coquille du rendu
+               de l'interpréteur). Le HUD lui-même vit AU NIVEAU DU CORPS,
+               à côté de #interpreteur : un position:fixed reste prisonnier
+               d'un ancêtre transformé/flouté, donc un HUD imbriqué dans
+               l'en-tête n'aurait que la hauteur de l'en-tête. -->
+          <button id="btn-navigateur" type="button" class="btn-fichiers btn-nav" aria-expanded="false" aria-controls="hud-navigateur" title="Navigateur du modèle — clique dans la page pour naviguer, molette pour défiler, clavier pour saisir">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.6 3.6 5.6 3.6 9s-1.2 6.4-3.6 9c-2.4-2.6-3.6-5.6-3.6-9S9.6 5.6 12 3z"/></svg>
+            <span class="hnav-lbl">Navigateur</span>
+            <span id="navigateur-actif-nom" class="hnav-badge">…</span>
+          </button>
           <button id="partager" class="btn-partager" type="button" title="Copier la conversation">
             <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>
             <span>Partager</span>
@@ -273,6 +283,45 @@
         </form>
       </main>
 
+      <!-- v1.5 : HUD navigateur DOCKÉ À DROITE, même coquille que le rendu.
+           Au NIVEAU DU CORPS (pas dans l'en-tête) : position:fixed reste
+           prisonnier d'un ancêtre transformé, donc imbriqué dans .chat-tete
+           il n'aurait pris que la hauteur de l'en-tête. La page réserve sa
+           largeur en padding-right (.page-demo.hud-ouvert), comme le rendu. -->
+      <div id="hud-navigateur" class="navigateur-hud" hidden role="region" aria-label="Navigateur du modèle">
+        <div id="navigateur-bord" class="navigateur-bord" role="separator" aria-orientation="vertical" title="Glisser pour redimensionner le HUD"></div>
+        <div class="navigateur-tete">
+          <span class="navigateur-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.4 2.6 3.6 5.6 3.6 9s-1.2 6.4-3.6 9c-2.4-2.6-3.6-5.6-3.6-9S9.6 5.6 12 3z"/></svg></span>
+          <span id="navigateur-nom" class="navigateur-nom">Navigateur du modèle</span>
+          <div class="navigateur-actions">
+            <!-- v1.6 : barre d'outils réelle — un panneau qui affiche une page
+                 sans retour arrière ni recharge n'est pas un navigateur, et un
+                 mauvais clic ne se rattrapait pas. -->
+            <button id="navigateur-precedent" class="btn-navigateur-fermer hnav-outil" type="button" title="Page précédente (retour)" aria-label="Page précédente" disabled>
+              <svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button id="navigateur-suivant" class="btn-navigateur-fermer hnav-outil" type="button" title="Page suivante" aria-label="Page suivante" disabled>
+              <svg class="ico" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+            <button id="navigateur-recharger" class="btn-navigateur-fermer hnav-outil" type="button" title="Recharger la page" aria-label="Recharger la page">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4h-4"/></svg>
+            </button>
+            <button id="navigateur-session" class="btn-navigateur-fermer hnav-outil" type="button" title="Fermer la session Firefox (la page du modèle)" aria-label="Fermer la session du navigateur">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+            <button id="navigateur-fermer" class="btn-navigateur-fermer" type="button" title="Fermer le navigateur (Échap)" aria-label="Fermer le navigateur">
+              <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            </button>
+          </div>
+          <!-- barre d'adresse : éditable, Entrée = ouvrir -->
+          <input id="navigateur-url" class="hnav-url" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="Adresse du modèle — Entrée pour ouvrir" aria-label="Adresse de la page">
+          <!-- bandeau d'état : erreurs de geste, occupé, session fermée -->
+          <div id="navigateur-info" class="hnav-info" role="status" hidden></div>
+        </div>
+        <div id="navigateur-corps" class="navigateur-corps" tabindex="0"></div>
+      </div>
+
       <!-- v20261001 : HUD interpréteur HTML ancré à DROITE — la page
            (.page-demo) réserve sa largeur en padding-right : la conversation
            et la barre latérale se réadaptent, jamais recouvertes. Code masqué
@@ -303,11 +352,11 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20260925cp"></script>
-    <script src="./api-shim.js?v=20260925cp"></script>
+    <script src="./keys.js?v=20260925cq"></script>
+    <script src="./api-shim.js?v=20260925cq"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20260925cp"></script>
+    <script src="./chat-demo.js?v=20260925cq"></script>
   </div>
 </body>
 </html>
