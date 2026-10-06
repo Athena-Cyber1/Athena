@@ -11,7 +11,6 @@ GET  /files              → liste harmonisée (status/kind/sha256/taille, F7)
 GET  /files/{id}         → fiche d'un fichier ; /files/{id}/contenu → texte brut (F9)
 DELETE /files/{id}       → purge réelle d'un fichier (F4)
 POST /files/ingest       → ingestion multipart (exécutables refusés, F14)
-POST /evals              → suite de régression (5/5 obligatoire)
 GET  /sante              → santé
 """
 from __future__ import annotations
@@ -33,10 +32,10 @@ MAX_OCTETS_INGEST = 50 * 1024 * 1024
 from athena import __version__  # noqa: E402
 from athena.agent import skills as skill_reg  # noqa: E402 — enregistre les skills
 from athena.agent.agent import run_agent  # noqa: E402
-from athena.evals import runner as evals  # noqa: E402
 from athena.llm.engine import MOTEUR  # noqa: E402
 from athena.memory import store as memoire  # noqa: E402
 from athena.tools import files as tfiles  # noqa: E402
+from athena.tools import mcp as tmcp  # noqa: E402 — pont MCP (serveurs externes)
 
 app = FastAPI(title="Athéna", version=__version__, docs_url=None, redoc_url=None)
 
@@ -64,6 +63,9 @@ class RequeteChat(BaseModel):
     # v1.2 (anti-bâclage, item 12) : température préférée de l'UI (0..2).
     # None = défauts raisonnés du moteur. Validée ici, transmise au moteur.
     temperature: float | None = Field(default=None)
+    # P0 (audit fainéant) : effort de raisonnement du HUD (low/medium/high/xhigh/max)
+    # — transmis jusqu'au pont (reasoning_effort nvidia). None = défaut modèle.
+    effort: str | None = Field(default=None, max_length=8)
     # v10.10 — skill forcé (id court, ex. « math-exact »). Absent/vide →
     # sélection automatique par type de tâche / motifs.
     skill: str | None = Field(default=None, max_length=64)
@@ -92,6 +94,28 @@ def skills_liste() -> dict:
     Chaque skill porte son type de tâche, ses outils, le genre de
     vérificateur et s'il repose sur l'autorité déterministe."""
     return {"skills": skill_reg.lister()}
+
+
+class RequeteMCP(BaseModel):
+    """Appel d'un outil d'un serveur MCP branché (blender, gdrive, …)."""
+    serveur: str = Field(min_length=1, max_length=80)
+    outil: str = Field(min_length=1, max_length=120)
+    arguments: dict = {}
+
+
+@app.get("/mcp")
+def mcp_liste(force: bool = False) -> dict:
+    """MCP — inventaire des serveurs branchés (mcp.json) : état + outils.
+    Premier appel = démarrage réel des sous-processus (une quinzaine de
+    secondes), ensuite lecture de l'état. Un serveur en échec est répertorié
+    avec sa cause, jamais remonté en erreur HTTP."""
+    return tmcp.connecter(force=force)
+
+
+@app.post("/mcp/appel")
+def mcp_appel_route(req: RequeteMCP) -> dict:
+    """Appel synchrone d'un outil MCP — résultat du serveur, erreur codée sinon."""
+    return tmcp.appeler(req.serveur, req.outil, req.arguments)
 
 
 @app.get("/telemetrie")
@@ -146,11 +170,15 @@ def chat(req: RequeteChat) -> dict:
                 temperature = None
             if temperature is not None and not (0.0 <= temperature <= 2.0):
                 temperature = None
+        # P0 (audit fainéant) : effort du HUD validé (échelle low..max),
+        # None sinon — jamais d'erreur pour une valeur inconnue.
+        effort = req.effort if req.effort in ("low", "medium", "high", "xhigh", "max") else None
         return run_agent(req.question, historique=historique, fil_id=req.fil_id,
                          max_etapes=max_etapes, mode=mode, attachments=pieces,
                          model_id=(req.model_id or None),
                          skill=(req.skill or None),
-                         temperature=temperature)
+                         temperature=temperature,
+                         effort=effort)
     except Exception as e:  # jamais de crash silencieux : échec honnête
         # v10.9.2 (P0) : le DÉTAIL (type + message d'exception) reste dans le
         # log serveur (uvicorn/console). Le corps HTTP n'emporte qu'une phrase
@@ -292,12 +320,6 @@ async def ingest(fichier: UploadFile = File(...)) -> dict:
             "nom": fichier.filename or "fichier",
         })
     return resultat
-
-
-@app.post("/evals")
-def lancer_evals() -> dict:
-    r = evals.lancer(verbose=False)
-    return JSONResponse(status_code=200 if r["succes_global"] else 500, content=r)
 
 
 @app.get("/modeles")

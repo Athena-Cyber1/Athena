@@ -138,7 +138,10 @@ def _hedge(state: AgentState) -> str:
     if MOTEUR.disponible():
         msgs = prompts.prompt_hedge(state.but, _voisinage_resume(state),
                                     anaphore=marqueurs_anaphore(state.but))
-        obs = observer.raisonner_llm(state, msgs, phase="reponse", max_tokens=700)
+        # P0 (audit fainéant) : 700 → 2048 — la seconde chance était elle
+        # aussi coupée en plein milieu (fin=length) et devenait un « aveu »
+        # tronqué. La prolongation observer couvre encore ce chemin.
+        obs = observer.raisonner_llm(state, msgs, phase="reponse", max_tokens=2048)
         if obs.succes:
             brut = (obs.resultat.get("texte") or "").strip()
             if brut and not canari.detecter_non_reponse(brut):
@@ -527,6 +530,17 @@ def _echelle_generale(state: AgentState, explication_llm: str,
                 state.variante_terminal = nom
                 state.annoter("FAIT_CANONIQUE_DIRECT")
                 return texte, "VERIFIED", canari.CLASSE_OUTILLEE
+
+    # ---- (b'-mcp) résultat constaté côté serveur externe (MCP branché) :
+    # le serveur est l'autorité de son propre état (skill mcp-appel : « une
+    # erreur MCP est un résultat à rapporter »). Si le modèle n'a rien pu
+    # rédiger de propre, on rapporte le constat tel quel avec sa provenance
+    # — jamais un hedge « non vérifié » sur un résultat SUPPORTED.
+    mcp_constates = [c for c in state.claims
+                     if str(c.source or "").startswith("mcp:") and c.statut == "SUPPORTED"]
+    if mcp_constates:
+        state.annoter("MCP_CONSTAT_DIRECT")
+        return mcp_constates[0].texte + ".", "SUPPORTED", canari.CLASSE_OUTILLEE
 
     # ---- (b''-social) micro-social conversationnel (accueil/gratitude/congé) :
     # un geste social n'a NI hedge ni inconnu — réponse directe du pool,

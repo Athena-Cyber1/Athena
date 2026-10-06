@@ -102,13 +102,16 @@ from .policies import marqueurs_anaphore as _marqueurs_anaphore_shared
 
 
 def _bloc_fil_recent(state: AgentState) -> tuple[str, bool]:
-    """v10.7/v10.8 — MEMORY_RECENT GATÉ (diagnostic §1 (b) + Classe 4).
+    """v10.7/v10.8 — FIL RÉCENT (mémoire de conversation côté modèle).
 
-    Le fil de conversation n'est envoyé au modèle QUE si la question actuelle
-    est une reprise : anaphore (« son auteur », « ce sujet »), marqueur de
-    continuation (« et ensuite », « plus de détails ») ou chevauchement
-    significatif (≥ 2 jetons de contenu) avec le dernier tour utilisateur.
-    Une question NOUVELLE (ex. VPN après Athéna) ne reçoit AUCUN fil récent.
+    v1.2 (contexte) : le fil n'est PLUS conditionné à une reprise détectée.
+    Avant, seules une anaphore (« son auteur », « ce sujet »), un marqueur de
+    continuation (« et ensuite ») ou un chevauchement ≥ 2 jetons avec le
+    dernier tour utilisateur déclenchaient l'injection : une question NOUVELLE
+    en pleine conversation (« quel est mon prénom ? », ou tout skill forcé)
+    recevait AUCUN fil et le modèle répondait « inconnu » alors que l'UI
+    affichait bien les tours précédents. Le bloc reste INDICATIF et BORNÉ
+    (prompts.py) : 4 tours, 6 en anaphore/continuation (N-1 et N-2).
 
     v1.2 (anti-bâclage) : source = state.historique (tours complets du
     client) d'abord, repli sur le fil mémoire ; ~1200 caractères par tour
@@ -140,10 +143,11 @@ def _bloc_fil_recent(state: AgentState) -> tuple[str, bool]:
             commun = (set(memoire.jetons_significatifs(question))
                       & set(memoire.jetons_significatifs(dernier_user["contenu"])))
             reprise = len(commun) >= 2
-    if not reprise:
-        return "", False
-    # CLASSE 4 : en anaphore, injecter PLUS de fil (N-1 ET N-2 visibles)
-    if par_anaphore:
+    # v1.2 (contexte) : plus de « question nouvelle → aucun fil ». On envoie
+    # le fil dans TOUS les cas (4 tours) ; anaphore/continuation → 6 tours
+    # (N-1 et N-2 couverts), la résolution d'antécédent reste pilotée par
+    # le booléen retourné (CLASSE 4).
+    if par_anaphore or reprise:
         tours = tours[-6:]
     else:
         tours = tours[-4:]
@@ -183,7 +187,9 @@ def _bloc_file_data(state: AgentState) -> str:
 
 def _explication(state: AgentState) -> str:
     """Demande au LLM une explication SAPPUYANT sur les observations (autorité)."""
-    obs_msg = prompts.prompt_explication(state.type_tache, state.but, _resume_observations(state))
+    fil_recent, anaphore = _bloc_fil_recent(state)
+    obs_msg = prompts.prompt_explication(state.type_tache, state.but, _resume_observations(state),
+                                         fil_recent=fil_recent, anaphore=anaphore)
     obs = observer.raisonner_llm(state, obs_msg, phase="reponse")
     if obs.succes:
         return obs.resultat.get("texte", "")
@@ -228,7 +234,8 @@ def run_agent(question: str, historique: list[dict[str, str]] | None = None,
               mode: str = "auto", emetteur: Emitter | None = None,
               attachments: list[dict[str, str]] | None = None,
               model_id: str | None = None, skill: str | None = None,
-              temperature: float | None = None) -> dict[str, Any]:
+              temperature: float | None = None,
+              effort: str | None = None) -> dict[str, Any]:
     debut = time.time()
     fil_id = fil_id or f"fil-{uuid.uuid4().hex[:8]}"
     historique = historique or []
@@ -239,10 +246,13 @@ def run_agent(question: str, historique: list[dict[str, str]] | None = None,
         temperature = None
     if temperature is not None and not (0.0 <= temperature <= 2.0):
         temperature = None
+    # P0 (audit fainéant) : effort du HUD validé (échelle basse → haute).
+    if effort not in ("low", "medium", "high", "xhigh", "max"):
+        effort = None
 
     state = AgentState(but=question.strip(), historique=historique, fil_id=fil_id,
                        max_etapes=max_etapes, model_id=model_id,
-                       temperature=temperature)
+                       temperature=temperature, effort=effort)
 
     # v10.8 — CLASSE 7 : garde d'injection DÉTERMINISTE avant toute planification
     # (prise de contrôle « SYSTEM: » → refus poli + alternative ; « répète : X »
@@ -338,7 +348,9 @@ def run_agent(question: str, historique: list[dict[str, str]] | None = None,
                 action.fait = True
             else:
                 if state.type_tache in ("MATH", "CODE", "LINGUISTIQUE", "DEVINETTE"):
-                    msgs = prompts.prompt_explication(state.type_tache, state.but, _resume_observations(state))
+                    fil_recent, reprise_anaphore = _bloc_fil_recent(state)
+                    msgs = prompts.prompt_explication(state.type_tache, state.but, _resume_observations(state),
+                                                      fil_recent=fil_recent, anaphore=reprise_anaphore)
                 else:
                     # v10.8 — CLASSE 1 : a_observations reflète le CONTENU RÉEL
                     # des observations (une recherche vide ≠ une observation).

@@ -5523,3 +5523,208 @@ html[data-theme="light"] .btn-interpreteur-plein:hover {
 html[data-theme="light"] .interpreteur-code {
   color: #171717;
 }
+
+/* ————— Menu « / » : skills du moteur (docs/chat-demo.js) ————— */
+.menu-skills {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(520px, calc(100vw - 40px));
+  max-height: min(340px, calc(100vh - 200px));
+  overflow-y: auto;
+  background: var(--carte);
+  border: 1px solid var(--bord-fort);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  z-index: 60;
+  padding: 5px;
+}
+.menu-skills[hidden] {
+  display: none;
+}
+.menu-skill {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.menu-skill:hover,
+.menu-skill.actif {
+  background: var(--carte-doux);
+  border-color: var(--bord);
+}
+.menu-skill.actif {
+  border-color: var(--primaire);
+}
+.menu-skill-nom {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--texte);
+}
+.menu-skill-nom .slash {
+  color: var(--primaire);
+}
+.menu-skill-desc {
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--texte-doux);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.menu-skill-vide {
+  padding: 10px 9px;
+  font-size: 0.8rem;
+  color: var(--texte-doux);
+}
+
+/* ————— Pastille du skill forcé (au-dessus du composeur) ————— */
+.chip-skill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 880px;
+  margin: 0 auto 5px;
+  padding: 3px 5px 3px 10px;
+  font-size: 0.76rem;
+  color: var(--texte);
+  background: var(--carte);
+  border: 1px solid var(--primaire);
+  border-radius: 999px;
+  box-shadow: var(--ombre);
+}
+.chip-skill[hidden] {
+  display: none;
+}
+.chip-skill-nom {
+  font-weight: 600;
+}
+.chip-skill-fermer {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--texte-doux);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.chip-skill-fermer:hover {
+  color: var(--danger-texte);
+  background: var(--danger-fond);
+}
+
+/* ————— Panneau /mcp : serveurs MCP branchés ————— */
+.panneau-mcp {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: min(560px, calc(100vw - 40px));
+  max-height: min(420px, calc(100vh - 200px));
+  overflow-y: auto;
+  background: var(--carte);
+  border: 1px solid var(--bord-fort);
+  border-radius: var(--rayon);
+  box-shadow: var(--ombre);
+  z-index: 60;
+  padding: 9px;
+}
+.panneau-mcp[hidden] {
+  display: none;
+}
+.panneau-mcp-entete {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+  margin-bottom: 7px;
+}
+.panneau-mcp-fermer {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+  background: var(--carte-doux);
+  color: var(--texte-doux);
+  cursor: pointer;
+}
+.panneau-mcp-fermer:hover {
+  color: var(--primaire);
+  border-color: var(--primaire);
+}
+.panneau-mcp-serveur {
+  border: 1px solid var(--bord);
+  border-radius: 10px;
+  background: var(--carte-doux);
+  padding: 7px 9px;
+  margin-bottom: 7px;
+}
+.panneau-mcp-ligne {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panneau-mcp-nom {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.panneau-mcp-etat {
+  font-size: 0.7rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--bord);
+  color: var(--texte-doux);
+  white-space: nowrap;
+}
+.panneau-mcp-etat.etat-connecte {
+  color: #16a34a;
+  border-color: rgba(22, 163, 74, 0.45);
+}
+.panneau-mcp-etat.etat-erreur {
+  color: var(--danger-texte);
+  border-color: var(--danger-bord);
+}
+.panneau-mcp-erreur {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--danger-texte);
+  word-break: break-word;
+}
+.panneau-mcp-outils {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.panneau-mcp-outil {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  padding: 3px 7px;
+  border: 1px solid var(--bord);
+  border-radius: 8px;
+  background: var(--carte);
+  color: var(--texte-doux);
+  cursor: pointer;
+}
+.panneau-mcp-outil:hover {
+  border-color: var(--primaire);
+  color: var(--primaire);
+}
+.panneau-mcp-vide {
+  padding: 8px 4px;
+  font-size: 0.8rem;
+  color: var(--texte-doux);
+}

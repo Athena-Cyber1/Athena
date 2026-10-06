@@ -21,19 +21,22 @@ def test_registre_complet():
         "factuel-sourcé", "logique-premisses", "conversationnelle",
         # v10.11 — tâches longues
         "goal-longue-tache", "superpower", "repair-code", "browser-rendu",
+        # MCP — routage par motifs de serveur
+        "mcp-appel",
     }
     assert attendus.issubset(noms), f"manquants : {attendus - noms}"
     for s in skills.lister():
         assert s["nom"] and s["description"]
-        # types peut être VIDE : les skills de tâche longue (v10.11) se
-        # routent par MOTIFS uniquement, pour ne pas capturer tout CODE.
+        # types peut être VIDE : les skills de tâche longue (v10.11) et
+        # mcp-appel se routent par MOTIFS uniquement, pour ne pas capturer
+        # tout CODE / toute question.
         assert isinstance(s["types"], list)
         assert isinstance(s["outils"], list)
         assert isinstance(s["autorite"], bool)
         if not s["types"]:
             # un skill sans type doit donc avoir des motifs, sinon il est
             # inatteignable
-            assert s["nom"] in {"goal-longue-tache"}, s["nom"]
+            assert skills.SKILLS[s["nom"]].motifs, s["nom"]
 
 
 def test_selection_par_type():

@@ -33,7 +33,7 @@ import { z } from "zod";
 
 const URL_SIDECAR_CHAT = "http://127.0.0.1:3010/chat";
 const URL_SIDECAR_SANTE = "http://127.0.0.1:3010/sante";
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 150_000;
 
 /* v1.2 (pleine puissance) : 100 messages / 60 000 car. rejetaient en 400 une
    tâche longue, AVANT même que le shim puisse compresser le contexte. Le
@@ -48,45 +48,109 @@ const MAX_CONTENU = 400000;
 /* ------------------------------------------------------------------ */
 
 const schemaMessageDemo = z.object({
-  role: z.enum(["user", "assistant", "system"]),
-  content: z.string().max(MAX_CONTENU),
+  // Tolérance : un champ d'historique hors contrat (rôle inconnu, contenu
+  // non texte) ne doit PAS tuer la requête entière — on normalise.
+  role: z.enum(["user", "assistant", "system"]).catch("user"),
+  content: z.string().max(MAX_CONTENU).catch(""),
 });
 
 const schemaPieceJointe = z.object({
   file_id: z.string().min(1).max(200),
-  name: z.string().max(300).optional(),
+  name: z.string().max(300).optional().catch(undefined),
 });
 
-const schemaCorpsDemo = z.object({
-  messages: z.array(schemaMessageDemo).min(0).max(MAX_MESSAGES),
-  // v10.6 (F12) : le drapeau outils est accepté en booléen OU en liste de
-  // noms (le client historique envoyait les deux formes) — une liste non
-  // vide vaut true, une liste vide false. Le planificateur reste l'autorité.
-  outils: z.union([z.boolean(), z.array(z.string().max(60)).max(20)]).optional(),
-  stream: z.boolean().optional(),
-  attachments: z.array(schemaPieceJointe).max(10).optional(),
-  // v10.6 (F13) : identifiant de conversation fourni par le client (optionnel)
-  // — il est normalisé au format canonique « fil-xxxxxxxx » (voir filCanonique).
-  conversation_id: z.string().min(1).max(200).optional(),
-  // v10.9.4 (HUD) : modèle choisi dans le HUD (id complet « genre:nom »).
-  // Absent / vide / "auto" → cascade par défaut inchangée.
-  model_id: z
+/* Pièces jointes : on ÉLIMINE les entrées invalides (file_id vide/absent)
+   au lieu de rejeter la requête — le reste est envoyé tel quel. */
+const schemaPiecesJointes = z.preprocess(
+  (v) =>
+    Array.isArray(v)
+      ? v.filter(
+          (x: unknown): x is { file_id: string; name?: string } =>
+            Boolean(x) &&
+            typeof (x as { file_id?: unknown }).file_id === "string" &&
+            String((x as { file_id?: unknown }).file_id).trim().length > 0
+        )
+      : undefined,
+  z.array(schemaPieceJointe).max(10).optional().catch(undefined)
+);
+
+/* Champs optionnels « confort » (identifiant de fil, modèle du HUD,
+   température, effort de raisonnement, skill) : valeur absente/invalide →
+   ignorée (auto), jamais un 400 qui refuserait tout le message. */
+const schemaFilOptionnel = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined),
+  z.string().min(1).max(200).optional().catch(undefined)
+);
+
+const schemaModeleOptionnel = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined),
+  z
     .string()
     .min(1)
-    .max(120)
-    .regex(/^[A-Za-z0-9._\-:]+$/)
-    .optional(),
-  // v1.2 (anti-bâclage, item 12) : température préférée de l'UI (0..2),
-  // transmise au sidecar (RequeteChat.temperature → moteur).
-  temperature: z.number().min(0).max(2).optional(),
-  // v10.10 — skill forcé côté UI (id court, ex. « math-exact »).
-  // Absent / vide → sélection automatique par type de tâche / motifs.
-  skill: z
+    .max(200)
+    .regex(/^[A-Za-z0-9._\-:/]+$/)
+    .optional()
+    .catch(undefined)
+);
+
+const schemaTemperatureOptionnelle = z.preprocess(
+  (v) =>
+    typeof v === "number" && Number.isFinite(v)
+      ? Math.min(2, Math.max(0, v))
+      : undefined,
+  z.number().min(0).max(2).optional().catch(undefined)
+);
+
+/* P0 (audit « modèles fainéants ») : effort de raisonnement du HUD —
+   l'échelle basse → haute du contrôle d'effort. Valeur inconnue →
+   absente (effort par défaut du modèle), jamais un 400. */
+const schemaEffortOptionnel = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() ? v.trim().toLowerCase() : undefined),
+  z.enum(["low", "medium", "high", "xhigh", "max"]).optional().catch(undefined)
+);
+
+const schemaSkillOptionnel = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() ? v.trim() : undefined),
+  z
     .string()
     .min(1)
     .max(64)
-    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
-    .optional(),
+    /* Identifiants ASCII ou accentués (ex. « factuel-sourcée ») : on ne
+       réécrit PAS l'id (un skill forcé réécrit = skill perdu en route). */
+    .regex(/^[A-Za-z0-9]+(-[\p{L}\p{N}]+)*$/u)
+    .optional()
+    .catch(undefined)
+);
+
+const schemaCorpsDemo = z.object({
+  messages: z.preprocess(
+    (v) => (Array.isArray(v) ? v.filter((m) => m && typeof m === "object") : v),
+    z.array(schemaMessageDemo).min(0).max(MAX_MESSAGES)
+  ),
+  // v10.6 (F12) : le drapeau outils est accepté en booléen OU en liste de
+  // noms (le client historique envoyait les deux formes) — une liste non
+  // vide vaut true, une liste vide false. Le planificateur reste l'autorité.
+  outils: z
+    .union([z.boolean(), z.array(z.string().max(60)).max(20)])
+    .optional()
+    .catch(undefined),
+  stream: z.boolean().optional().catch(undefined),
+  attachments: schemaPiecesJointes,
+  // v10.6 (F13) : identifiant de conversation fourni par le client (optionnel)
+  // — il est normalisé au format canonique « fil-xxxxxxxx » (voir filCanonique).
+  conversation_id: schemaFilOptionnel,
+  // v10.9.4 (HUD) : modèle choisi dans le HUD (id complet « genre:nom »).
+  // Absent / vide / "auto" → cascade par défaut inchangée.
+  model_id: schemaModeleOptionnel,
+  // v1.2 (anti-bâclage, item 12) : température préférée de l'UI (0..2),
+  // transmise au sidecar (RequeteChat.temperature → moteur).
+  temperature: schemaTemperatureOptionnelle,
+  // v10.10 — skill forcé côté UI (id court, ex. « math-exact »).
+  // Absent / vide → sélection automatique par type de tâche / motifs.
+  skill: schemaSkillOptionnel,
+  // P0 (audit fainéant) : effort du HUD (low/medium/high/max) — transmis au
+  // sidecar → moteur → pont (reasoning_effort). Absent → défaut modèle.
+  effort: schemaEffortOptionnel,
 });
 
 const schemaMessageLegacy = z.object({
@@ -214,6 +278,10 @@ function versSidecar(corps: z.infer<typeof schemaCorps>) {
   // validée par le schéma) → RequeteChat.temperature → moteur.
   const temperature = (corps as { temperature?: number }).temperature;
   if (typeof temperature === "number") payload.temperature = temperature;
+  // P0 (audit fainéant) : effort du HUD validé par le schéma →
+  // RequeteChat.effort → run_agent → raisonner_llm → pont (reasoning_effort).
+  const effort = (corps as { effort?: string }).effort;
+  if (effort) payload.effort = effort;
   // v10.6 (F12) : `outils` (bool OU liste) n'a pas d'équivalent sidecar —
   // les outils sont choisis par le planificateur ; le drapeau est accepté,
   // jamais simulé. `options` reste vide pour le contrat démo.

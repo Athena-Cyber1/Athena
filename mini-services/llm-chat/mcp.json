@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "type": "local",
+      "command": [
+        "C:\\Users\\neyzoxx\\AppData\\Local\\hermes\\bin\\uvx.exe",
+        "mcp-server-fetch"
+      ],
+      "enabled": true
+    },
+    "blender": {
+      "type": "local",
+      "command": [
+        "C:\\Users\\neyzoxx\\AppData\\Local\\hermes\\bin\\uvx.exe",
+        "blender-mcp"
+      ],
+      "enabled": true
+    },
+    "gdrive": {
+      "type": "local",
+      "command": [
+        "C:\\Program Files\\nodejs\\npx.cmd",
+        "-y",
+        "@modelcontextprotocol/server-gdrive"
+      ],
+      "env": {
+        "GDRIVE_CREDENTIALS_PATH": "C:\\Users\\neyzoxx\\.config\\athena\\gdrive-oauth.json"
+      },
+      "enabled": false
+    },
+    "roblox": {
+      "type": "local",
+      "command": [
+        "C:\\Users\\neyzoxx\\AppData\\Local\\Roblox\\mcp.bat"
+      ],
+      "enabled": true
+    }
+  }
+}

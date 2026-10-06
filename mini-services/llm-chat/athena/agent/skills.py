@@ -417,3 +417,45 @@ def _plan_conversationnelle(question: str, niveau: str) -> list[Action]:
         Action("final", "rédiger la réponse", "", {}, "reponse", True),
     ])
     return actions
+
+
+# ---------------------------------------------------------------------------
+# MCP (Model Context Protocol) — n'importe quel serveur externe branchable
+# ---------------------------------------------------------------------------
+# Routage PAR MOTIF uniquement (types=()) : une question qui cite « mcp » ou un
+# serveur configuré part en appel réel, sinon rien ne change au routage normal.
+# Les noms de serveurs viennent de mcp.json — la liste reste dynamique.
+
+def _motifs_mcp() -> tuple[str, ...]:
+    from ..tools import mcp as pont_mcp
+    noms = sorted({n.lower() for n in pont_mcp.lire_config()}
+                  - {"fetch", "http", "github", "files"})
+    motifs = [r"\bmcp\b", r"\bmodel context protocol\b"]
+    motifs += [rf"\b{re.escape(n)}\b" for n in noms if len(n) >= 4]
+    motifs += [rf"\b{re.escape(n)}\s*\.\s*[a-z_]+\b" for n in noms if len(n) >= 4]
+    return tuple(motifs)
+
+
+@skill(
+    "mcp-appel",
+    "MCP : appeler un outil d'un serveur externe branché (blender, google drive…). "
+    "L'appel est réel — résultat du serveur, jamais une description d'action.",
+    types=(),
+    outils=("mcp_appel", "mcp_inventaire"),
+    motifs=_motifs_mcp(),
+)
+def _plan_mcp_appel(question: str, niveau: str) -> list[Action]:
+    return [
+        Action("outil",
+               "appel réel du serveur MCP : syntaxe mcp(serveur.outil) {args json} "
+               "si précisé, sinon l'outil choisit dans l'inventaire — une erreur "
+               "MCP est un résultat à rapporter, pas à masquer",
+               "mcp_appel", {"requete": question}, "decision_outil", True),
+        Action("verifier",
+               "contrôler le retour du serveur (statut + contenu) et distinguer ce "
+               "qui est constaté côté serveur de ce qui reste à faire",
+               "faits", {}, "verification", False),
+        Action("final", "rédiger la réponse avec la provenance : serveur + outil appelé",
+               "", {}, "reponse", True),
+    ]
+

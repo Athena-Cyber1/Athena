@@ -41,31 +41,89 @@
 // Aucun CORS (serveur-à-serveur). Aucun détail d'infrastructure ne franchit
 // la frontière HTTP : les messages d'erreur sont des phrases neutres.
 import ZAI from 'z-ai-web-dev-sdk';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 const PORT = 3015; // port FIXE — jamais process.env.PORT
 const VERSION = '2.2.0';
 
 // ---- Réglages résilience -------------------------------------------------
-const RETRIES_MAX = 3;                    // tours de cascade supplémentaires
-const BACKOFF_BASE_MS = 300;              // 300 → 700 → 1500 (± 30 % jitter)
-const BACKOFF_CAP_MS = 1600;
+const RETRIES_MAX = 20;                   // tours de cascade supplémentaires (upstream très clairsemé)
+const BACKOFF_BASE_MS = 300;              // 300 à 500 (jusqu'à ± 30 % jitter)
+const BACKOFF_CAP_MS = 500;
 const BUDGET_TOTAL_MS = (() => { // v1.2 : configurable (défaut 55 s) — les longs
   const n = Number(Bun.env.ATHENA_BRIDGE_BUDGET_MS); // raisonnements dépassent la minute en local aussi
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_800_000) : 55_000;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1_800_000) : 45_000;
 })();           // plafond global /complete
+/* v20261005 (effort) : effort high/xhigh/max → la cascade garde la même
+   patience que la voie shim (borne 90-150 s) au lieu d'étouffer un
+   raisonnement long à 45 s. Effort bas : budget d'origine. */
+const EFFORTS_LONGS = new Set(['high', 'xhigh', 'max']);
+const BUDGET_EFFORT_LONG_MS = 140_000;
+const TIMEOUT_EFFORT_LONG_MS = 120_000;
+/* Modèles NVIDIA qui REFUSENT reasoning_effort (400 vérifié en direct
+   2026-10-05 : `bogus` → 400, llama-vision + max → 400) : jamais envoyé,
+   on garde le défaut du modèle. */
+const NVIDIA_SANS_EFFORT = new Set(['meta/llama-3.2-11b-vision-instruct']);
 const CONCURRENCE_MAX = 2;                // appels upstream simultanés
-const ESPACEMENT_MIN_MS = 250;            // entre deux DÉPARTS upstream
+const ESPACEMENT_MIN_MS = 3000;            // entre deux DÉPARTS upstream
 const QUEUE_TIMEOUT_MS = 25_000;          // attente max dans la file
-const SEUIL_CIRCUIT = 8;                  // échecs consécutifs d'UN provider → pause
-const CIRCUIT_OUVERT_MS = 20_000;
+const SEUIL_CIRCUIT = 15;                  // échecs consécutifs d'UN provider → pause
+const CIRCUIT_OUVERT_MS = 6_000;
 const CACHE_TAILLE = 60;
 const CACHE_TTL_MS = 15 * 60_000;
 
 // Provider gratuit sans clé (primaire). Peut être lent → 40 s.
 const POLLINATIONS_BASE = 'https://text.pollinations.ai/openai';
 const POLLINATIONS_MODEL = 'openai-fast';
-const POLLINATIONS_TIMEOUT_MS = 40_000;
+const POLLINATIONS_TIMEOUT_MS = 12_000;
 const ZAI_TIMEOUT_MS = 45_000;
+
+// ---- v20261004 — provider NVIDIA (proxy Worker CF, OpenAI-compatible) --------
+// pollinations répond en 402/503 la plupart du temps : le sidecar (raisonner /
+// explication / sous-agent) tombait en CIRCUIT_OUVERT et les skills sortaient
+// une réponse DÉTERMINISTE sans contexte. Le Worker « athena…workers.dev/nvidia »
+// monte integrate.api.nvidia.com (aucun en-tête CORS à gérer côté serveur) et
+// google/diffusiongemma-26b-a4b-it répond en ~1,6 s mesuré.
+const NVIDIA_BASE = (Bun.env.ATHENA_NVIDIA_BASE
+  ?? 'https://athena.amineelbekkai8.workers.dev/nvidia/v1').replace(/\/+$/, '');
+/* v20261004b (« il utilise tout le temps diffusiongemma ») : le Worker répond
+   sur PLUSIEURS modèles (audit en direct 2026-10-04 : 0,9-4,7 s). On les fait
+   TOURNER en cascade (auto) et le modèle choisi dans le HUD reste prioritaire
+   via modeleDirect. Ordre = fiabilité/latence mesurées. */
+const NVIDIA_MODELES = [
+  'google/diffusiongemma-26b-a4b-it',
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning',
+  'nvidia/nemotron-3-ultra-550b-a55b',
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'meta/muse-glimmer-30b',
+  'nvidia/nemotron-3-super-120b-a12b',
+  'meta/llama-3.2-11b-vision-instruct',
+  'nvidia/ising-calibration-1.5-31b',
+];
+/* Audit 2026-10-04 : morts côté Worker CF (524/timeout à 15 s) — on ne les
+   propose plus et un choix périmé échoue AU LIEU d'attendre 45 s. */
+const NVIDIA_MORTS = new Set([
+  'moonshotai/kimi-k3',
+  'z-ai/glm-5.3',
+  'z-ai/glm-5.3-flash',
+  'google/gemma-4-31b-it',
+]);
+const NVIDIA_MODELE = Bun.env.ATHENA_NVIDIA_MODELE ?? NVIDIA_MODELES[0];
+let nvidiaTour = 0; // rotation des modèles sains (auto) — anti « toujours le même »
+const NVIDIA_TIMEOUT_MS = 45_000;
+function cleNvidia(): string {
+  const env = (Bun.env.ATHENA_NVIDIA_KEY || '').trim();
+  if (env) return env;
+  try {
+    const brut = readFileSync(join(import.meta.dir, '..', '..', 'docs', 'keys.js'), 'utf8');
+    const m = brut.match(/\bnvidia:\s*"([^"]+)"/);
+    if (m && m[1]) return m[1].trim();
+  } catch { /* keys.js absent : le provider nvidia est simplement ignoré */ }
+  return '';
+}
+const NVIDIA_KEY = cleNvidia();
 // v1.2 (anti-bâclage, item 14) : délai d'appel LOCAL configurable — les CPU
 // lents/quantifiés dépassent 55 s sans recompiler :
 // ATHENA_LOCAL_TIMEOUT_MS=120000. (Le streaming + délai d'inactivité reste
@@ -97,7 +155,7 @@ const MODELES_POLLINATIONS_MAX = 8;
 const locauxDetectes: Map<string, { base: string; ts: number }> = new Map();
 
 // ---- Registre providers (ordre = priorité de cascade) ----------------------
-type KindProvider = 'pollinations' | 'zai';
+type KindProvider = 'pollinations' | 'zai' | 'nvidia';
 type Provider = {
   id: string;
   kind: KindProvider;
@@ -106,6 +164,12 @@ type Provider = {
   timeout_ms: number;
 };
 const PROVIDERS: Provider[] = [
+  // v20261004 : nvidia D'ABORD (Worker CF, ~1,6 s mesuré) — pollinations est
+  // passé en 402/503 quasi permanent et ouvrait le circuit du côté sidecar.
+  // v20261004b : pas de `model` fixe ici → appelNvidia fait TOURNER
+  // NVIDIA_MODELES (auto) ; un modèle choisi dans le HUD passe par modeleDirect
+  // et n'atteint jamais cette branche.
+  ...(NVIDIA_KEY ? [{ id: 'nvidia-diffusion', kind: 'nvidia' as KindProvider, bucket: 'nvidia', timeout_ms: NVIDIA_TIMEOUT_MS }] : []),
   { id: 'pollinations', kind: 'pollinations', model: POLLINATIONS_MODEL, bucket: 'pollinations', timeout_ms: POLLINATIONS_TIMEOUT_MS },
   { id: 'zai-principal', kind: 'zai', bucket: 'zai', timeout_ms: ZAI_TIMEOUT_MS },                       // modèle par défaut du token
   { id: 'zai-alternatif', kind: 'zai', model: 'glm-4.5-air', bucket: 'zai', timeout_ms: ZAI_TIMEOUT_MS }, // secours (autre chemin modèle)
@@ -206,6 +270,22 @@ function listeModeles(): ModeleInfo[] {
       up: pollUp,
     });
   }
+  // Cloud — nvidia (proxy Worker CF, v20261004) : TOUT le pool sain (v20261004b)
+  // pour que le HUD propose plusieurs modèles réellement honorés.
+  const pn = PROVIDERS.find((p) => p.kind === 'nvidia');
+  if (pn) {
+    const up = circuits.get(pn.id)!.autoriser();
+    for (const m of NVIDIA_MODELES) {
+      sortie.push({
+        id: `nvidia:${m}`,
+        name: `${m.split('/').pop()} · nvidia`,
+        provider: 'nvidia',
+        active: false,
+        local: false,
+        up,
+      });
+    }
+  }
   // Cloud — zai
   for (const p of PROVIDERS) {
     if (p.kind !== 'zai') continue;
@@ -304,8 +384,10 @@ function estMessageValide(m: unknown): m is Message {
   );
 }
 
-function cleCache(messages: Message[], temperature: number, max_tokens: number): string {
-  return JSON.stringify([messages, temperature, max_tokens]);
+function cleCache(messages: Message[], temperature: number, max_tokens: number, effort: string = ''): string {
+  // P0 (audit fainéant) : l'effort fait partie de la clé — deux effort
+  // différents ne partagent JAMAIS la même réponse mise en cache.
+  return JSON.stringify([messages, temperature, max_tokens, effort]);
 }
 
 // ---- Limiteur de concurrence (sémaphore FIFO + espacement) --------------------
@@ -385,8 +467,50 @@ class Circuit {
 }
 const circuits: Map<string, Circuit> = new Map();
 for (const p of PROVIDERS) circuits.set(p.id, new Circuit());
+/* ZAI exige un fichier .z-ai-config (projet / home / /etc) : sans lui, chaque
+   appel échoue en 1 ms. Détecté une fois puis re-vérifié toutes les 30 s pour
+   ne pas gaspiller des tours de cascade sur un provider structurellement mort. */
+let zaiConfigOk: boolean | null = null;
+let zaiConfigTs = 0;
+function zaiDisponible(): boolean {
+  const maintenant = Date.now();
+  if (zaiConfigOk !== null && maintenant - zaiConfigTs < 30_000) return zaiConfigOk;
+  const candidats = [join(process.cwd(), '.z-ai-config'), join(homedir(), '.z-ai-config'), '/etc/.z-ai-config'];
+  zaiConfigOk = candidats.some((p) => {
+    try {
+      return existsSync(p);
+    } catch {
+      return false;
+    }
+  });
+  zaiConfigTs = maintenant;
+  return zaiConfigOk;
+}
 function unProviderActif(): boolean {
-  return PROVIDERS.some((p) => circuits.get(p.id)!.autoriser());
+  const zaiOk = zaiDisponible();
+  return PROVIDERS.some((p) => (p.kind === 'zai' ? zaiOk : true) && circuits.get(p.id)!.autoriser());
+}
+/* Disponibilité STRUCTURELLE (un provider utilisable existe, circuit ouvert
+   ou non : la pause ne dure que CIRCUIT_OUVERT_MS). Sert llm_disponible pour
+   que le moteur n'abandonne pas sur une simple micro-pause de 6 s. */
+function peutServir(): boolean {
+  const zaiOk = zaiDisponible();
+  return PROVIDERS.some((p) => (p.kind === 'zai' ? zaiOk : true));
+}
+/* Temps avant la prochaine sonde d'un circuit ouvert (0 s'il en reste un
+   d'autorisé). Sert à ATTENDRE la réouverture plutôt que de refuser d'un
+   bloc « tous les providers en pause » : sur un upstream clairsemé (succès
+   ~1 fois sur 3), l'attente transforme un échec instantané en réponse. */
+function attendreProchaineSonde(): number {
+  let min = 0;
+  for (const p of PROVIDERS) {
+    const c = circuits.get(p.id)!;
+    if (c.etat === 'FERME' || c.etat === 'DEMI_OUVERT') return 0;
+    const reste = c.ouvertDepuis + CIRCUIT_OUVERT_MS - Date.now();
+    if (reste <= 0) return 0;
+    if (min === 0 || reste < min) min = reste;
+  }
+  return min;
 }
 
 // ---- Télémétrie par provider + globale ----------------------------------------
@@ -437,6 +561,12 @@ const compteurs = {
   derniere_erreur_ts: 0 as number,
   derniere_erreur_code: '' as string,
   dernier_provider_succes: '' as string,
+  // P0 (audit fainéant) : effort de raisonnement reçu sur /complete.
+  // `dernier_effort` = DERNIER effort réellement TRANSMIS (non écrasé par les
+  // appels internes sans effort, ex. le juge déterministe 0.1/520) ;
+  // `dernier_effort_appel` = effort du TOUT dernier appel (brut, '' si absent).
+  dernier_effort: '' as string,
+  dernier_effort_appel: '' as string,
 };
 
 // ---- Appel provider POLLINATIONS (une tentative) --------------------------------
@@ -479,7 +609,100 @@ async function appelPollinations(
   }
 }
 
+/* Le catalogue pollinations porte plusieurs modèles : un 502 « par modèle »
+   ne doit pas couler la requête. On essaie le primaire puis 2 modèles du
+   catalogue (les 429/timeout restent reportés : changer de modèle n'aide
+   pas au quota). */
+async function appelPollinationsAvecModeles(
+  messages: Message[],
+  temperature: number,
+  max_tokens: number,
+  timeout_ms: number,
+): Promise<{ ok: true; texte: string; fin: string | null } | { ok: false; code: string; detail: string }> {
+  const catalogue = await chargerCataloguePollinations();
+  const essais = Array.from(new Set([POLLINATIONS_MODEL, ...catalogue])).slice(0, 3);
+  let dernier: { ok: false; code: string; detail: string } = {
+    ok: false,
+    code: CODE.UPSTREAM_ERREUR,
+    detail: 'pollinations : aucun modele tentable',
+  };
+  for (const modele of essais) {
+    const r = await appelPollinations(messages, temperature, max_tokens, timeout_ms, modele);
+    if (r.ok) return r;
+    if (r.code === CODE.RATE_LIMITED || r.code === CODE.TIMEOUT) return r;
+    dernier = r;
+  }
+  return dernier;
+}
+
 // ---- Appel provider ZAI (une tentative) ------------------------------------------
+// ---- v20261004 — Appel NVIDIA via le proxy Worker (OpenAI-compatible) ---------
+async function appelNvidia(
+  provider: Provider,
+  messages: Message[],
+  temperature: number,
+  max_tokens: number,
+  effort: string | null = null,
+): Promise<{ ok: true; texte: string; fin: string | null; model: string } | { ok: false; code: string; detail: string }> {
+  if (!NVIDIA_KEY) {
+    return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: `${provider.id} : clé NVIDIA absente` };
+  }
+  /* v20261004b : modèle imposé (modeleDirect) ou ROTATION entre les modèles
+     sains — l'auto ne renvoie plus « tout le temps diffusiongemma ». */
+  const modele = provider.model ?? NVIDIA_MODELES[nvidiaTour++ % NVIDIA_MODELES.length];
+  // P0 (audit fainéant) : effort du HUD (low/medium/high/xhigh/max) →
+  // reasoning_effort NVIDIA. Valeur absente/invalide → jamais envoyée
+  // (on garde le défaut du modèle). Clé métier = reasoning_effort.
+  const effortValide = effort && ['low', 'medium', 'high', 'xhigh', 'max'].includes(effort) ? effort : null;
+  // v20261005 : effort long → attente amont à la hauteur (TTFB raisonné
+  // 40-46 s mesuré, borne shim 150 s en max) ; effort bas : 45 s inchangé.
+  const timeoutMs = effortValide && EFFORTS_LONGS.has(effortValide)
+    ? Math.max(provider.timeout_ms, TIMEOUT_EFFORT_LONG_MS)
+    : provider.timeout_ms;
+  // v20261005 : certains modèles NVIDIA renvoient 400 sur reasoning_effort —
+  // jamais envoyé pour eux (voir NVIDIA_SANS_EFFORT).
+  const envoieEffort = Boolean(effortValide) && !NVIDIA_SANS_EFFORT.has(modele);
+  try {
+    const reponse = await fetch(`${NVIDIA_BASE}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${NVIDIA_KEY}` },
+      body: JSON.stringify({
+        model: modele,
+        messages,
+        temperature,
+        max_tokens: Math.min(max_tokens, 32_768),
+        stream: false,
+        ...(envoieEffort ? { reasoning_effort: effortValide } : {}),
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!reponse.ok) {
+      const code = reponse.status === 429 ? CODE.RATE_LIMITED
+        : reponse.status >= 500 || reponse.status === 524 ? CODE.TIMEOUT
+        : CODE.UPSTREAM_ERREUR;
+      console.error(`[llm-bridge] nvidia(${modele}) HTTP ${reponse.status} effort=${effortValide ?? '-'}`);
+      return { ok: false, code, detail: `${provider.id}(${modele}) : HTTP ${reponse.status}` };
+    }
+    const data = (await reponse.json()) as {
+      choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+    };
+    const texte = data?.choices?.[0]?.message?.content ?? '';
+    const fin = data?.choices?.[0]?.finish_reason ?? null;
+    if (typeof texte !== 'string' || texte.trim().length === 0) {
+      return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: `${provider.id}(${modele}) : réponse vide` };
+    }
+    return { ok: true, texte, fin, model: modele };
+  } catch (e: unknown) {
+    const brut = e instanceof Error ? e.message : String(e);
+    if (/abort|timeout/i.test(brut)) {
+      console.error(`[llm-bridge] nvidia(${modele}) timeout/abort : ${brut.slice(0, 160)}`);
+      return { ok: false, code: CODE.TIMEOUT, detail: `${provider.id}(${modele}) : timeout ${timeoutMs} ms` };
+    }
+    console.error(`[llm-bridge] nvidia(${modele}) erreur : ${brut.slice(0, 200)}`);
+    return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: `${provider.id}(${modele}) : ${brut.slice(0, 200)}` };
+  }
+}
+
 async function appelZai(
   provider: Provider,
   messages: Message[],
@@ -560,12 +783,29 @@ async function modeleDirect(
   messages: Message[],
   temperature: number,
   max_tokens: number,
+  effort: string | null = null,
 ): Promise<{ ok: true; texte: string; provider: string; fin: string | null } | { ok: false; code: string; detail: string }> {
   if (model.startsWith('pollinations:')) {
     const r = await appelPollinations(messages, temperature, max_tokens, POLLINATIONS_TIMEOUT_MS, model.slice('pollinations:'.length));
     if (r.ok) noterSucces('pollinations');
     else noterEchec('pollinations', r.code);
     return r.ok ? { ...r, provider: 'pollinations' } : r;
+  }
+  if (model.startsWith('nvidia:')) {
+    const p = PROVIDERS.find((x) => x.kind === 'nvidia');
+    if (!p || !circuits.get(p.id)!.autoriser()) {
+      return { ok: false, code: CODE.CIRCUIT_OUVERT, detail: `${model} en pause` };
+    }
+    const nom = model.slice('nvidia:'.length) || p.model || NVIDIA_MODELE;
+    // Choix périmé (kimi/glm/gemma : 524 côté Worker) : échec HONNÊTE immédiat,
+    // jamais 45 s d'attente pour finir en cascade sur un autre modèle.
+    if (NVIDIA_MORTS.has(nom)) {
+      return { ok: false, code: CODE.UPSTREAM_ERREUR, detail: `${nom} : modèle indisponible (audit 2026-10-04)` };
+    }
+    const r = await appelNvidia({ ...p, model: nom }, messages, temperature, max_tokens, effort);
+    if (r.ok) noterSucces(p.id);
+    else noterEchec(p.id, r.code);
+    return r.ok ? { ...r, provider: p.id } : r;
   }
   if (model === 'zai-principal' || model === 'zai-alternatif') {
     const p = PROVIDERS.find((x) => x.id === model);
@@ -596,21 +836,28 @@ async function cascadeComplete(
   messages: Message[],
   temperature: number,
   max_tokens: number,
+  effort: string | null = null,
 ): Promise<Resultat> {
   const budgetDebut = Date.now();
+  // v20261005 (effort) : effort long → budget global à la hauteur (miror de
+  // la borne shim) ; effort bas : budget d'origine.
+  const budgetTotal = effort && EFFORTS_LONGS.has(effort)
+    ? Math.max(BUDGET_TOTAL_MS, BUDGET_EFFORT_LONG_MS)
+    : BUDGET_TOTAL_MS;
   let dernierCode = CODE.AUCUN_PROVIDER;
   let dernierDetail = 'aucun provider disponible';
   const bucketsRates = new Set<string>();
+  let attentesPause = 0; // attentes « tous en pause » (bornées)
 
   for (let tour = 0; tour <= RETRIES_MAX; tour++) {
-    if (Date.now() - budgetDebut > BUDGET_TOTAL_MS) {
+    if (Date.now() - budgetDebut > budgetTotal) {
       return { ok: false, code: CODE.TIMEOUT, detail: `budget global dépassé (tour ${tour})` };
     }
     if (tour > 0) {
       compteurs.retries_effectues += 1;
       bucketsRates.clear(); // nouveau tour : tous les buckets re-testés
       await sleep(delaiBackoff(tour - 1));
-      if (Date.now() - budgetDebut > BUDGET_TOTAL_MS) {
+      if (Date.now() - budgetDebut > budgetTotal) {
         return { ok: false, code: CODE.TIMEOUT, detail: `budget global dépassé avant tour ${tour + 1}` };
       }
     }
@@ -621,7 +868,9 @@ async function cascadeComplete(
       if (bucketsRates.has(provider.bucket)) continue;
       // Provider en pause (circuit ouvert) → skip immédiat, les autres servent.
       if (!circuits.get(provider.id)!.autoriser()) continue;
-      if (Date.now() - budgetDebut > BUDGET_TOTAL_MS) break;
+      if (provider.kind === 'zai' && !zaiDisponible()) continue;
+      if (provider.kind === 'nvidia' && !NVIDIA_KEY) continue;
+      if (Date.now() - budgetDebut > budgetTotal) break;
 
       tenteQuelqueChose = true;
       const acquisition = await limiteur.acquerir();
@@ -631,11 +880,16 @@ async function cascadeComplete(
       try {
         const resultat =
           provider.kind === 'pollinations'
-            ? await appelPollinations(messages, temperature, max_tokens, provider.timeout_ms)
-            : await appelZai(provider, messages, temperature, max_tokens);
+            ? await appelPollinationsAvecModeles(messages, temperature, max_tokens, provider.timeout_ms)
+            : provider.kind === 'nvidia'
+              ? await appelNvidia(provider, messages, temperature, max_tokens, effort)
+              : await appelZai(provider, messages, temperature, max_tokens);
         if (resultat.ok) {
           noterSucces(provider.id);
-          return { ok: true, texte: resultat.texte, provider: provider.id, duree_ms: Date.now() - budgetDebut, fin: resultat.fin, model: provider.model ?? null };
+          // v20261004b : le modèle RÉELLEMENT servi (rotation nvidia) remonte
+          // dans la réponse → le badge « via … » dit la vérité.
+          const modeleReel = (resultat as { model?: string }).model ?? provider.model ?? null;
+          return { ok: true, texte: resultat.texte, provider: provider.id, duree_ms: Date.now() - budgetDebut, fin: resultat.fin, model: modeleReel };
         }
         dernierCode = resultat.code;
         dernierDetail = resultat.detail;
@@ -649,6 +903,16 @@ async function cascadeComplete(
 
     // Tous les providers en pause et rien tenté ce tour → échec immédiat.
     if (!tenteQuelqueChose && unProviderActif() === false) {
+      // Tous les circuits sont ouverts : on ATTEND la prochaine sonde
+      // (bornée + dans le budget) au lieu de refuser instantanément - sur un
+      // upstream clairsemé, l'attente transforme un 503 immédiat en réponse.
+      const attente = Math.min(Math.max(attendreProchaineSonde(), 250), 7000);
+      attentesPause += 1;
+      if (attentesPause <= 4 && Date.now() - budgetDebut + attente <= budgetTotal) {
+        await sleep(attente);
+        tour -= 1; // ce tour ne consomme pas : on re-sonde après la pause
+        continue;
+      }
       return { ok: false, code: CODE.CIRCUIT_OUVERT, detail: 'tous les providers en pause' };
     }
     if (!tenteQuelqueChose) {
@@ -702,7 +966,7 @@ const serveur = Bun.serve({
           ok: true,
           service: 'llm-bridge',
           version: VERSION,
-          llm_disponible: unProviderActif(),
+          llm_disponible: peutServir(),
           providers: PROVIDERS.map((p) => {
             const s = statsParProvider.get(p.id)!;
             const c = circuits.get(p.id)!;
@@ -740,7 +1004,7 @@ const serveur = Bun.serve({
             return {
               name: p.id,
               kind: p.kind,
-              model: p.model ?? '(défaut)',
+              model: p.model ?? (p.kind === 'nvidia' ? '(rotation)' : '(défaut)'),
               up: c.autoriser(),
               last_status: s.dernier_statut,
               ok: s.ok,
@@ -787,8 +1051,16 @@ const serveur = Bun.serve({
         // v2.2.0 (HUD) : modèle choisi côté UI (id complet). Absent/vide/
         // "auto" → cascade normale inchangée.
         const modeleChoisi = typeof corps.model === 'string' ? corps.model.trim().slice(0, 120) : '';
+        // P0 (audit fainéant) : effort de raisonnement (low/medium/high/xhigh/max)
+        // — inconnu → absent (défaut du modèle, jamais un 400).
+        const effort =
+          typeof corps.effort === 'string' && ['low', 'medium', 'high', 'xhigh', 'max'].includes(corps.effort)
+            ? corps.effort
+            : null;
+        compteurs.dernier_effort = effort && effort.length ? effort : compteurs.dernier_effort;
+        compteurs.dernier_effort_appel = effort ?? '';
         const msgs = messages as Message[];
-        const cle = cleCache(msgs, temperature, max_tokens);
+        const cle = cleCache(msgs, temperature, max_tokens, effort ?? '');
 
         // Tous les providers en pause : échec immédiat (zéro latence), sauf cache exact.
         if (!unProviderActif() && !(modeleChoisi && modeleChoisi !== 'auto')) {
@@ -798,17 +1070,15 @@ const serveur = Bun.serve({
             statut = 200;
             return json({ texte: enCache.texte, duree_ms: Math.round(performance.now() - debut), code: CODE.CACHE_SERVI, provider: enCache.provider, model: enCache.model, repli: false, fin: enCache.fin }, statut);
           }
-          compteurs.complete_circuit_ouvert += 1;
-          compteurs.derniere_erreur_ts = Date.now();
-          compteurs.derniere_erreur_code = CODE.CIRCUIT_OUVERT;
-          statut = 503;
-          return reponseErreur(CODE.CIRCUIT_OUVERT, statut, 'tous les providers en pause', chemin);
+          /* Sinon : PAS de 503 instantané - cascadeComplete attend la
+             prochaine sonde (bornée) et re-essaie dans le budget, au lieu
+             d'un refus qui se transformerait en réponse creuse côté moteur. */
         }
 
         // v2.2.0 (HUD) : modèle choisi → route DIRECTE. Échec → cascade
         // normale + repli:true (le repli n'est JAMAIS une erreur visible).
         if (modeleChoisi && modeleChoisi !== 'auto') {
-          const direct = await modeleDirect(modeleChoisi, msgs, temperature, max_tokens);
+          const direct = await modeleDirect(modeleChoisi, msgs, temperature, max_tokens, effort);
           if (direct.ok) {
             compteurs.complete_ok += 1;
             compteurs.dernier_succes_ts = Date.now();
@@ -817,8 +1087,8 @@ const serveur = Bun.serve({
             statut = 200;
             return json({ texte: direct.texte, duree_ms: Math.round(performance.now() - debut), provider: direct.provider, model: modeleChoisi, repli: false, fin: direct.fin }, statut);
           }
-          console.error(`[llm-bridge] ${chemin} modèle choisi indisponible → cascade (détail interne : ${direct.code})`);
-          const resultatCascade = await cascadeComplete(msgs, temperature, max_tokens);
+          console.error(`[llm-bridge] ${chemin} modèle choisi indisponible → cascade (détail interne : ${direct.code} — ${direct.detail})`);
+          const resultatCascade = await cascadeComplete(msgs, temperature, max_tokens, effort);
           if (resultatCascade.ok) {
             compteurs.complete_ok += 1;
             compteurs.dernier_succes_ts = Date.now();
@@ -834,7 +1104,7 @@ const serveur = Bun.serve({
           return reponseErreur(resultatCascade.code, statut, resultatCascade.detail, chemin);
         }
 
-        const resultat = await cascadeComplete(msgs, temperature, max_tokens);
+        const resultat = await cascadeComplete(msgs, temperature, max_tokens, effort);
 
         if (resultat.ok) {
           compteurs.complete_ok += 1;

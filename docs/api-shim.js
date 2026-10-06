@@ -24,17 +24,31 @@
      posée par gererChat, lue par corpsPour (var module : une seule requête
      chat à la fois côté navigateur). */
   var temperatureDemandee = null;
+  /* P0 (audit fainéant) : effort explicite transmis PAR LA REQUÊTE
+     (body.effort, route.ts → gererChat). Précède la valeur localStorage :
+     le même effort s'applique à la voie skill ET à la voie shim, testable
+     de bout en bout. null = HUD seul (comportement historique). */
+  var effortDemande = null;
 
   /* Effort de raisonnement choisi dans le HUD (bouton à droite du sélecteur
      de modèle) : localStorage « athena_effort ». Échelle HUD = low / medium /
-     high / max. Chaque entry MODELS peut déclarer `efforts` (les valeurs que
-     l'amont accepte RÉELLEMENT pour ce modèle) : kimi-k3 refuse « medium »
-     (400 « supported values are low, high, and max », vérifié en direct) →
-     repli sur l'échelon inférieur, sinon sur le premier admis. */
-  var EFFORTS_HUD = ['low', 'medium', 'high', 'max'];
+     high / xhigh / max (xhigh = « Extra high », échelon OpenRouter entre high
+     et max : vérifié accepté par diffusiongemma et 6/8 modèles NVIDIA en
+     direct 2026-10-05 ; space-bunny-alpha le documente aussi). Chaque entry
+     MODELS peut déclarer `efforts` (les valeurs que l'amont accepte RÉELLEMENT
+     pour ce modèle) : kimi-k3 refuse « medium » (400 « supported values are
+     low, high, and max », vérifié en direct) → repli sur l'échelon inférieur,
+     sinon sur le premier admis. */
+  var EFFORTS_HUD = ['low', 'medium', 'high', 'xhigh', 'max'];
   function effortNvidia(entry) {
     var v = '';
-    try { v = String(localStorage.getItem('athena_effort') || ''); } catch (e) { v = ''; }
+    /* P0 (audit fainéant) : effort de la requête courante (body.effort) prime
+       sur localStorage — sinon la voie skill envoyait AUCUN effort alors que
+       le HUD en affichait un. */
+    if (effortDemande && EFFORTS_HUD.indexOf(effortDemande) >= 0) v = effortDemande;
+    if (!v) {
+      try { v = String(localStorage.getItem('athena_effort') || ''); } catch (e) { v = ''; }
+    }
     /* v20261001 (perf) : repli « medium » (avant « max ») — en max, le
        raisonnement mange le budget et retarde le premier jeton sur les
        modèles gratuits (TTFB 40-46 s mesuré). Seul le REPLI change ; le
@@ -104,27 +118,39 @@
        compte gratuit (sans carte) — catalogue vérifié via /models public.
        Trio prioritare d'abord (un seul endpoint chacun → cascade models[]
        côté OpenRouter si l'un est rate-limité). */
-    { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter' },
-    { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter' },
+    { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { enabled: effortNvidia(entry) !== 'low' } }; } },
+    { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
     /* v20261001 (perf) : modèle RAISONNEUR sans déclaration `efforts` →
        watchdogs « non-raisonnement » (10 s premier octet / 30 s en-têtes) le
        tuaient au démarrage (raisonnement = TTFB long) et le bouton effort du
        HUD était sans effet. Déclaration + payload reasoning = mêmes bunnies :
        l'échelle HUD s'applique réellement, watchdogs alignés. */
-    { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter', efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
-    { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'nemotron-3-ultra 550b free · openrouter' },
-    { provider: 'openrouter', model: 'google/gemma-4-26b-a4b-it:free', name: 'gemma-4-26b free · openrouter' },
-    { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'nemotron-3-super free · openrouter' },
-    { provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free', name: 'nemotron-3.5-lightning free · openrouter' },
-    { provider: 'openrouter', model: 'poolside/laguna-s-2.1:free', name: 'laguna-s free · openrouter' },
-    { provider: 'openrouter', model: 'poolside/laguna-xs-2.1:free', name: 'laguna-xs free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', name: 'nemotron-3-nano free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-ultra-550b-a55b:free', name: 'nemotron-3-ultra 550b free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
+    { provider: 'openrouter', model: 'google/gemma-4-26b-a4b-it:free', name: 'gemma-4-26b free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { enabled: effortNvidia(entry) !== 'low' } }; } },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'nemotron-3-super free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3.5-lightning:free', name: 'nemotron-3.5-lightning free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { enabled: effortNvidia(entry) !== 'low' } }; } },
+    { provider: 'openrouter', model: 'poolside/laguna-s-2.1:free', name: 'laguna-s free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { enabled: effortNvidia(entry) !== 'low' } }; } },
+    { provider: 'openrouter', model: 'poolside/laguna-xs-2.1:free', name: 'laguna-xs free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { enabled: effortNvidia(entry) !== 'low' } }; } },
     { provider: 'openrouter', model: 'cohere/north-mini-code:free', name: 'north-mini-code free · openrouter' },
     { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-sante:free', name: 'ling-3.0-flash-sante free · openrouter' },
     { provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-fin:free', name: 'ling-3.0-flash-fin free · openrouter' },
     { provider: 'openrouter', model: 'dots-studio/dots-3-note-preview:free', name: 'dots-3-note free · openrouter' },
     { provider: 'openrouter', model: 'liquid/lfm-2.5-2.6b:free', name: 'lfm-2.5-2.6b free · openrouter' },
-    { provider: 'openrouter', model: 'nvidia/nemotron-3.5-content-safety:free', name: 'nemotron-3.5-safety free · openrouter' },
+    { provider: 'openrouter', model: 'nvidia/nemotron-3.5-content-safety:free', name: 'nemotron-3.5-safety free · openrouter', chat: false },
     { provider: 'openrouter', model: 'openrouter/free', name: 'free models router · openrouter' },
+    /* v20261005 (free day) : rafraîchissement du catalogue 100 % gratuit
+       (pricing 0/0 vérifié via /models public).
+       - ling-3.1-flash : MoE 560B (25B actifs), raisonnement inclus,
+         262 K ctx / 32 K sortie, SANS suffixe :free (comme le bunny) :
+         appel direct. Échelle admise low/medium/high/max (xhigh non
+         vérifié — effortNvidia rabote au plus proche admis).
+       - apodex-1.1-mini:free : rapide (~1,5 s), low→max tous vérifiés
+         en direct (reasoning eff effectif : reasoning_tokens > 0).
+       - inkling:free et inkling-small:free : 403 « agentic harnesses
+         only » sur appel API nu → NON ajoutés. */
+    { provider: 'openrouter', model: 'inclusionai/ling-3.1-flash', name: 'ling-3.1-flash free · openrouter', efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
+    { provider: 'openrouter', model: 'apodex/apodex-1.1-mini:free', name: 'apodex-1.1-mini free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
     /* v20260928 : space-bunny-alpha — gratuit (pricing 0) mais SANS suffixe
        :free (modèle furtif) : appel direct, pas de cascade models[]. Son
        raisonnement interne ne doit jamais devenir la réponse visible.
@@ -137,7 +163,7 @@
        soit une coupure en pleine phrase. Le plafond de sortie est désormais
        délégué au provider — on ne garde que l'effort de raisonnement, dont la
        valeur est un VRAI réglage de puissance (et non une troncature). */
-    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', efforts: ['low', 'medium', 'high', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
+    { provider: 'openrouter', model: 'stealth/space-bunny-alpha', name: 'space-bunny alpha · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
     { provider: 'openai', model: 'gpt-4o-mini', name: 'gpt-4o-mini · openai' },
     { provider: 'deepseek', model: 'deepseek-chat', name: 'deepseek-chat' },
     { provider: 'mistral', model: 'mistral-small-latest', name: 'mistral-small · mistral' },
@@ -161,23 +187,36 @@
         « medium » y renvoie 400 (vérifié en direct) → repli automatique.
         Exclu : nvidia/nemotron-parse-2.0 (répond en ~2 M d'événements SSE
        sans texte lisible → inutilisable en discussion). */
-    { provider: 'nvidia', model: 'moonshotai/kimi-k3', name: 'kimi-k3 · nvidia', efforts: ['low', 'high', 'max'] },
-    { provider: 'nvidia', model: 'z-ai/glm-5.3', name: 'glm-5.3 · nvidia' },
-    { provider: 'nvidia', model: 'z-ai/glm-5.3-flash', name: 'glm-5.3-flash · nvidia' },
-    { provider: 'nvidia', model: 'google/gemma-4-31b-it', name: 'gemma-4-31b · nvidia' },
+    /* v20261004 (ordre nvidia) : les deux modèles qui ont RÉPONDU en direct
+       (1,6-1,8 s mesurés le 2026-10-04) passent en tête — kimi/glm-5.3/gemma
+       timeout tous côté Worker CF (524 à 125 s) et coûtaient 18-45 s chacun
+       à chaque cascade. Les scores de session corrigent l'ordre ensuite.
+       v20261004b (choix HUD honoré) : audit en direct 2026-10-04 —
+       `mort:true` = 524/timeout côté Worker → grisé au HUD (impossible à
+       choisir) et sorti de la cascade ; `chat:false` = spécialisé, choisi à
+       la main mais jamais proposé en auto. Les 8 autres répondent en
+       0,9-4,7 s → ce sont eux qui TOURNENT (plus « toujours diffusiongemma »). */
     { provider: 'nvidia', model: 'google/diffusiongemma-26b-a4b-it', name: 'diffusiongemma-26b · nvidia' },
+    { provider: 'nvidia', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', name: 'nemotron-3-nano omni · nvidia' },
+    { provider: 'nvidia', model: 'moonshotai/kimi-k3', name: 'kimi-k3 · nvidia', efforts: ['low', 'high', 'max'], mort: true },
+    /* v20261005 : deepseek-v4.1-flash vérifié en direct (OK-D41) —
+       reasoning_effort low/high/max acceptés, medium → 400 (comme kimi) ;
+       payload NVIDIA par défaut (max_tokens 32768, seed 0). */
+    { provider: 'nvidia', model: 'deepseek-ai/deepseek-v4.1-flash', name: 'deepseek-v4.1-flash · nvidia', efforts: ['low', 'high', 'max'] },
+    { provider: 'nvidia', model: 'z-ai/glm-5.3', name: 'glm-5.3 · nvidia', mort: true },
+    { provider: 'nvidia', model: 'z-ai/glm-5.3-flash', name: 'glm-5.3-flash · nvidia', mort: true },
+    { provider: 'nvidia', model: 'google/gemma-4-31b-it', name: 'gemma-4-31b · nvidia', mort: true },
     { provider: 'nvidia', model: 'meta/muse-glimmer-30b', name: 'muse-glimmer-30b · nvidia' },
     { provider: 'nvidia', model: 'nvidia/nemotron-3-super-120b-a12b', name: 'nemotron-3-super 120b · nvidia' },
     { provider: 'nvidia', model: 'nvidia/nemotron-3-ultra-550b-a55b', name: 'nemotron-3-ultra 550b · nvidia' },
-    { provider: 'nvidia', model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning', name: 'nemotron-3-nano omni · nvidia' },
     { provider: 'nvidia', model: 'nvidia/nemotron-3.5-lightning-30b-a3b', name: 'nemotron-3.5-lightning · nvidia' },
     { provider: 'nvidia', model: 'nvidia/ising-calibration-1.5-31b', name: 'ising-calibration-31b · nvidia' },
     { provider: 'nvidia', model: 'meta/llama-3.2-11b-vision-instruct', name: 'llama-3.2-11b vision · nvidia', payload: { temperature: 1, max_tokens: 16384, seed: 0 } },
     /* spécialisés : en ligne, mais réponses non conversationnelles */
-    { provider: 'nvidia', model: 'nvidia/riva-translate-4b-instruct-v1.1', name: 'riva-translate v1.1 · nvidia (trad.)', payload: { temperature: 1, max_tokens: 4096, seed: 0 } },
-    { provider: 'nvidia', model: 'nvidia/riva-translate-4b-instruct-v2', name: 'riva-translate v2 · nvidia (trad.)', payload: { temperature: 1, max_tokens: 2048, seed: 0 } },
-    { provider: 'nvidia', model: 'nvidia/llama-3.1-nemotron-safety-guard-8b-v3', name: 'nemotron-safety-guard · nvidia (garde)' },
-    { provider: 'nvidia', model: 'nvidia/nemotron-3.5-content-safety', name: 'nemotron-content-safety · nvidia (garde)', payload: { temperature: 1, max_tokens: 16384, seed: 0 } },
+    { provider: 'nvidia', model: 'nvidia/riva-translate-4b-instruct-v1.1', name: 'riva-translate v1.1 · nvidia (trad.)', payload: { temperature: 1, max_tokens: 4096, seed: 0 }, chat: false },
+    { provider: 'nvidia', model: 'nvidia/riva-translate-4b-instruct-v2', name: 'riva-translate v2 · nvidia (trad.)', payload: { temperature: 1, max_tokens: 2048, seed: 0 }, chat: false },
+    { provider: 'nvidia', model: 'nvidia/llama-3.1-nemotron-safety-guard-8b-v3', name: 'nemotron-safety-guard · nvidia (garde)', chat: false },
+    { provider: 'nvidia', model: 'nvidia/nemotron-3.5-content-safety', name: 'nemotron-content-safety · nvidia (garde)', payload: { temperature: 1, max_tokens: 16384, seed: 0 }, chat: false },
   ];
 
   function keyFor(provider) {
@@ -235,6 +274,81 @@
       .trim();
     if (t.length > 280) t = t.slice(0, 280) + '…';
     return (solo ? 'Échec du modèle : ' : 'Échec des modèles : ') + t;
+  }
+
+  /* v20261004 (santé providers) : un provider gratuit bloqué par l'amont
+     (402 quota, 403 anti-robot Turnstile, 429 rate-limit) n'a pas échoué « par
+     le modèle » : on le met en pause pour la session. Le tour courant CASCADE
+     alors sur le provider suivant de la chaîne, au lieu d'afficher
+     « Échec du modèle : … 403 Missing Turnstile token » et de tuer la
+     conversation (dont l'historique — donc le contexte d'un skill — dépend). */
+  var providersEnPause = {};
+  function marquerPause(pk, ms) {
+    if (!pk) return;
+    providersEnPause[pk] = Date.now() + (ms || 180000);
+  }
+  function providerSain(pk) {
+    if (!pk) return true;
+    var fin = providersEnPause[pk];
+    if (!fin) return true;
+    if (Date.now() >= fin) { delete providersEnPause[pk]; return true; }
+    return false;
+  }
+  function bloquageAmont(err) {
+    var st = err && err.status;
+    if (st === 402 || st === 403 || st === 429) return true;
+    var m = String((err && err.message) || '');
+    return /Turnstile|Missing token|insufficient_credit|Payment Required|forbidden|free-models-per-min/i.test(m);
+  }
+
+  /* v20261004 (mémoire de session) : score par modèle — un modèle qui a
+     répondu remonte, un modèle mort (524, quota, timeout) descend. La cascade
+     explore donc les modèles JAMAIS essayés avant de retenter ceux qui ont
+     échoué : nemotron-nano (1,8 s mesuré) n'attend plus la fin d'une file de
+     kimi/glm qui timeout tous à 125 s côté Worker Cloudflare. */
+  var scoresModeles = {};
+  /* P1 (audit fainéant) : les scores ne sont PLUS persistés (localStorage) —
+     une séance sur un jour gris figeait les « favoris » d'hier et l'IA
+     relançait systématiquement les mêmes modèles (surtout en cascade 18 s) :
+     biais de familiarité + jamais d'exploration neuve. Scores de SESSION
+     uniquement ; l'ancien résidu est purgé une fois. */
+  try { localStorage.removeItem('athena_scores_modeles'); } catch (e) {}
+  function noterModele(id, ok) {
+    if (!id) return;
+    var s = scoresModeles[id] || 0;
+    s = ok ? s + 1 : s - 1;
+    if (s > 8) s = 8;
+    if (s < -8) s = -8;
+    scoresModeles[id] = s;
+    try {
+      var keys = Object.keys(scoresModeles);
+      if (keys.length > 60) keys.sort(function (a, b) { return scoresModeles[a] - scoresModeles[b]; }).slice(0, keys.length - 60).forEach(function (k) { delete scoresModeles[k]; });
+    } catch (e) {}
+  }
+  function scoreModele(id) { return scoresModeles[id] || 0; }
+
+  /* v20261004b (« il utilise tout le temps diffusiongemma ») : à score égal,
+     faire tourner chaque bloc d'un cran par requête — les modèles sains
+     circulent au lieu de figer le premier du catalogue en tête. */
+  var rotationCascade = 0;
+  function tournerEgaux(liste) {
+    if (!Array.isArray(liste) || liste.length < 2) return liste;
+    var out = [];
+    var i = 0;
+    while (i < liste.length) {
+      var j = i;
+      var s = scoreModele(liste[i].id);
+      while (j < liste.length && scoreModele(liste[j].id) === s) j++;
+      var bloc = liste.slice(i, j);
+      if (bloc.length > 1) {
+        var r = rotationCascade % bloc.length;
+        bloc = bloc.slice(r).concat(bloc.slice(0, r));
+      }
+      out = out.concat(bloc);
+      i = j;
+    }
+    rotationCascade += 1;
+    return out;
   }
 
   /* Garde-fou par tentative : une souche qui bloque (saturée, Turnstile,
@@ -344,16 +458,28 @@
     var liste = MODELS.concat(DYN.models).filter(function (m) { return m.provider !== 'tokenrouter'; });
     var cat = liste.map(function (m) {
       var p = PROVIDERS[m.provider];
+      var id = m.provider + ':' + m.model;
       var aCle = !!(p && keyFor(m.provider));
       var aBase = !!(p && baseFor(p));
       /* v20260928 : viaProxy = clé détenue par le Worker (secret serveur) —
          le modèle est utilisable sans clé cliente (aBase suffit). */
       var up = !!(p && (p.free || (aBase && (aCle || p.viaProxy))));
+      /* v20261004b (choix HUD honoré) : le HUD ne propose que ce qui sert
+         VRAIMENT — modèle mort (audit 2026-10-04) et provider/model en pause
+         (402/403/429 sanctionnés) passent en `down` (grisé, non cliquable) ;
+         un choix périmé mémorisé devient donc « invalide » → cascade auto. */
+      if (up && m.mort) up = false;
+      if (up && !providerSain(m.provider)) up = false;
+      if (up && !providerSain(id)) up = false;
       var label = p ? p.label : m.provider;
-      if (!up && p && !p.free) {
+      if (m.mort) {
+        label = m.provider + ' · indisponible';
+      } else if (!up && p && !p.free) {
         label = m.provider + ' · ' + ((!aCle && !p.viaProxy) ? 'clé manquante' : 'proxy non déployé');
+      } else if (!up) {
+        label = m.provider + ' · en pause';
       }
-      return { id: m.provider + ':' + m.model, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null };
+      return { id: id, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null, chat: m.chat !== false };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
@@ -380,7 +506,8 @@
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   ];
   var OR_EXTRA = [
-    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    /* nano déjà dans OR_TRIO (v banc20261005 : le doublon occupait un
+       cran de cascade sans gain) */
     'nvidia/nemotron-3-ultra-550b-a55b:free',
   ];
   var OR_FREE = OR_TRIO.concat(OR_EXTRA, [
@@ -394,7 +521,8 @@
     'inclusionai/ling-3.0-flash-fin:free',
     'dots-studio/dots-3-note-preview:free',
     'liquid/lfm-2.5-2.6b:free',
-    'nvidia/nemotron-3.5-content-safety:free',
+    /* nemotron-3.5-content-safety retiré : c'est un garde-fou
+       (chat:false), il répond « safe » — jamais une vraie réponse. */
     'openrouter/free',
   ]);
 
@@ -1130,13 +1258,34 @@
     }, signal);
   }
 
-  /* Garde-fou par appel : openrouter attend le reset de quota (~70 s) ;
-     nvidia kimi-k3 raisonne longtemps (effort « max », 16 384 tokens) →
-       5 min, la coupure interne se faisant sur l'inactivité (40 s/chunk). */
+  /* Garde-fou par appel — ADAPTÉ À L'EFFORT (banc 2026-10-05) :
+     - avant : 70 s fixes sur openrouter coupaient les appels lents
+       (cascade interne models[] du provider, TTFB 40-46 s mesuré en effort
+       max) alors que l'UI affichait « max » → modèles « flemmards » ;
+     - nvidia kimi-k3 raisonne longtemps (effort max, 16 384 tokens) :
+       jusqu'à 20 min en max, sinon 5 min ;
+     - l'effort de LA REQUÊTE courante (body / localStorage, via
+       effortNvidia) prime — quel que soit le modèle. */
   function bornePour(entry) {
-    if (entry.providerKey === 'openrouter') return 70000;
-    if (entry.providerKey === 'nvidia') return 300000;
-    return 60000;
+    var ef = 'medium';
+    try { ef = effortNvidia(entry); } catch (e) {}
+    if (entry.providerKey === 'openrouter') {
+      if (ef === 'max') return 300000;
+      if (ef === 'xhigh' || ef === 'high') return 240000;
+      return 150000;
+    }
+    if (entry.providerKey === 'nvidia') return ef === 'max' ? 1200000 : 300000;
+    return 90000;
+  }
+
+  /* Budget TOTAL d'une cascade (bornes par appel adossées à un plafond
+     global) — banc 20261005 : 8 entrées × 5 min de borne = ~40 min
+     d'attente silencieuse sinon. Au-delà : erreur honnête, pas de
+     navigation bloquée. */
+  var BUDGET_CASCADE = 600000;
+  function errBudget() {
+    return new Error('aucun modèle n\'a répondu en ' + (BUDGET_CASCADE / 60000)
+      + ' min (cascade épuisée) — réessayez plus tard.');
   }
 
   /* onDelta (etape, message) : fourni par gererChat sur un flux NDJSON —
@@ -1243,6 +1392,31 @@
           err.resetAt = parseInt(md.headers['X-RateLimit-Reset'], 10) || null;
         }
       }
+      /* v20261004 : blocage amont (402/403 Turnstile/429) → pause du provider
+         ET du modèle pour la session ; un 5xx/524 (Worker CF qui coupe) ne
+         met en pause QUE CE MODÈLE — nemotron répond quand glm-5.3 timeout. */
+      /* v banc 20261005 (quota daily) : « free-models-per-day » = quota
+         JOURNALIER épuisé — ce n'est PAS une saturation transitoire (le
+         regex saturation() matchait « free_tier » et lançait 5 attentes de
+         30 s → l'utilisateur restait bloqué « Réflexion en cours » des
+         minutes alors que pollinations/nvidia répondaient). Fail-fast +
+         pause du provider jusqu'au reset (plafonnée à 6 h). */
+      var msgErr = String(m);
+      if ((md && String(md.limit_source || '').indexOf('daily') >= 0)
+          || /per[- ]day|per day/i.test(msgErr)) {
+        err.quotidien = true;
+      }
+      if (bloquageAmont(err)) {
+        err.bloquageAmont = true;
+        var pauseMs = 180000;
+        if (err.quotidien && err.resetAt && err.resetAt > Date.now()) {
+          pauseMs = Math.min(err.resetAt - Date.now() + 60000, 6 * 3600000);
+        }
+        marquerPause(entry.providerKey || entry.provider, pauseMs);
+        marquerPause(entry.id, pauseMs);
+      } else if (r.status >= 500) {
+        marquerPause(entry.id, 180000);
+      }
       return err;
     }
 
@@ -1302,10 +1476,11 @@
          10 s les écartait à tort (puis ×2 → provider condemné). */
       var delaiPremier = !raisonneFlux ? 25000
         : efFlux === 'max' ? 150000
+        : efFlux === 'xhigh' ? 120000
         : efFlux === 'high' ? 90000
         : efFlux === 'medium' ? 45000
         : 20000;
-      var delaiInactivite = !raisonneFlux ? 40000 : efFlux === 'max' ? 150000 : efFlux === 'high' ? 90000 : 60000;
+      var delaiInactivite = !raisonneFlux ? 40000 : efFlux === 'max' ? 150000 : efFlux === 'xhigh' ? 120000 : efFlux === 'high' ? 90000 : 60000;
       /* v20260926d (kimi) : sans [DONE] ni finish_reason, une fin de flux
          propre reste une COUPURE — le partiel ne passe pas pour du complet. */
       var vuFin = false;
@@ -1447,6 +1622,48 @@
     }
 
     function uneTentative(liste) {
+      /* v20261004 (relais navigateur) : pollinations bloque TOUT appel émis
+         depuis un navigateur (403 « Missing Turnstile token » — challenge
+         Cloudflare) alors que le même appel passe côté serveur. On relaie
+         donc par /api/relais (serveur → pont) : modèle choisi, cascade et
+         cache du pont sont conservés, seul le blocage navigateur saute. */
+      if (pk === 'pollinations') {
+        var corpsRelais = corpsPour(liste, false);
+        try {
+          var objR = JSON.parse(corpsRelais);
+          if (typeof objR.max_tokens !== 'number') objR.max_tokens = 8192;
+          /* l'id COMPLET (« pollinations:openai-fast ») : le pont route
+             directement par provider ; un modèle nu → REQUETE_INVALIDE. */
+          objR.model = entry.id || (entry.providerKey + ':' + entry.model);
+          corpsRelais = JSON.stringify(objR);
+        } catch (eR) {}
+        return realFetch('/api/relais', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: signal || undefined,
+          body: corpsRelais,
+        }).then(function (rR) {
+          return rR.text().then(function (tR) {
+            if (!rR.ok) {
+              /* relais local : 503 = pont en pause → pas de palier de retry
+                 (6 s de circuit), on enchaîne sur le modèle suivant d'un
+                 trait au lieu de re-attendre ×4 pour le même refus. */
+              var eRel = erreurHttp(rR, tR);
+              eRel.pasRetry = true;
+              throw eRel;
+            }
+            var dR = null;
+            try { dR = JSON.parse(tR); } catch (eJ) { dR = null; }
+            var txtR = dR && typeof dR.texte === 'string' ? dR.texte : '';
+            if (!txtR) throw new Error(entry.provider + ' : réponse vide');
+            try {
+              if (dR.fin) entry._fin = dR.fin;
+              if (dR.model) entry._modeleReel = String(dR.model);
+            } catch (eM) {}
+            return txtR;
+          });
+        });
+      }
       /* v1.2 (audit) : le flux SSE ne se lit QUE si l'appelant veut du
          stream (onDelta branché). Avant : `!!p.sse` forçait lireSSE même en
          JSON — toute réponse non-stream d'un provider SSE finissait en
@@ -1473,9 +1690,20 @@
          delaiPremier : TTFB free sous charge > 30 s mesuré). */
       var delaiTete = !raisonneTete ? 45000
         : efTete === 'max' ? 150000
+        : efTete === 'xhigh' ? 120000
         : efTete === 'high' ? 90000
         : efTete === 'medium' ? 45000
         : 30000;
+      /* v20261004 → v20261005 : modèle dont un appel a DÉJÀ ÉCHOUÉ en
+         session (score < 0) → sonde de tête rapide (18 s) : un Worker CF qui
+         va couper à 125 s (524) est écarté vite et la cascade enchaîne sur un
+         modèle vivant. Un modèle INCONNU (score = 0 : jamais appelé en
+         session) garde sa borne effort — depuis P1-4 les scores sont
+         session-only, l'ancien plafond « score ≤ 0 → 18 s » s'appliquait à
+         TOUS les modèles au démarrage et tuait tout effort high/xhigh/max
+         (TTFB raisonné mesuré 40-46 s » 18 s d'abandon), d'où un cercle
+         vicieux score négatif → encore plus court. */
+      if (scoreModele(entry.id) < 0 && delaiTete > 18000) delaiTete = 18000;
       var ctrlTete = null;
       var courseTete = null;
       var teteExpiree = false;
@@ -1533,15 +1761,26 @@
     var delaisRetrySaturation = [500, 1500, 3000, 6000, 10000];
     function saturation(err) {
       if (!err) return false;
+      /* v banc 20261005 : le quota JOURNALIER (free-models-per-day) n'est
+         jamais une saturation — « free_tier » matchait le regex et déclenchait
+         le long palier d'attente (30 s × 5) sur un provider bloqué jusqu'au
+         reset quotidien. */
+      if (err.quotidien) return false;
       var ls = String(err.limitSource || '');
+      if (ls.indexOf('daily') >= 0) return false;
       var msg = String(err.message || err.erreur || '');
       return /ResourceExhausted|Worker local|free_tier|free-models-per-min|no available|Provider returned an empty response|empty response/i.test(ls + ' ' + msg);
     }
     function avecRetry(n, liste) {
       return uneTentative(liste).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
+        if (err && err.pasRetry) throw err;
         /* flux déjà diffusé en partie → re-POST interdit (étapes en double) */
         if (err && err.partiel) throw err;
+        /* v banc 20261005 : quota journalier épuisé → AUCUNE attente (le
+           reset est à des heures) : on rend la main tout de suite pour que
+           la cascade passe aux autres providers du tour. */
+        if (err && err.quotidien) throw err;
         var st = err && err.status;
         var sat = saturation(err);
         var ladder = sat ? delaisRetrySaturation : delaisRetry;
@@ -1599,26 +1838,65 @@
        autre modèle). Sélection invalide/indisponible → repli sur le choix
        auto (ex. vieux choix mémorisé). */
     var choixValide = Boolean(modelId && parId[modelId] && parId[modelId].up);
-    if (choixValide) {
+    /* v20261004 (secours, remplace le « strict » d'une seule entrée) : le
+       modèle choisi part TOUJOURS en premier, mais les voies saines suivent
+       dans LA MÊME requête (cap 5). Un pont en pause, un quota amont ou un
+       5xx n'écrit plus une erreur à la place de la réponse — et l'historique
+       (donc le contexte du tour suivant, skill compris) reste propre. Le
+       toast « repli sur le modèle auto » signale le relais quand il a lieu. */
+    function ajouterCascade(deja) {
+      var candidats = cat.filter(function (e) {
+        /* v20261004b : `chat:false` (modèles spécialisés : traduction, garde)
+           n'est JAMAIS un repli de conversation. */
+        return e.up && e.chat !== false && !deja[e.id]
+          && providerSain(e.providerKey) && providerSain(e.id);
+      });
+      /* v20261004 : tri par score de session — les modèles jamais essayés
+         (0) passent avant ceux qui ont échoué (-n), les validés (+n) en tête. */
+      candidats = candidats.slice().sort(function (a, b) { return scoreModele(b.id) - scoreModele(a.id); });
+      /* v20261004b (« tout le temps diffusiongemma ») : à SCORE ÉGAL (tous
+         les modèles sains validés plafonnent à +8), la sortie stable laissait
+         toujours le même en tête. On fait TOURNER chaque bloc d'égalité d'un
+         cran par requête : les modèles réellement fonctionnels circulent,
+         les morts (score négatif) restent derrière. */
+      candidats = tournerEgaux(candidats);
+      var orPremier = null, pollPremier = null, autrePremier = null, nvPremier = null;
+      for (var k = 0; k < candidats.length; k++) {
+        var ce = candidats[k];
+        var estOrFree = ce.providerKey === 'openrouter' && OR_FREE.indexOf(ce.model) >= 0;
+        if (estOrFree && !orPremier) orPremier = ce;
+        else if (!estOrFree && ce.providerKey === 'pollinations' && !pollPremier) pollPremier = ce;
+        else if (!estOrFree && ce.providerKey === 'nvidia' && !nvPremier) nvPremier = ce;
+        else if (!estOrFree && !autrePremier) autrePremier = ce;
+      }
+      var ordre = [orPremier, pollPremier, autrePremier, nvPremier].filter(Boolean);
+      /* v20261004 : la préférence statique ne prime plus sur la RÉALITÉ —
+         un modèle à -1 (dernier échec) part après un modèle jamais essayé
+         ou validé, même s'il est « théoriquement » le plus fiable. */
+      ordre.sort(function (a, b) { return scoreModele(b.id) - scoreModele(a.id); });
+      var vus = {};
+      ordre.forEach(function (e) { if (e && !vus[e.id] && !deja[e.id] && chaine.length < 7) { vus[e.id] = 1; chaine.push(e); } });
+      for (var ic = 0; ic < candidats.length && chaine.length < 7; ic++) {
+        if (!vus[candidats[ic].id] && !deja[candidats[ic].id]) { vus[candidats[ic].id] = 1; chaine.push(candidats[ic]); }
+      }
+    }
+
+    if (choixValide && providerSain(parId[modelId].id)) {
+      var garde = {};
+      garde[parId[modelId].id] = 1;
       chaine.push(parId[modelId]);
+      ajouterCascade(garde);
       return { chaine: chaine, choisiOk: true, strict: true };
     }
-    /* v1.2 (strict) : mode auto = UN SEUL modèle, le plus fiable disponible,
-       sans relais — ordre : openrouter free avec clé (cascade interne models[]
-       côté provider), puis pollinations (gratuit), puis les autres clés dans
-       l'ordre du catalogue, nvidia en dernier (souvent en panne). */
-    var candidats = cat.filter(function (e) { return e.up; });
-    var orPremier = null, pollPremier = null, autrePremier = null, nvPremier = null;
-    for (var k = 0; k < candidats.length; k++) {
-      var ce = candidats[k];
-      var estOrFree = ce.providerKey === 'openrouter' && OR_FREE.indexOf(ce.model) >= 0;
-      if (estOrFree && !orPremier) orPremier = ce;
-      else if (!estOrFree && ce.providerKey === 'pollinations' && !pollPremier) pollPremier = ce;
-      else if (!estOrFree && ce.providerKey === 'nvidia' && !nvPremier) nvPremier = ce;
-      else if (!estOrFree && !autrePremier) autrePremier = ce;
-    }
-    var elu = orPremier || pollPremier || autrePremier || nvPremier || null;
-    if (elu) chaine.push(elu);
+    /* v1.2 (strict) : mode auto = le plus fiable disponible, sans relais —
+       ordre : openrouter free avec clé (cascade interne models[] côté
+       provider), puis pollinations (gratuit), puis les autres clés, nvidia
+       en dernier (souvent en panne). */
+    /* v20261004 (cascade réelle) : auto = les providers SAINS dans l'ordre de
+       préférence (au maximum 5) — un provider bloqué (402/403 Turnstile) ne
+       tue plus la requête : la boucle de `plan.chaine` enchaîne sur le suivant
+       dans LA MÊME requête, et le prochain tour ne repart pas par lui. */
+    ajouterCascade({});
     return { chaine: chaine, choisiOk: !modelId || (parId[modelId] && parId[modelId].up), strict: true };
   }
 
@@ -1655,6 +1933,10 @@
         && Number.isFinite(+body.temperature)) {
       temperatureDemandee = Math.max(0, Math.min(2, +body.temperature));
     }
+    /* P0 (audit fainéant) : effort de la requête (low/medium/high/max) →
+       effortNvidia → reasoning_effort ; valeur inconnue → null (HUD). */
+    effortDemande = (body && typeof body.effort === 'string'
+      && EFFORTS_HUD.indexOf(body.effort) >= 0) ? body.effort : null;
     var wantStream = body.stream === true;
     var messages = (Array.isArray(body.messages) ? body.messages : [])
       .filter(function (m) { return m && typeof m === 'object' && typeof m.content === 'string'; });
@@ -1794,14 +2076,23 @@
       /* v1.2 (anti-coupure) : UNE seconde chance sur timeout, même modèle
          (pas un relais) — les hoquets réseau ne tuent plus la requête. */
       var rejoues = {};
+      var tDebutJson = Date.now();
       for (var i = 0; i < plan.chaine.length; i++) {
         var entry = plan.chaine[i];
+        if (i > 0 && Date.now() - tDebutJson > BUDGET_CASCADE) {
+          dernierErr = errBudget();
+          break;
+        }
         var pkEssai = entry.providerKey || entry.provider || entry.id;
+        /* v banc 20261005 : même saut qu'en flux (provider mis en pause pendant
+           ce tour, ex. quota journalier openrouter) — voir la boucle NDJSON. */
+        if (!providerSain(pkEssai)) continue;
         /* v20261001 (quota) : essai abortable — au timeout, le fetch réel
            est coupé (sinon double POST pendant le retry → quota free). */
         var essaiJ = signalEssai(signal);
         try {
           var texte = await appelBorne(callModel(entry, messages, essaiJ.signal), bornePour(entry), abandonner(essaiJ));
+          noterModele(entry.id, true);
           return json(assembler(entry, texte).payload);
         } catch (err) {
           if (err && err.name === 'AbortError') throw err;
@@ -1830,6 +2121,14 @@
             i--;
             continue;
           }
+          /* v20261004 : modèle mort (2e timeout, réponse vide, worker coupé)
+             → écarté pour la session : les entrées suivantes de la chaîne
+             prennent le relais au lieu de retenter le même blocage au tour
+             d'après (et l'historique reste une vraie réponse, pas une erreur). */
+          if (err && /timeout|en-têtes jamais reçus|réponse vide/i.test(String((err && err.message) || ''))) {
+            marquerPause(entry.id, 180000);
+          }
+          noterModele(entry.id, false);
           dernierErr = err;
         }
       }
@@ -1849,6 +2148,7 @@
           try { ctrl.enqueue(enc.encode(JSON.stringify(ev) + '\n')); } catch (e) {}
         };
         var err = null;
+        var journal = [];
         if (noteCompression) emit({ type: 'progress', etape: 'contexte', message: 'Contexte compressé : ' + noteCompression });
         /* v20260926f (lags) : un provider qui timeout 2 fois de suite est
            écarté pour le reste de la passe — sinon 16 modèles × 10 s de
@@ -1857,9 +2157,20 @@
         var timeoutsParProvider = {};
         var sauterProvider = {};
         var providersSautes = 0;
+        var quotaSignale = false;
+        var tDebutCascade = Date.now();
         for (var i = 0; i < plan.chaine.length; i++) {
           var entry = plan.chaine[i];
+          if (i > 0 && Date.now() - tDebutCascade > BUDGET_CASCADE) {
+            err = errBudget();
+            break;
+          }
           var pk = entry.providerKey || entry.provider;
+          /* v banc 20261005 : provider mis en pause pendant CE tour (quota
+             journalier, 402/403…) → ses entrées restantes sont SAUTÉES :
+             avant, chacune relançait un appel mort (30-90 s perdus par essai)
+             alors que pollinations/nvidia répondaient juste après. */
+          if (!providerSain(pk)) continue;
           if (sauterProvider[pk]) {
             /* v20260926f : 3 providers distincts qui timeoutent = panne
                large, pas un hoquet — on rend la main au lieu de mouliner
@@ -1869,7 +2180,7 @@
             continue;
           }
           var p = PROVIDERS[pk];
-          emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…' });
+          emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…', debug: entry.id });
           /* v1.2 (anti-coupure) : on ne rejoue un timeout que si RIEN n'a
              été diffusé — rejouer après des jetons dupliquerait le texte. */
           var jetonsVus = 0;
@@ -1892,19 +2203,16 @@
                raisonnement — un « max » mesuré dépasse 9 min ; couper à
                600 s le faisait passer pour bâclé. */
             var borne = bornePour(entry);
-            if (p && p.sse) {
-              var raisonne = (entry && Array.isArray(entry.efforts) && entry.efforts.length > 0)
-                || (entry && entry.providerKey === 'nvidia');
-              var efBorne = 'low';
-              if (raisonne) { try { efBorne = effortNvidia(entry); } catch (e) {} }
-              var plafond = efBorne === 'max' ? 1200000 : efBorne === 'high' ? 900000 : 600000;
-              if (borne < plafond) borne = plafond;
-            }
+            /* v banc 20261005 : le plafond par effort vit dans bornePour
+               (PRIME pour tous les modèles, y compris ceux sans `efforts`
+               déclarés) — l'ancien surélèvement conditionné à `efforts`
+               laissait les autres à 70 s. */
             /* v20261001 (quota) : essai abortable — au timeout de la borne,
                le fetch + le flux SSE réels sont coupés (sinon la boucle
                lireSSE tournait en fond pendant toute la cascade). */
             var essaiS = signalEssai(signal);
             var texte = await appelBorne(callModel(entry, messages, essaiS.signal, onDelta), borne, abandonner(essaiS));
+            noterModele(entry.id, true);
             var fin = assembler(entry, texte);
             /* v20260926g : pas de progress « Réponse générée via X » — nom
                technique masqué, le final suffit. */
@@ -1926,6 +2234,7 @@
             try { ctrl.close(); } catch (e) {}
             return;
           } catch (e2) {
+            try { journal.push(entry.id + ' :: ' + String((e2 && e2.message) || e2).slice(0, 160)); } catch (eJ) {}
             if (e2 && e2.name === 'AbortError') {
               try { ctrl.error(e2); } catch (e3) {}
               return;
@@ -1943,7 +2252,7 @@
               var gardeS = Math.max(3, Math.floor(nonSysS.length * 0.35));
               messages = sysS.concat(nonSysS.slice(-gardeS));
               emit({ type: 'progress', etape: 'contexte', message: 'Contexte trop long pour le modèle — compression (' + (nonSysS.length - gardeS) + ' messages retirés)' });
-              emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…' });
+          emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…', debug: entry.id });
               i--;
               continue;
             }
@@ -1959,7 +2268,12 @@
             }
             if (/timeout \d+ ms/.test(String((e2 && e2.message) || ''))) {
               timeoutsParProvider[pk] = (timeoutsParProvider[pk] || 0) + 1;
-              if (timeoutsParProvider[pk] >= 2) sauterProvider[pk] = true;
+              /* v20261004 : on n'écarte PLUS tout le provider après 2 timeouts
+                 (sur nvidia, kimi/glm morts ne condamnent pas diffusiongemma
+                 qui répond en 1,6 s) — SEUL ce modèle est mis en pause, et
+                 l'erreur AFFICHÉE reste la dernière réellement vue. */
+              if (timeoutsParProvider[pk] >= 2) { marquerPause(entry.id, 180000); }
+              err = e2;
               /* v1.2 (anti-coupure) : UNE seconde chance sur timeout si rien
                  n'a été diffusé (même modèle, pas un relais). */
               if (jetonsVus === 0 && !e2.rejoue) {
@@ -1968,10 +2282,25 @@
                 continue;
               }
             }
+            /* v20261004 : en-têtes jamais reçus / réponse vide → ce modèle
+               sort de la session : la suite de la chaîne prend le relais au
+               lieu de retenter le même blocage au tour d'après. */
+            if (e2 && /en-têtes jamais reçus|réponse vide/i.test(String((e2 && e2.message) || ''))) {
+              marquerPause(entry.id, 180000);
+            }
+            /* v banc 20261005 : dire CLAIREMENT que le quota gratuit du jour
+               est épuisé (une seule fois) — l'utilisateur comprend pourquoi
+               la cascade bascule au lieu de croire au « bâclage » du modèle. */
+            if (e2 && e2.quotidien && !quotaSignale) {
+              quotaSignale = true;
+              emit({ type: 'progress', etape: 'quota',
+                message: 'Quota gratuit du jour épuisé sur ' + String(pk) + ' — passage aux autres providers…' });
+            }
+            noterModele(entry.id, false);
             err = e2;
           }
         }
-        emit({ type: 'erreur', erreur: detailAffichable((err && err.message) || 'erreur inconnue', plan.strict) });
+        emit({ type: 'erreur', erreur: detailAffichable((err && err.message) || 'erreur inconnue', plan.strict), debug: journal });
         try { ctrl.close(); } catch (e) {}
       },
     });
@@ -1979,6 +2308,39 @@
       status: 200,
       headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
     });
+  }
+
+  /* ------------------------------------------------------------------
+     Stack RÉEL (Next + sidecar Athéna sur localhost) vs Pages statique.
+     Le shim ne mime QUE ce qui manque : /api/skills et /api/mcp existent
+     sur le stack complet, et un message qui VISE le moteur (skill forcé
+     par le menu « / », ou demande MCP) doit lui arriver pour que le
+     planner applique le playbook et que les outils MCP s'exécutent.
+     Le chat ordinaire garde son chemin historique (providers directs).
+     ------------------------------------------------------------------ */
+  var stackReel = null;
+  function sonderStackReel() {
+    if (stackReel !== null) return Promise.resolve(stackReel);
+    return appelBorne(realFetch('/api/skills', { cache: 'no-store' }), 4000)
+      .then(function (r) { return r.json(); })
+      .then(function (d) { stackReel = !!(d && Array.isArray(d.skills)); return stackReel; })
+      .catch(function () { stackReel = false; return false; });
+  }
+  function viseMoteur(bodyStr) {
+    var b = null;
+    try { b = JSON.parse(bodyStr || '{}'); } catch (e) { return false; }
+    if (!b || typeof b !== 'object') return false;
+    if (typeof b.skill === 'string' && b.skill) return true;
+    var dernier = typeof b.question === 'string' ? b.question : '';
+    var msgs = Array.isArray(b.messages) ? b.messages : [];
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      var m = msgs[i];
+      if (m && m.role === 'user' && typeof m.content === 'string' && m.content.trim()) {
+        dernier = m.content;
+        break;
+      }
+    }
+    return /\bmcp\b/i.test(dernier) || /mcp\s*[\(\[]/i.test(dernier);
   }
 
   async function handleApi(url, input, init) {
@@ -1990,9 +2352,20 @@
       try { body = await input.clone().text(); } catch (e) { body = null; }
     }
 
+    /* Routes du moteur : skills (registre du planner) + MCP (serveurs branchés). */
+    if (path === '/api/skills' || path === '/api/mcp') {
+      if (await sonderStackReel()) return realFetch(input || url, init || {});
+      if (path === '/api/skills') return json({ skills: [], dispo: false });
+      return json({ serveurs: [], dispo: false });
+    }
+
     if (path === '/api/chat') {
       if (method === 'GET') return json({ modele_charge: true, version: '10.9.4-pages' });
-      if (method === 'POST') return gererChat(body, signal);
+      if (method === 'POST') {
+        /* Message qui vise le moteur (skill forcé / MCP) -> vrai /api/chat. */
+        if (viseMoteur(body) && (await sonderStackReel())) return realFetch(input || url, init || {});
+        return gererChat(body, signal);
+      }
       return json({ erreur: 'méthode' }, 405);
     }
     if (path === '/chat-attache') {

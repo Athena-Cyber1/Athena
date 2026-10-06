@@ -28,6 +28,11 @@ from typing import Any
 
 BRIDGE = os.environ.get("ATHENA_LLM_BRIDGE", "http://127.0.0.1:3015")
 TIMEOUT = 60
+# v20261005 (effort) : en effort high/xhigh/max la génération amont dépasse
+# 60 s (TTFB raisonné mesuré 40-46 s, borne shim 150 s en max) — l'appel pont
+# garde alors la même patience que la voie shim. Effort bas : 60 s inchangé.
+TIMEOUT_EFFORT = 150
+EFFORTS_LONGS = ("high", "xhigh", "max")
 
 # Codes stables retournés par le pont v2 (miroir de index.ts) — utilisables
 # pour la télémétrie et les décisions de repli, JAMAIS affichés tels quels.
@@ -75,7 +80,8 @@ class MoteurLLM:
 
     # ------------------------------------------------------------- complétion
     def complete(self, messages: list[dict[str, str]], temperature: float = 0.6,
-                 max_tokens: int = 1200, model_id: str | None = None) -> dict[str, Any] | None:
+                 max_tokens: int = 1200, model_id: str | None = None,
+                 effort: str | None = None) -> dict[str, Any] | None:
         """Complétion via le pont. En cas d'échec, retourne un dict codifié :
         {"erreur": LIBELLE_INDISPONIBLE, "code": <code pont>, "detail_interne": <brut>}.
         Le champ `detail_interne` ne doit JAMAIS être rendu à l'utilisateur.
@@ -85,7 +91,9 @@ class MoteurLLM:
         quel (jamais de nom de provider ni d'erreur HTTP dans ce champ).
         v1.2 (anti-bâclage) : le dict du pont traverse tel quel — `fin`
         (finish_reason), `provider`, `model`, `repli` inclus quand présents ;
-        `temperature` vient de l'appelant (préférence UI via run_agent)."""
+        `temperature` vient de l'appelant (préférence UI via run_agent).
+        P0 (audit fainéant) : `effort` (low/medium/high/max) du HUD → pont →
+        `reasoning_effort` amont ; valeur absente/invalide = jamais envoyée."""
         if not messages:
             return None
         corps_envoye: dict[str, Any] = {"messages": messages, "temperature": temperature,
@@ -96,14 +104,17 @@ class MoteurLLM:
             mid = model_id.strip()[:120]
             if mid and all(c.isalnum() or c in ":./-_" for c in mid):
                 corps_envoye["model"] = mid
+        if effort in ("low", "medium", "high", "xhigh", "max"):
+            corps_envoye["effort"] = effort
         corps = json.dumps(corps_envoye).encode()
         debut = time.time()
         dernier: dict[str, Any] | None = None
+        timeout_effort = TIMEOUT_EFFORT if effort in EFFORTS_LONGS else TIMEOUT
         for essai in range(2):  # 1 reprise : uniquement pannes réseau pures
             req = urllib.request.Request(f"{self.base}/complete", data=corps,
                                          headers={"Content-Type": "application/json"}, method="POST")
             try:
-                with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                with urllib.request.urlopen(req, timeout=timeout_effort) as r:
                     data = json.loads(r.read().decode())
                 data["duree_ms"] = data.get("duree_ms") or int((time.time() - debut) * 1000)
                 return data

@@ -136,6 +136,13 @@ class AgentState:
     # raisonnés : 0.5 sauf override explicite ; critique toujours 0.1).
     # Chaîne : route.ts → RequeteChat → run_agent → raisonner_llm.
     temperature: float | None = None
+    # P0 (audit « modèles fainéants ») : effort de raisonnement du HUD
+    # (low | medium | high | max). Chaîne COMPLÈTE : chat-demo (athena_effort)
+    # → route.ts → RequeteChat → run_agent → raisonner_llm → MOTEUR.complete
+    # → pont /complete → reasoning_effort (nvidia). None = effort par défaut
+    # du modèle (l'effort n'était JAMAIS transmis : la voie skill ignorait le
+    # bouton du HUD).
+    effort: str | None = None
     # v1.2 (anti-bâclage) : dernier appel LLM — motif de fin (finish_reason
     # du pont), provider et modèle réellement servis. Sert `tronquee` et
     # l'affichage UI (items 9/10). None = réponse déterministe, pas de LLM.

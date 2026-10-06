@@ -4480,12 +4480,21 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
            le fil côté moteur devient réutilisable (compteur honnête,
            corrélation logs, format canonique « fil-xxxxxxxx »). */
         body: JSON.stringify({ messages: historique, outils: preferences.outilsWeb !== false,
-          conversation_id: idConversation,
+          /* Champs optionnels envoyes seulement si VALIDES : la route Next
+             valide au stricte (fil nul / modele inconnu / joint vide = 400
+             "corps invalide" des qu un skill forcait l envoi au moteur). */
+          ...(typeof idConversation === 'string' && idConversation ? { conversation_id: idConversation } : {}),
           /* v1.2 (anti-bâclage, item 12) : température préférée → route.ts → moteur. */
-          temperature: temperatureChoisie(),
+          temperature: (Number.isFinite(Number(temperatureChoisie())) ? Math.min(2, Math.max(0, Number(temperatureChoisie()))) : 0.6),
+          /* P0 (audit fainéant) : effort du HUD → route.ts → sidecar → moteur →
+             pont (reasoning_effort). AVANT, la voie skill/livrable IGNORAIT le
+             bouton d'effort (seul le shim non-skill le lisait). */
+          effort: effortChoisi,
           /* v10.9.4 (HUD) : modèle choisi (sinon cascade par défaut) */
-          ...(modeleChoisi ? { model_id: modeleChoisi.id } : {}),
-          ...(attachments.length ? { attachments } : {}) }),
+          ...(modeleChoisi && typeof modeleChoisi.id === 'string' && modeleChoisi.id ? { model_id: modeleChoisi.id } : {}),
+          /* Menu « / » : skill forcé (le sidecar le priorise sur type/motifs) */
+          ...(skillForce ? { skill: skillForce } : {}),
+          ...(attachments.length ? { attachments: attachments.filter((a) => a && typeof a.file_id === 'string' && a.file_id) } : {}) }),
         signal,
       });
       const texte = await r.text();
@@ -4522,12 +4531,17 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: historique, outils: preferences.outilsWeb !== false, stream: true,
-        conversation_id: idConversation,
+        /* Champs optionnels envoyes seulement si VALIDES (route Next stricte). */
+        ...(typeof idConversation === 'string' && idConversation ? { conversation_id: idConversation } : {}),
         /* v1.2 (anti-bâclage, item 12) : température préférée → route.ts → moteur. */
-        temperature: temperatureChoisie(),
+        temperature: (Number.isFinite(Number(temperatureChoisie())) ? Math.min(2, Math.max(0, Number(temperatureChoisie()))) : 0.6),
+        /* P0 (audit fainéant) : effort du HUD → route.ts → sidecar → moteur. */
+        effort: effortChoisi,
         /* v10.9.4 (HUD) : modèle choisi (sinon cascade par défaut) */
-        ...(modeleChoisi ? { model_id: modeleChoisi.id } : {}),
-        ...(attachments.length ? { attachments } : {}) }),
+        ...(modeleChoisi && typeof modeleChoisi.id === 'string' && modeleChoisi.id ? { model_id: modeleChoisi.id } : {}),
+        /* Menu « / » : skill forcé (le sidecar le priorise sur type/motifs) */
+        ...(skillForce ? { skill: skillForce } : {}),
+        ...(attachments.length ? { attachments: attachments.filter((a) => a && typeof a.file_id === 'string' && a.file_id) } : {}) }),
       signal,
     });
     const ctype = r.headers.get('content-type') || '';
@@ -4547,7 +4561,14 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
         if (!ligne) return;
         try {
           const ev = JSON.parse(ligne);
-          if (ev.type === 'progress') { aRecuEvenement = true; if (surProgression) surProgression(ev); }
+          if (ev.type === 'progress') {
+            aRecuEvenement = true;
+            /* v banc 20261005 : quota journalier épuisé → TOAST : la ligne de
+               statut du panneau est écrasée en µs par l'appel suivant (jamais
+               peinte), l'utilisateur doit comprendre le relais. */
+            if (ev.etape === 'quota') notifier(ev.message || 'Quota gratuit épuisé — passage aux autres providers…');
+            if (surProgression) surProgression(ev);
+          }
           else if (ev.type === 'jeton') { aRecuEvenement = true; jetonsRecus += 1; if (surJeton) surJeton(ev); }
           else if (ev.type === 'final') final = ev;
           else if (ev.type === 'erreur') erreurFlux = ev.erreur || 'Erreur du pipeline.';
@@ -4968,6 +4989,15 @@ async function envoyer(texte) {
      écrasait cette édition avec la capture faite AVANT l'ouverture). */
   let contenu = (texte ?? saisieEl.value).trim();
   if (!contenu && fichiersJoints.length === 0) return;
+  /* Commande /mcp : ouvre l'inventaire des serveurs MCP — rien n'est envoyé. */
+  if (/^\/mcp\b/i.test(contenu)) {
+    if (texte == null) {
+      saisieEl.value = '';
+      ajusterSaisie(); majBouton(); majCompteurSaisie();
+    }
+    ouvrirPanneauMcp();
+    return;
+  }
   /* v20260922j (bugs 4+5) : verrou posé AVANT toute modale (double Entrée ->
      2 modales + 2 générations, 1er AbortController écrasé, ■ inactif) et
      envoi bloqué pendant un upload (fichiers silencieusement perdus +
@@ -5061,7 +5091,15 @@ async function envoyer(texte) {
   convo._cmdExecutees = [];
   convo._fenetreExec = [];
   convo._msgExec = null;
-  await genererReponse(convo);
+  try {
+    await genererReponse(convo);
+  } finally {
+    /* La pastille ne vaut que pour CE message : relâchée après l'envoi. */
+    if (skillForce) {
+      skillForce = null;
+      majChipSkill();
+    }
+  }
 }
 
 /* v8.6 : fin d'envoyer() extraite telle quelle en fonction partagée —
@@ -5303,6 +5341,11 @@ async function genererReponse(convo, opts) {
           voie.className = 'voie-modele';
           voie.textContent = 'via ' + (r.model || r.provider)
             + (r.modele_repli ? ' · repli' : '');
+          /* v banc20261005 : attributs machine-lisibles — les tests lisent
+             data-voie (plus de regex sur le texte : faux positifs « via
+             CDN » dans le corps de la réponse). */
+          voie.setAttribute('data-voie', r.model || r.provider || '');
+          if (r.modele_repli) voie.setAttribute('data-repli', '1');
           conteneurTour.appendChild(voie);
         }
         /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
@@ -5411,9 +5454,12 @@ $('form').addEventListener('submit', (e) => {
   }
   envoyer();
 });
-saisieEl.addEventListener('input', () => { ajusterSaisie(); majBouton(); majCompteurSaisie(); });
+saisieEl.addEventListener('input', () => { ajusterSaisie(); majBouton(); majCompteurSaisie(); gererMenuSkills(); });
 saisieEl.addEventListener('scroll', () => { if (saisieMirrorEl) saisieMirrorEl.scrollTop = saisieEl.scrollTop; });
 saisieEl.addEventListener('keydown', (e) => {
+  /* Menu « / » : navigation (↑ ↓ Entrée Tab Échap) PRISE AVANT l'historique
+     de saisie — sinon Entrée enverrait le message au lieu de choisir. */
+  if (gererToucheMenu(e)) return;
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     if (!occupe) envoyer();
@@ -6112,6 +6158,7 @@ const EFFORTS = [
   { v: 'low', nom: 'low', aide: 'Rapide — raisonnement court' },
   { v: 'medium', nom: 'medium', aide: 'Équilibré — raisonnement moyen (défaut)' },
   { v: 'high', nom: 'high', aide: 'Approfondi — raisonnement long' },
+  { v: 'xhigh', nom: 'xhigh', aide: 'Très approfondi — raisonnement très long' },
   { v: 'max', nom: 'max', aide: 'Maximal — le plus profond' },
 ];
 /* v20261001 (perf) : défaut « medium » (avant « max ») — en max permanent,
@@ -6120,6 +6167,62 @@ const EFFORTS = [
    shim (repli « medium » si localStorage vide). */
 const EFFORT_DEFAUT = 'medium';
 let effortChoisi = EFFORT_DEFAUT;
+
+/* ---------- Effort PAR MODÈLE (cas par cas) ----------
+   Relevés du banc d'essai 2026-10-05 (19 modèles openrouter free,
+   prompt three.js aquatique, effort max) :
+   - effort max sur petit modèle = raisonnement qui mange le budget et
+     retarde le TTFB (lfm 2,6 B : « max » inutile, « low » suffit) ;
+   - raisonner gratuit sous-performant : « high » produit déjà des
+     réponses complètes là où « max » reste bloqué (ultra-550b) ;
+   - « max » gardé là où il paie réellement (nano, lightning, qwen) ;
+   - modèles sans `efforts` déclarés : effort sans effet (bouton grisé
+     côté HUD — voir majBadgeEffort). */
+const EFFORT_MODELES = {
+  'openrouter:liquid/lfm-2.5-2.6b:free': 'low',
+  'openrouter:google/gemma-4-31b-it:free': 'high',
+  'openrouter:google/gemma-4-26b-a4b-it:free': 'high',
+  'openrouter:qwen/qwen3.8-27b:free': 'max',
+  'openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 'max',
+  'openrouter:nvidia/nemotron-3.5-lightning:free': 'max',
+  'openrouter:nvidia/nemotron-3-super-120b-a12b:free': 'high',
+  'openrouter:nvidia/nemotron-3-ultra-550b-a55b:free': 'high',
+  'openrouter:poolside/laguna-s-2.1:free': 'high',
+  'openrouter:poolside/laguna-xs-2.1:free': 'high',
+  'openrouter:inclusionai/ling-3.1-flash': 'high',
+  'openrouter:apodex/apodex-1.1-mini:free': 'medium',
+  'openrouter:stealth/space-bunny-alpha': 'high',
+};
+/* Persistance par modèle : le choix manuel de l'utilisateur prime sur la
+   recommandation et survit aux allers-retours auto ↔ modèle. */
+const CLE_EFFORT_MODELE = 'athena_effort_modele';
+function effortPourModele(id) {
+  if (!id) return null;
+  try {
+    const v = localStorage.getItem(CLE_EFFORT_MODELE + ':' + id);
+    if (typeof v === 'string' && EFFORTS.some((e) => e.v === v)) return v;
+  } catch { /* stockage optionnel */ }
+  return EFFORT_MODELES[id] || null;
+}
+/* Appliqué au changement de modèle (itemModeleHud) et à l'init. */
+function appliquerEffortModele() {
+  const v = modeleChoisi && !modeleChoisi.local ? effortPourModele(modeleChoisi.id) : null;
+  if (v && v !== effortChoisi) {
+    effortChoisi = v;
+    majBadgeEffort();
+    try { rendreHudEffort(); } catch { /* panneau fermé */ }
+  } else if (!modeleChoisi) {
+    /* retour en auto : le défaut global reprend la main. */
+    try {
+      const g = localStorage.getItem(CLE_EFFORT);
+      if (typeof g === 'string' && EFFORTS.some((e) => e.v === g) && g !== effortChoisi) {
+        effortChoisi = g;
+        majBadgeEffort();
+        try { rendreHudEffort(); } catch {}
+      }
+    } catch { /* stockage optionnel */ }
+  }
+}
 
 try {
   const brutEffort = localStorage.getItem(CLE_EFFORT);
@@ -6239,6 +6342,10 @@ function itemModeleHud(m, selectionCourante) {
       modeleChoisi = { id: m.id, name: m.name || m.id, local: m.local === true };
       try { localStorage.setItem(CLE_MODELE, JSON.stringify(modeleChoisi)); } catch { /* stockage optionnel */ }
     }
+    /* Effort cas par cas : effort mémorisé du modèle, sinon recommandation,
+       sinon maintien du réglage courant (auto : défaut global). PROTECTEUR :
+       une exception ici ne doit jamais empêcher majBadgeModele/fermerHud. */
+    try { appliquerEffortModele(); } catch { /* effort best-effort */ }
     majBadgeModele();
     fermerHud();
   });
@@ -6265,8 +6372,12 @@ function rendreHud(modeles, dispo) {
   panneau.appendChild(titreActif);
   panneau.appendChild(itemModeleHud({ id: 'auto', name: 'auto (sans relais)', provider: 'meilleur dispo, un seul essai', up: true, local: false, active: false }, selectionCourante));
 
-  const cloud = modeles.filter((m) => !m.local);
-  const locaux = modeles.filter((m) => m.local);
+  /* chat:false (garde, traduction) = jamais un modèle de conversation —
+     retirés du HUD (sélection morte = réponse « flemmard » instantanée).
+     Un ancien choix mémorisé reste visible (sinon sélection fantôme). */
+  const visible = (m) => m.chat !== false || (modeleChoisi && m.id === modeleChoisi.id);
+  const cloud = modeles.filter((m) => !m.local && visible(m));
+  const locaux = modeles.filter((m) => m.local && visible(m));
   if (cloud.length) {
     const titreCloud = document.createElement('div');
     titreCloud.className = 'hud-section-titre';
@@ -6329,6 +6440,11 @@ async function chargerModelesHud(rafraichir = false) {
   const panneau = document.getElementById('hud-modeles');
   if (!bouton || !panneau) return;
   majBadgeModele();
+  /* Modèle restauré depuis localStorage : effort cas par cas ré-appliqué
+     dès le chargement (sinon un vieux réglage global perdurait). DANS L'ORDRE
+     des listeners : le try/catch garantit que l'abonnement au clic du bouton
+     modèle (ci-dessous) est TOUJOURS posé, quoi qu'il arrive à l'effort. */
+  try { appliquerEffortModele(); } catch { /* effort best-effort */ }
   bouton.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!panneau.hidden) { fermerHud(); return; }
@@ -6377,8 +6493,10 @@ function majBadgeEffort() {
       && !String(modeleChoisi.id).startsWith('nvidia:')
       && !(Array.isArray(eff) && eff.length);
     bouton.disabled = sansEffet;
+    const reco = modeleChoisi && !modeleChoisi.local ? EFFORT_MODELES[modeleChoisi.id] : null;
     bouton.title = `Effort de raisonnement : ${effortChoisi} — ${courant ? courant.aide : ''} (clic pour changer)`
-      + (sansEffet ? ' — sans effet sur ce modèle' : '');
+      + (sansEffet ? ' — sans effet sur ce modèle' : '')
+      + (reco ? ` — recommandé pour ${modeleChoisi.name} : ${reco}` : '');
   }
 }
 
@@ -6417,6 +6535,11 @@ function itemEffortHud(e) {
     ev.stopPropagation();
     effortChoisi = e.v;
     try { localStorage.setItem(CLE_EFFORT, e.v); } catch { /* stockage optionnel */ }
+    /* Cas par cas : mémorisé AUSSI pour le modèle courant — le retour sur
+       ce modèle ré-applique ce choix (plutôt que la recommandation). */
+    if (modeleChoisi && !modeleChoisi.local) {
+      try { localStorage.setItem(CLE_EFFORT_MODELE + ':' + modeleChoisi.id, e.v); } catch { /* stockage optionnel */ }
+    }
     majBadgeEffort();
     fermerHudEffort();
   });
@@ -6434,7 +6557,7 @@ function rendreHudEffort() {
   for (const e of EFFORTS) panneau.appendChild(itemEffortHud(e));
   const note = document.createElement('div');
   note.className = 'hud-note';
-  note.textContent = 'Envoyé en reasoning_effort (payload NVIDIA) — repli automatique si le modèle refuse la valeur (ex. kimi-k3 : medium → low).';
+  note.textContent = 'Cas par cas : recommandation par modèle au changement, choix manuel mémorisé par modèle. Sans effet sur les modèles qui n’annoncent pas `efforts`.';
   panneau.appendChild(note);
 }
 
@@ -7826,3 +7949,425 @@ function ouvrirHudNavigateur() {
 appliquerPreferences();
 ajusterSaisie();
 ouvrirConversation(idConversation);
+
+/* ============================================================
+   Menu « / » — skills du moteur + commande /mcp (serveurs MCP)
+   ============================================================
+   • « / » en début de saisie → liste des skills (/api/skills) filtrable ;
+     ↑ ↓ naviguent, Entrée/Tab valident, Échap ferme ;
+   • le skill choisi part dans le champ `skill` de /api/chat (le sidecar
+     le force au routage) et reste visible en pastille au-dessus du
+     composeur, jusqu'à l'envoi ;
+   • « /mcp » ouvre l'inventaire des serveurs MCP branchés (état + outils) ;
+     un outil clique → insertion de mcp(serveur.outil) dans la saisie.
+   ============================================================ */
+
+let skillsDispo = null;        /* null = pas encore chargé, [] = indispo */
+let skillsEnCours = null;      /* promesse de chargement en vol */
+let skillForce = null;         /* id du skill transmis à /api/chat */
+let menuSkillsEl = null;
+let panneauMcpEl = null;
+let chipSkillEl = null;
+let menuLignes = [];           /* éléments navigables du menu (ordre ↑↓) */
+let indexSkillActif = -1;
+
+function chargerSkills() {
+  if (Array.isArray(skillsDispo)) return Promise.resolve(skillsDispo);
+  if (skillsEnCours) return skillsEnCours;
+  skillsEnCours = fetch('/api/skills', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      skillsDispo = (d && Array.isArray(d.skills))
+        ? d.skills.filter((s) => s && typeof s.nom === 'string' && s.nom)
+        : [];
+      return skillsDispo;
+    })
+    .catch(() => { skillsDispo = []; return skillsDispo; })
+    .finally(() => { skillsEnCours = null; });
+  return skillsEnCours;
+}
+
+/* Carte du composeur : overflow-y:auto (défilement du textarea) → les
+   enfants absolus y sont CLIPPÉS. Le menu et le panel MCP passent donc en
+   position fixe, ancrés sur le rect de la carte (la sortie de clipping). */
+function placerFigeAuDessus(el) {
+  if (!el) return;
+  const carte = document.querySelector('.composeur-carte');
+  if (!carte) return;
+  const r = carte.getBoundingClientRect();
+  el.style.position = 'fixed';
+  el.style.top = 'auto';
+  el.style.bottom = Math.max(8, Math.round(window.innerHeight - r.top + 8)) + 'px';
+  el.style.left = Math.round(Math.max(8, r.left)) + 'px';
+  el.style.right = 'auto';
+}
+
+function menuSkills() {
+  if (menuSkillsEl) return menuSkillsEl;
+  const carte = document.querySelector('.composeur-carte');
+  if (!carte) return null;
+  menuSkillsEl = document.createElement('div');
+  menuSkillsEl.id = 'menu-skills';
+  menuSkillsEl.className = 'menu-skills';
+  menuSkillsEl.hidden = true;
+  menuSkillsEl.setAttribute('role', 'listbox');
+  menuSkillsEl.setAttribute('aria-label', 'Skills du moteur');
+  carte.appendChild(menuSkillsEl);
+  return menuSkillsEl;
+}
+
+function menuOuvert() {
+  return Boolean(menuSkillsEl && !menuSkillsEl.hidden);
+}
+
+function fermerMenuSkills() {
+  if (!menuSkillsEl) return;
+  menuSkillsEl.hidden = true;
+  indexSkillActif = -1;
+  menuLignes = [];
+}
+
+function nouvelleLigneSkill(entree, position) {
+  const item = document.createElement('div');
+  item.className = 'menu-skill';
+  item.setAttribute('role', 'option');
+  item.dataset.index = String(position);
+  const nom = document.createElement('div');
+  nom.className = 'menu-skill-nom';
+  const slash = document.createElement('span');
+  slash.className = 'slash';
+  slash.textContent = '/';
+  nom.appendChild(slash);
+  nom.appendChild(document.createTextNode(entree.nom));
+  const desc = document.createElement('div');
+  desc.className = 'menu-skill-desc';
+  desc.textContent = entree.description || '';
+  item.append(nom, desc);
+  item.addEventListener('mousedown', (e) => e.preventDefault()); /* garde le focus */
+  item.addEventListener('click', () => choisirEntreeMenu(position));
+  return item;
+}
+
+function rendreMenuSkills(requete) {
+  const menu = menuSkills();
+  if (!menu) return;
+  const q = String(requete || '').trim().toLowerCase();
+  menuLignes = [];
+  menu.textContent = '';
+
+  if (!Array.isArray(skillsDispo)) {
+    const chargement = document.createElement('div');
+    chargement.className = 'menu-skill-vide';
+    chargement.textContent = 'Chargement des skills du moteur…';
+    menu.appendChild(chargement);
+    chargerSkills().then(() => {
+      if (menuOuvert()) rendreMenuSkills(saisieEl.value.slice(1));
+    });
+    return;
+  }
+
+  const correspond = (nom, description) => !q
+    || String(nom).toLowerCase().includes(q)
+    || String(description || '').toLowerCase().includes(q);
+  /* Pertinence : le NOM prime sur la description (sinon « /browser-rendu »
+     ressortait en premier goal-longue-tache, dont la description cite
+     « browser-rendu » — Entrée validait alors le MAUVAIS skill). */
+  const pertinence = (nom) => {
+    const n = String(nom).toLowerCase();
+    if (!q) return 3;
+    if (n === q) return 0;
+    if (n.startsWith(q)) return 1;
+    if (n.includes(q)) return 2;
+    return 3; /* correspondance sur la description seule */
+  };
+
+  const commandes = [{ nom: 'mcp', description: 'Serveurs MCP branchés : liste des serveurs et de leurs outils' }]
+    .filter((c) => correspond(c.nom, c.description))
+    .sort((a, b) => pertinence(a.nom) - pertinence(b.nom));
+  const skills = skillsDispo
+    .filter((s) => correspond(s.nom, s.description))
+    .map((s) => ({ nom: s.nom, description: s.description || '' }))
+    .sort((a, b) => pertinence(a.nom) - pertinence(b.nom));
+
+  commandes.forEach((c) => menuLignes.push({ type: 'commande', ...c }));
+  skills.forEach((s) => menuLignes.push({ type: 'skill', ...s }));
+
+  if (menuLignes.length === 0) {
+    const vide = document.createElement('div');
+    vide.className = 'menu-skill-vide';
+    vide.textContent = skillsDispo.length
+      ? 'Aucun skill ne correspond à « ' + q + ' ».'
+      : 'Aucun skill disponible (moteur injoignable ?).';
+    menu.appendChild(vide);
+    indexSkillActif = -1;
+    return;
+  }
+  menuLignes.forEach((entree, i) => menu.appendChild(nouvelleLigneSkill(entree, i)));
+  indexSkillActif = Math.min(Math.max(indexSkillActif, 0), menuLignes.length - 1);
+  majLigneActive();
+}
+
+function majLigneActive() {
+  if (!menuSkillsEl) return;
+  Array.from(menuSkillsEl.children).forEach((el, i) => {
+    el.classList.toggle('actif', i === indexSkillActif);
+    if (i === indexSkillActif) el.setAttribute('aria-selected', 'true');
+    else el.removeAttribute('aria-selected');
+  });
+  const actif = menuSkillsEl.children[indexSkillActif];
+  if (actif && actif.scrollIntoView) actif.scrollIntoView({ block: 'nearest' });
+}
+
+function choisirEntreeMenu(position) {
+  const entree = menuLignes[position];
+  if (!entree) return;
+  if (entree.type === 'commande' && entree.nom === 'mcp') {
+    saisieEl.value = '';
+    ajusterSaisie(); majBouton(); majCompteurSaisie();
+    fermerMenuSkills();
+    ouvrirPanneauMcp();
+    saisieEl.focus();
+    return;
+  }
+  skillForce = entree.nom;
+  majChipSkill();
+  saisieEl.value = '';
+  ajusterSaisie(); majBouton(); majCompteurSaisie();
+  fermerMenuSkills();
+  saisieEl.focus();
+}
+
+/* true = la touche a été consommée par le menu (l'écouteur saisie s'arrête). */
+function gererToucheMenu(e) {
+  if (!menuOuvert()) return false;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (menuLignes.length) {
+      indexSkillActif = (indexSkillActif + 1) % menuLignes.length;
+      majLigneActive();
+    }
+    return true;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (menuLignes.length) {
+      indexSkillActif = (indexSkillActif - 1 + menuLignes.length) % menuLignes.length;
+      majLigneActive();
+    }
+    return true;
+  }
+  if (e.key === 'Enter' || e.key === 'Tab') {
+    if (indexSkillActif >= 0 && menuLignes[indexSkillActif]) {
+      e.preventDefault();
+      choisirEntreeMenu(indexSkillActif);
+      return true;
+    }
+    fermerMenuSkills();
+    return false;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    fermerMenuSkills();
+    return true;
+  }
+  return false;
+}
+
+function gererMenuSkills() {
+  const v = saisieEl.value;
+  if (v.startsWith('/')) {
+    const menu = menuSkills();
+    if (!menu) return;
+    if (menu.hidden) {
+      menu.hidden = false;
+      placerFigeAuDessus(menu);
+      indexSkillActif = 0;
+    }
+    rendreMenuSkills(v.slice(1));
+  } else {
+    fermerMenuSkills();
+  }
+}
+
+/* ------------------------------------------------ pastille du skill actif */
+function majChipSkill() {
+  const carte = document.querySelector('.composeur-carte');
+  if (!carte) return;
+  if (!chipSkillEl) {
+    chipSkillEl = document.createElement('div');
+    chipSkillEl.className = 'chip-skill';
+    chipSkillEl.hidden = true;
+    const nom = document.createElement('span');
+    nom.className = 'chip-skill-nom';
+    const fermer = document.createElement('button');
+    fermer.type = 'button';
+    fermer.className = 'chip-skill-fermer';
+    fermer.setAttribute('aria-label', 'Retirer le skill');
+    fermer.title = 'Retirer le skill';
+    fermer.textContent = '×';
+    fermer.addEventListener('click', () => {
+      skillForce = null;
+      majChipSkill();
+      saisieEl.focus();
+    });
+    chipSkillEl.append(nom, fermer);
+    carte.parentElement.insertBefore(chipSkillEl, carte);
+  }
+  chipSkillEl.hidden = !skillForce;
+  if (skillForce) {
+    const nom = chipSkillEl.querySelector('.chip-skill-nom');
+    if (nom) nom.textContent = 'Skill : ' + skillForce;
+    const info = skillsDispo && skillsDispo.find((s) => s.nom === skillForce);
+    chipSkillEl.title = (info && info.description)
+      ? info.description
+      : 'Skill forcé pour le prochain message';
+  }
+}
+
+/* ------------------------------------------------ panneau /mcp (inventaire) */
+function ouvrirPanneauMcp() {
+  const carte = document.querySelector('.composeur-carte');
+  if (!carte) return;
+  if (!panneauMcpEl) {
+    panneauMcpEl = document.createElement('div');
+    panneauMcpEl.id = 'panneau-mcp';
+    panneauMcpEl.className = 'panneau-mcp';
+    panneauMcpEl.hidden = true;
+    panneauMcpEl.setAttribute('role', 'dialog');
+    panneauMcpEl.setAttribute('aria-label', 'Serveurs MCP branchés');
+    carte.appendChild(panneauMcpEl);
+  }
+  panneauMcpEl.hidden = false;
+  placerFigeAuDessus(panneauMcpEl);
+  fermerMenuSkills();
+  rendrePanneauMcp(null);
+  fetch('/api/mcp', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((vue) => rendrePanneauMcp(vue))
+    .catch(() => rendrePanneauMcp(null, true));
+}
+
+function fermerPanneauMcp() {
+  if (panneauMcpEl) panneauMcpEl.hidden = true;
+}
+
+function ligneMessagePanneau(texte) {
+  const vide = document.createElement('div');
+  vide.className = 'panneau-mcp-vide';
+  vide.textContent = texte;
+  return vide;
+}
+
+function rendrePanneauMcp(vue, echec = false) {
+  if (!panneauMcpEl) return;
+  panneauMcpEl.textContent = '';
+
+  const entete = document.createElement('div');
+  entete.className = 'panneau-mcp-entete';
+  const titre = document.createElement('strong');
+  titre.textContent = 'Serveurs MCP branchés';
+  const fermer = document.createElement('button');
+  fermer.type = 'button';
+  fermer.className = 'panneau-mcp-fermer';
+  fermer.setAttribute('aria-label', 'Fermer');
+  fermer.title = 'Fermer (Échap)';
+  fermer.textContent = '×';
+  fermer.addEventListener('click', () => { fermerPanneauMcp(); saisieEl.focus(); });
+  entete.append(titre, fermer);
+  panneauMcpEl.appendChild(entete);
+
+  if (echec) {
+    panneauMcpEl.appendChild(ligneMessagePanneau('Inventaire MCP injoignable — réessayez dans un instant.'));
+    return;
+  }
+  if (!vue) {
+    panneauMcpEl.appendChild(ligneMessagePanneau('Connexion aux serveurs… (premier appel : ~10 s)'));
+    return;
+  }
+  if (vue.dispo === false || !Array.isArray(vue.serveurs) || vue.serveurs.length === 0) {
+    panneauMcpEl.appendChild(ligneMessagePanneau(
+      'Aucun serveur MCP connecté — configurez mini-services/llm-chat/mcp.json.'));
+    return;
+  }
+  vue.serveurs.forEach((serveur) => {
+    const bloc = document.createElement('div');
+    bloc.className = 'panneau-mcp-serveur';
+    const ligne = document.createElement('div');
+    ligne.className = 'panneau-mcp-ligne';
+    const nom = document.createElement('span');
+    nom.className = 'panneau-mcp-nom';
+    nom.textContent = serveur.nom;
+    const etat = document.createElement('span');
+    etat.className = 'panneau-mcp-etat etat-' + String(serveur.etat || 'inconnu');
+    etat.textContent = serveur.etat === 'connecte'
+      ? (serveur.nombre_outils + ' outil' + (serveur.nombre_outils > 1 ? 's' : ''))
+      : (serveur.etat || 'inconnu');
+    ligne.append(nom, etat);
+    bloc.appendChild(ligne);
+    if (serveur.erreur) {
+      const cause = document.createElement('div');
+      cause.className = 'panneau-mcp-erreur';
+      cause.textContent = serveur.erreur;
+      bloc.appendChild(cause);
+    }
+    if (Array.isArray(serveur.outils) && serveur.outils.length) {
+      const outils = document.createElement('div');
+      outils.className = 'panneau-mcp-outils';
+      serveur.outils.forEach((o) => {
+        const bouton = document.createElement('button');
+        bouton.type = 'button';
+        bouton.className = 'panneau-mcp-outil';
+        bouton.textContent = o.nom;
+        bouton.title = (o.description || o.nom) + (o.parametres && o.parametres.length
+          ? '\nParamètres : ' + o.parametres.join(', ') : '');
+        bouton.addEventListener('click', () => insererAppelMcp(serveur.nom, o.nom));
+        outils.appendChild(bouton);
+      });
+      bloc.appendChild(outils);
+    }
+    panneauMcpEl.appendChild(bloc);
+  });
+}
+
+function insererAppelMcp(serveur, outil) {
+  skillForce = 'mcp-appel';
+  majChipSkill();
+  saisieEl.value = 'mcp(' + serveur + '.' + outil + ') ';
+  saisieEl.focus();
+  saisieEl.setSelectionRange(saisieEl.value.length, saisieEl.value.length);
+  ajusterSaisie(); majBouton(); majCompteurSaisie();
+  fermerPanneauMcp();
+}
+
+/* Clic extérieur : on ferme les deux surbrances. */
+document.addEventListener('click', (e) => {
+  const cible = e.target;
+  if (!(cible instanceof Node)) return;
+  if (menuOuvert() && menuSkillsEl && !menuSkillsEl.contains(cible) && !saisieEl.contains(cible)) {
+    fermerMenuSkills();
+  }
+  if (panneauMcpEl && !panneauMcpEl.hidden
+      && !panneauMcpEl.contains(cible) && !saisieEl.contains(cible)) {
+    fermerPanneauMcp();
+  }
+});
+
+/* Échap global : le panneau /mcp d'abord, sinon le menu /. */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (panneauMcpEl && !panneauMcpEl.hidden) {
+    fermerPanneauMcp();
+    saisieEl.focus();
+    return;
+  }
+  if (menuOuvert()) fermerMenuSkills();
+});
+
+/* Re-ancrage fixe après redimensionnement (position:fixed calculée en px). */
+window.addEventListener('resize', () => {
+  if (menuSkillsEl && !menuSkillsEl.hidden) placerFigeAuDessus(menuSkillsEl);
+  if (panneauMcpEl && !panneauMcpEl.hidden) placerFigeAuDessus(panneauMcpEl);
+});
+
+/* Préchargement discret du registre de skills (le premier « / » est instantané). */
+setTimeout(() => { chargerSkills(); }, 4000);

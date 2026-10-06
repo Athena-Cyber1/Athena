@@ -53,6 +53,14 @@ MOTIFS = {
 
 def classifier(question: str) -> str:
     q = question.lower()
+    # v20261005 (MCP) — appel d'outil explicite : « mcp(roblox.execute_luau)
+    # {…} » est une requête d'OUTIL, pas une question. Sans cette garde, les
+    # motifs MATH/CODE (« 7*6 » dans les arguments) routaient en MATH, le
+    # critic exigeait solveur_math et le cran terminal rejetait le résultat
+    # pourtant SUPPORTED de mcp_appel — la réponse affichait un refus de
+    # calcul au lieu du résultat du serveur.
+    if _RE_APPEL_MCP.search(question):
+        return "FACTUEL"
     # v10.8 (Classe 1 du benchmark) — intention DÉFINITION de code : la question
     # PARLE d'une fonction (« que fait print() ? », « à quoi sert len() ? »)
     # sans en CONTENIR le corps → question de connaissance, pas de simulation.
@@ -64,6 +72,10 @@ def classifier(question: str) -> str:
         if any(re.search(m, q) for m in motifs):
             return type_tache
     return "CONVERSATIONNEL"
+
+
+# v20261005 — appel MCP explicite : mcp(serveur.outil) avec séparateur . ou :
+_RE_APPEL_MCP = re.compile(r"\bmcp\s*\(\s*[A-Za-z0-9_-]{2,60}\s*[.:]", re.IGNORECASE)
 
 
 # v10.8 — intention définitionnelle (parle D'UNE fonction sans montrer de code)

@@ -215,6 +215,14 @@ def verifier_par_sous_agent(state: AgentState, projet_reponse: str) -> dict[str,
             continue
         entree = {"claim_id": c.id, "avis": v["avis"], "raison": v["raison"],
                   "texte": c.texte, "statut_avant": c.statut, "statut_apres": c.statut}
+        if str(c.source or "").startswith("mcp:"):
+            # v20261005 (MCP) — constat côté serveur externe : le sous-agent
+            # n'a aucun accès au serveur, son avis ne peut être que consultatif
+            # et ne doit JAMAIS produire une caution « point douteux non
+            # corroboré » sur le résultat lui-même (le serveur fait foi de son
+            # propre état, comme la règle « l'outil reste l'autorité »).
+            rapport["consultatifs"] += 1
+            continue
         if _est_claim_outil(c):
             # l'outil fait foi : on consigne l'écart, on ne touche pas au statut
             if v["avis"] == "CONTRADIT":

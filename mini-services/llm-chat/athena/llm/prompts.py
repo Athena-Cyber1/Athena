@@ -82,15 +82,51 @@ OUTILS_POSTE = (
 )
 
 
-def prompt_explication(type_tache: str, question: str, observations: str) -> list[dict[str, str]]:
-    """Explication à partir d'observations VÉRIFIÉES — le nombre/outil fait foi."""
+def _bloc_fil(fil_recent: str, anaphore: bool = False) -> str:
+    """Bloc FIL RÉCENT partagé par la rédaction ET l'explication.
+
+    v1.2 (contexte) : le bloc n'était construit QUE pour prompt_redaction —
+    les chemins MATH / CODE / LINGUISTIQUE / DEVINETTE (prompt_explication)
+    ne recevaient JAMAIS le fil, donc un skill forcé sur ces types faisait
+    perdre toute la conversation au modèle (« quel est mon prénom ? » →
+    « inconnu » alors que l'UI affiche bien les tours précédents)."""
+    if not fil_recent:
+        return ""
+    bloc = (
+        "FIL RÉCENT (contexte INDICATIF — il peut être sans rapport avec la question : "
+        "il sert uniquement à comprendre les reprises comme « ce sujet », « son auteur ». "
+        "Il ne restreint PAS ta réponse et ne justifie JAMAIS un refus) :\n"
+        f"{fil_recent}\n\n"
+    )
+    if anaphore:
+        bloc += (
+            "RÉSOLUTION D'ANAPHORE : la question reprend un élément du fil par un pronom "
+            "(« son », « ce », « cette », « lui »…). D'abord, identifie dans le fil le SUJET "
+            "dont elle parle (l'antécédent) ; ensuite, explicite-le en début de réponse "
+            "(« Vous parlez de X ») ; enfin, réponds à la question complète portant sur X. "
+            "Ne réponds jamais au seul libellé de la question en ignorant l'antécédent.\n\n"
+        )
+    return bloc
+
+
+def prompt_explication(type_tache: str, question: str, observations: str,
+                       fil_recent: str = "", anaphore: bool = False) -> list[dict[str, str]]:
+    """Explication à partir d'observations VÉRIFIÉES — le nombre/outil fait foi.
+
+    fil_recent / anaphore : même FIL RÉCENT INDICATIF que prompt_redaction
+    (v1.2, contexte) — sinon ce chemin perd la conversation courante."""
+    bloc_fil = _bloc_fil(fil_recent, anaphore)
     return [
         {"role": "system", "content": SYS_NOYAU},
         {"role": "user", "content":
+            f"{bloc_fil}"
             f"Tâche : {type_tache}\nQuestion : {question}\n\n"
             f"OBSERVATIONS VÉRIFIÉES (autorité absolue, ne modifie JAMAIS ces résultats) :\n{observations}\n\n"
-            "Rédige une explication claire en français (4 à 8 phrases) qui s'appuie STRICTEMENT sur ces "
-            "observations. Réponds d'abord par la réponse courte en gras, puis explique. "
+            "Rédige une explication claire en français qui s'appuie STRICTEMENT sur ces "
+            "observations. Détaille autant que la question le demande : jamais de résumé "
+            "hâtif, jamais de point demandé sauté (une question large mérite une réponse "
+            "complète, une question courte reste courte). "
+            "Réponds d'abord par la réponse courte en gras, puis explique. "
             "Si une information manque pour aller plus loin, dis-le explicitement."
             + OUTILS_POSTE},
     ]
@@ -132,22 +168,7 @@ def prompt_redaction(contexte: str, question: str,
             "Marque simplement ton incertitude sur les détails précis (chiffre exact, date, citation, "
             "version) en les présentant comme indicatifs. N'invente jamais un fait précis ni une source."
         )
-    bloc_fil = ""
-    if fil_recent:
-        bloc_fil = (
-            "FIL RÉCENT (contexte INDICATIF — il peut être sans rapport avec la question : "
-            "il sert uniquement à comprendre les reprises comme « ce sujet », « son auteur ». "
-            "Il ne restreint PAS ta réponse et ne justifie JAMAIS un refus) :\n"
-            f"{fil_recent}\n\n"
-        )
-        if anaphore:
-            bloc_fil += (
-                "RÉSOLUTION D'ANAPHORE : la question reprend un élément du fil par un pronom "
-                "(« son », « ce », « cette », « lui »…). D'abord, identifie dans le fil le SUJET "
-                "dont elle parle (l'antécédent) ; ensuite, explicite-le en début de réponse "
-                "(« Vous parlez de X ») ; enfin, réponds à la question complète portant sur X. "
-                "Ne réponds jamais au seul libellé de la question en ignorant l'antécédent.\n\n"
-            )
+    bloc_fil = _bloc_fil(fil_recent, anaphore)
     return [
         {"role": "system", "content": SYS_NOYAU},
         {"role": "user", "content":
@@ -155,7 +176,9 @@ def prompt_redaction(contexte: str, question: str,
             f"OBSERVATIONS ET CONTEXTE COLLECTÉS PAR L'APPLICATION :\n{contexte}\n\n"
             f"QUESTION POSÉE : {question}\n\n"
             f"{regle_contexte}\n\n"
-            "Rédige une réponse utile et concise. Distingue clairement faits sourcés (avec source) "
+            "Rédige une réponse utile et COMPLÈTE : détaille autant que la question le "
+            "demande, sans résumé hâtif ni point sauté (la brièveté n'est une qualité "
+            "que si la question est brève). Distingue clairement faits sourcés (avec source) "
             "et hypothèses (marque « hypothèse »)."
             + OUTILS_POSTE},
     ]

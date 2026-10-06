@@ -47,7 +47,8 @@ def llm_refus_puis_hedge(monkeypatch):
 
     # v10.9.4 : le moteur transmet désormais model_id (HUD) — le double de
     # test l'accepte pour suivre le contrat réel de MOTEUR.complete.
-    def complete(msgs, temperature=0.6, max_tokens=1200, model_id=None):
+    # P0 (audit fainéant) : le moteur transmet aussi effort (HUD) — idem.
+    def complete(msgs, temperature=0.6, max_tokens=1200, model_id=None, effort=None):
         dernier = msgs[-1]["content"]
         if "ANTÉCÉDENT" in dernier.upper():
             return {"texte": "Vous parlez d'Athéna : son rôle dans la guerre de Troie "
