@@ -22,6 +22,16 @@ jobs:
         uses: actions/checkout@v4
       - name: Generate publication assets
         run: node tools/prepare-assets.js
+      # §8.4 — tests/CI : contract HTML/ids/UI + intégration local-agent
+      # (auto-start :3020 dans le runner, port libre).
+      - name: Static checks
+        run: node tools/check.js
+      - name: Install dev dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Integration tests (local-agent)
+        run: npm run test:agent
+      - name: Bench (jsdom)
+        run: npm run test:bench
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

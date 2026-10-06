@@ -277,6 +277,15 @@
                 </button>
                 <div id="hud-contexte" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Contexte de la discussion"></div>
               </div>
+              <!-- v banc 20261006 (§3 observabilité) : journal debug — payload,
+                   modèle servi, finish_reason, usage et latence par appel. -->
+              <div class="hud-effort-wrap hud-effort-bas">
+                <button id="btn-journal" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-journal" title="Journal debug : payload, modèle servi, finish_reason, usage et latence par appel">
+                  <span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+                  <span id="journal-actif-nom" class="modele-actif-nom effort-valeur">0</span>
+                </button>
+                <div id="hud-journal" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Journal debug des appels"></div>
+              </div>
             </div>
           </div>
           <input id="fichiers" type="file" multiple hidden aria-hidden="true" tabindex="-1" />

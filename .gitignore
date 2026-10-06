@@ -19,6 +19,9 @@ data/
 .next/
 .DS_Store
 
+# Artefacts de banc (datés, régénérés à chaque run)
+tests/bench-jsdom-baseline.json
+
 # Generated publication assets
 /docs/design/
 /public/design/

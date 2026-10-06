@@ -1347,18 +1347,29 @@ function lireCorps(req, max) {
   const limite = typeof max === 'number' && max > 0 ? max : 8000;
   return new Promise((resolve, reject) => {
     let t = '';
+    /* v1.2 roadmap §8.3 : un client qui envoie lentement (ou jamais finit)
+       laissait le worker bloqué sans limite — 15 s max, timer nettoyé sur
+       fin/erreur/trop-plein. */
+    const tempo = setTimeout(() => {
+      const e = new Error('délai dépassé en lecture du corps (15 s)');
+      e.code = 408;
+      reject(e);
+      req.destroy();
+    }, 15000);
+    const arreter = () => { try { clearTimeout(tempo); } catch (_) {} };
     req.on('data', (c) => {
       t += c;
       if (t.length > limite) {
         /* v20260926d (kimi) : 413 explicite (avant : 500 générique). */
+        arreter();
         const e = new Error('corps trop volumineux');
         e.code = 413;
         reject(e);
         req.destroy();
       }
     });
-    req.on('end', () => resolve(t));
-    req.on('error', reject);
+    req.on('end', () => { arreter(); resolve(t); });
+    req.on('error', (e) => { arreter(); reject(e); });
   });
 }
 
@@ -1465,8 +1476,16 @@ function dansAllowDir(cwd) {
 function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
   return new Promise((resolve) => {
     const shell = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
+    /* v1.2 roadmap §8.3 : PowerShell 5.1 écrit ses flux en IBM850 par défaut →
+       le setEncoding('utf8') de node lit des octets hors-UTF8 : « é » → U+FFFD,
+       CJK/emoji perdus (« ?? »). On force UTF-8 sur les DEUX flux à la SOURCE.
+       La commande affichée aux clients (tickets/SSE) reste celle d'origine,
+       sans ce préfixe technique. */
+    const commandePs = process.platform === 'win32'
+      ? '[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ' + commande
+      : commande;
     const args = process.platform === 'win32'
-      ? ['-NoProfile', '-NonInteractive', '-Command', commande]
+      ? ['-NoProfile', '-NonInteractive', '-Command', commandePs]
       : ['-c', commande];
     const debut = Date.now();
     let sortie = '';
@@ -1481,6 +1500,22 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
     });
     enfantsActifs.add(enfant);
     const oublier = () => { enfantsActifs.delete(enfant); };
+    /* v1.2 roadmap §8.3 : flux TEXTUEL UTF-8 — sinon un caractère multioctet
+       (é, emoji…) peut être coupé à cheval entre deux chunks data : le résultat
+       affichait du mojibake quand la fin d'un caractère tombait à la frontière. */
+    try { enfant.stdout.setEncoding('utf8'); } catch (_) {}
+    try { enfant.stderr.setEncoding('utf8'); } catch (_) {}
+    /* v1.2 roadmap §8.3 : sortie LONGUE — on garde la TÊTE (contexte) ET la
+       QUEUE : c'est souvent en FIN que vit le vrai signal (stacktrace, « ERR »
+       final de npm/pytest) et les MAX_OUT premiers caractères le perdaient. */
+    const emboutir = (acc, morceau) => {
+      const d = String(morceau);
+      if (acc.length + d.length <= MAX_OUT) return acc + d;
+      const moitie = Math.floor(MAX_OUT / 2);
+      const tete = acc.slice(0, moitie);
+      const queue = (acc.slice(moitie) + d).slice(-moitie);
+      return tete + '\n…[sortie tronquée au milieu — début et fin conservés]…\n' + queue;
+    };
     /* v20260926d (kimi) : la déconnexion client en plein flux tue l'arbre
        (sinon le process orphelin tourne jusqu'au timeout). */
     if (capsule) {
@@ -1519,11 +1554,11 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
       try { surDonnees(canal, morceau); } catch (_) {}
     };
     enfant.stdout.on('data', (d) => {
-      if (sortie.length < MAX_OUT) sortie += d;
+      sortie = emboutir(sortie, d);
       diffuser('stdout', d);
     });
     enfant.stderr.on('data', (d) => {
-      if (err.length < MAX_OUT) err += d;
+      err = emboutir(err, d);
       diffuser('stderr', d);
     });
     enfant.on('error', (e) => {
@@ -1764,7 +1799,7 @@ const serveur = http.createServer(async (req, res) => {
          silencieux sur le cwd de l'agent — la commande tournait ailleurs).
          v1.2 : test atomique (pas de TOCTOU existsSync→statSync). */
       if (typeof corps.cwd === 'string' && corps.cwd && !estDossier(corps.cwd)) {
-        json(res, 400, { erreur: 'répertoire inexistant', cwd: String(corps.cwd).slice(0, 200) }, origin, req);
+        json(res, 400, { erreur: 'répertoire inexistant : ' + String(corps.cwd).slice(0, 200), cwd: String(corps.cwd).slice(0, 200) }, origin, req);
         return;
       }
       const cwd = cwdDemande;
@@ -1788,8 +1823,12 @@ const serveur = http.createServer(async (req, res) => {
         const ligne = (o) => { try { res.write(JSON.stringify(o) + '\n'); } catch (_) {} };
         const capsule = {};
         let reponseFinie = false;
-        /* v20260926d : client parti en cours de stream → on tue l'arbre. */
-        req.on('close', () => { if (!reponseFinie && capsule.tuer) { try { capsule.tuer(); } catch (_) {} } });
+        /* v20260926d : client parti en cours de stream → on tue l'arbre.
+           v1.2 roadmap §8.3 : res.on('close') AUSSI (la socket serveur peut
+           se fermer sans que req.close ait été vu — double garde-fou). */
+        const tueSiParti = () => { if (!reponseFinie && capsule.tuer) { try { capsule.tuer(); } catch (_) {} } };
+        req.on('close', tueSiParti);
+        res.on('close', tueSiParti);
         const rf = await executer(commande, cwd, t, (canal, texte) => {
           ligne({ type: 'sortie', canal, texte });
         }, capsule);
@@ -1877,9 +1916,22 @@ const serveur = http.createServer(async (req, res) => {
         base = path.resolve(process.cwd(), dossierDemande);
         confine = true;
         if (ALLOW_DIR && !(base === ALLOW_DIR || base.startsWith(ALLOW_DIR + path.sep))) {
-          json(res, 403, { erreur: 'dossier hors zone autorisée (--allow)', dossier: base }, origin, req);
+          json(res, 403, { erreur: 'dossier hors zone autorisée (--allow) : ' + base, dossier: base }, origin, req);
           return;
         }
+      }
+      /* v1.2 roadmap §8.3 : DENY_WRITE AVANT tout mkdir — le contrôle était
+         posé APRÈS les mkdirSync (dossier + parent) : on CRÉAIT des dossiers
+         embryonnaires dans des zones système, puis on refusait l'écriture.
+         Test précoce sur abs/parent/base ; le contrôle realpath post-mkdir
+         (symlinks) reste en place plus bas. */
+      const abs = path.resolve(base, cheminDemande);
+      const parentT = path.dirname(abs);
+      if (DENY_WRITE.some((re) => re.test(abs) || re.test(parentT) || re.test(base))) {
+        json(res, 403, { erreur: 'écriture bloquée : dossier système — ' + abs, chemin: abs }, origin, req);
+        return;
+      }
+      if (dossierDemande) {
         try {
           fs.mkdirSync(base, { recursive: true });
         } catch (e) {
@@ -1887,7 +1939,6 @@ const serveur = http.createServer(async (req, res) => {
           return;
         }
       }
-      const abs = path.resolve(base, cheminDemande);
       if (confine && !(abs === base || abs.startsWith(base + path.sep))) {
         json(res, 403, { erreur: 'chemin hors du dossier de travail (../ interdit)', chemin: abs }, origin, req);
         return;

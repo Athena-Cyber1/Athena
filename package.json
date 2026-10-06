@@ -1,0 +1,29 @@
+{
+  "name": "athena",
+  "private": true,
+  "version": "10.9.4",
+  "scripts": {
+    "dev": "node tools/prepare-assets.js && next dev -p 3000",
+    "build": "node tools/prepare-assets.js && next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "agent": "node mini-services/local-agent/index.js",
+    "test:agent": "node tests/agent-fixes.test.cjs",
+    "test:bench": "node tests/bench-jsdom.cjs",
+    "sync:assets": "node tools/prepare-assets.js",
+    "check": "node tools/prepare-assets.js && node tools/check.js"
+  },
+  "dependencies": {
+    "next": "^15.3.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "^19.1.2",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.8.3"
+  }
+}

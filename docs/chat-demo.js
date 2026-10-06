@@ -1079,6 +1079,14 @@ function boiteModale({ titre, message, champ = null, labelOk = 'Confirmer', labe
   });
 }
 
+/* ---------- v banc 20261006 — Journal debug (§3 observabilité) ----------
+   window.__athenaDebug : traces par appel (émet le shim, {type:'trace'})
+   + journal des erreurs de cascade ({debug} sur l'événement erreur).
+   dernierTracer : trace du dernier appel, consommée au montage du pied
+   (.voie-modele) pour l'attribut title + data-fin/data-ms. */
+window.__athenaDebug = { traces: [], journal: [] };
+let dernierTracer = null;
+
 /* ---------- v20260922j — Toast sobre (notification non bloquante) ----------
    Une réponse terminée PENDANT que l'utilisateur est ailleurs (autre
    conversation, Paramètres) ne doit ni être injectée dans la mauvaise vue
@@ -4235,6 +4243,9 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   let reponse = '';
   let pensee = '';
   let recu = false;
+  /* v banc 20261006 (§8.2) : combien de blocs <thinking> complets déjà routés
+     vers le panneau (compteur de blocs, pas de jetons). */
+  let nbCoT = 0;
   let flushTimer = null;
   /* v20260926f (kimi, lags) : ce qui est DÉJÀ dans le DOM — on n'ajoute que
      le delta (appendData), jamais de réécriture complète du nœud qui grossit. */
@@ -4293,7 +4304,22 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       /* v1.2 : la réponse affichée est nettoyée AU FIL DE L'EAU — un modèle
          qui balance sa pensée en plein flux ne la montre jamais (sinon on
          voyait « **Thinking:** … » s'écrire sous les yeux). */
-      reponse = nettoyerCoT(reponse + ev.texte);
+      const brut = reponse + ev.texte;
+      reponse = nettoyerCoT(brut);
+      /* v banc 20261006 (§8.2) : ce que nettoyerCoT retire est de la PENSÉE —
+         les blocs <thinking> complets sont routés VERS LE PANNEAU au lieu
+         d'être jetés (les blocs non fermés n'apparaissent qu'au final). */
+      const blocsCoT = brut.match(MOTIF_PAIRE_COT);
+      if (blocsCoT && blocsCoT.length > nbCoT) {
+        const neufs = blocsCoT.slice(nbCoT)
+          .map((b) => b.replace(MOTIF_ETIQUETTE_COT, '').trim())
+          .filter(Boolean);
+        nbCoT = blocsCoT.length;
+        if (neufs.length) {
+          pensee += (pensee ? '\n\n' : '') + neufs.join('\n\n');
+          if (penseeEl) { penseeEl.hidden = false; planifierFlush(); }
+        }
+      }
       if (zone.hidden) zone.hidden = false;
       planifierFlush();
     }
@@ -4431,6 +4457,14 @@ function detailLisible(brut) {
 }
 function humaniserErreur(detail, statut) {
   const brut = String(detail || '').trim();
+  /* v banc 20261006 (§8.2) : réflexion seule sur toute la cascade → dire CE
+     qui s'est passé et la sortie, au lieu du jargon provider (« nvidia :
+     réponse vide (raisonnement seul, sans réponse) »). */
+  if (/raisonnement seul/.test(brut)) {
+    return 'Le modèle n\u2019a pas fini de réfléchir : aucun contenu de réponse '
+      + 'n\u2019a été produit (pensée seule, sans texte). Réessayez avec un effort '
+      + 'plus bas (bouton Effort) ou laissez la cascade changer de modèle.';
+  }
   const lisible = detailLisible(brut);
   const base = {
     400: 'La requête a été refusée par le service.',
@@ -4570,8 +4604,32 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
             if (surProgression) surProgression(ev);
           }
           else if (ev.type === 'jeton') { aRecuEvenement = true; jetonsRecus += 1; if (surJeton) surJeton(ev); }
+          /* v banc 20261006 (§3) : trace d'appel — on la retient (pied de
+             bulle + HUD journal), sans marquer le flux comme « événement »
+             de contenu. */
+          else if (ev.type === 'trace') {
+            dernierTracer = ev.trace || null;
+            if (ev.trace) {
+              try {
+                window.__athenaDebug.traces.push(ev.trace);
+                if (window.__athenaDebug.traces.length > 200) window.__athenaDebug.traces.shift();
+              } catch (_) {}
+              majBadgeJournal();
+            }
+          }
           else if (ev.type === 'final') final = ev;
-          else if (ev.type === 'erreur') erreurFlux = ev.erreur || 'Erreur du pipeline.';
+          else if (ev.type === 'erreur') {
+            erreurFlux = humaniserErreur(ev.erreur) || 'Erreur du pipeline.';
+            /* v banc 20261006 (§3) : journal de cascade (quoi a échoué,
+               dans quel ordre) — rangé, affiché dans le HUD journal. */
+            if (ev.debug && Array.isArray(ev.debug)) {
+              try {
+                ev.debug.forEach((l) => window.__athenaDebug.journal.push(String(l)));
+                if (window.__athenaDebug.journal.length > 100) window.__athenaDebug.journal.splice(0, window.__athenaDebug.journal.length - 100);
+              } catch (_) {}
+              majBadgeJournal();
+            }
+          }
         } catch { /* ligne partielle -> ignorée */ }
       };
       for (;;) {
@@ -5326,13 +5384,37 @@ async function genererReponse(convo, opts) {
         }
         /* v1.2 (anti-bâclage) : réponse coupée par le budget (finish length) —
            badge persistant dans la bulle + toast : ce n'est pas le modèle qui
-           bâcle, c'est la limite. Demandez la suite ou raccourcissez la demande. */
+           bâcle, c'est la limite. v banc 20261006 (§8.2) : le bouton
+           « Continuer » envoie « continue » et la suite s'écrit DANS LA MÊME
+           bulle (mécanique suiteDe déjà en place pour l'exec). */
         if (r.tronquee) {
           const badge = document.createElement('div');
           badge.className = 'coupe-badge';
-          badge.textContent = 'Réponse coupée par la limite du modèle — demandez la suite.';
+          badge.textContent = 'Réponse coupée par la limite du modèle.';
+          const btnCont = document.createElement('button');
+          btnCont.type = 'button';
+          btnCont.className = 'coupe-continue';
+          btnCont.textContent = 'Continuer';
+          btnCont.title = 'Renvoyer « continue » — la suite s\'écrit dans la même bulle.';
+          btnCont.addEventListener('click', () => {
+            if (occupe) { notifier('Une réponse est déjà en cours.'); return; }
+            btnCont.disabled = true;
+            occupe = true;
+            majBoutonArret();
+            convo.messages.push({
+              role: 'user',
+              content: 'Continue exactement là où ta dernière réponse s\'est arrêtée. '
+                + 'Reprends sans répéter ce qui a déjà été écrit.',
+            });
+            convo.maj = Date.now();
+            try { rendreConversations(); sauverConversations(); } catch (_) {}
+            const partagee = conteneurTour && conteneurTour.closest
+              ? (conteneurTour.closest('.bubble') || conteneurTour) : conteneurTour;
+            genererReponse(convo, partagee ? { suiteDe: partagee } : undefined).catch(() => {});
+          });
+          badge.appendChild(btnCont);
           conteneurTour.appendChild(badge);
-          notifier('Réponse coupée par la limite du modèle (pas un bâclage).');
+          notifier('Réponse coupée par la limite (pas un bâclage) — bouton « Continuer » disponible.');
         }
         /* v1.2 (anti-bâclage, item 10) : voie réellement servie — discret,
            sous la réponse (ni provider techniques, juste le modèle). */
@@ -5346,6 +5428,23 @@ async function genererReponse(convo, opts) {
              CDN » dans le corps de la réponse). */
           voie.setAttribute('data-voie', r.model || r.provider || '');
           if (r.modele_repli) voie.setAttribute('data-repli', '1');
+          /* v banc 20261006 (§3) : la trace arrive AVANT le final — on
+             consomme ici : modèle servi, fin, tokens (dont raisonnement),
+             latence et max_tokens envoyés, au survol du « via ». */
+          if (dernierTracer) {
+            try {
+              const tr = dernierTracer;
+              const u = tr.usage;
+              voie.setAttribute('data-fin', tr.fin || '');
+              voie.setAttribute('data-ms', String(tr.ms || 0));
+              voie.title = 'Debug : ' + (tr.servi || '?')
+                + (tr.fin ? ' · fin=' + tr.fin : '')
+                + (u ? ' · prompt ' + u.prompt + ' / complet ' + u.complet + ' (dont raisonnement ' + u.raison + ')' : '')
+                + ' · ' + (Math.round((tr.ms || 0) / 100) / 10) + ' s'
+                + (tr.payload && tr.payload.max_tokens ? ' · max_tokens ' + tr.payload.max_tokens : '');
+            } catch (_) {}
+            dernierTracer = null;
+          }
           conteneurTour.appendChild(voie);
         }
         /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
@@ -6296,6 +6395,7 @@ function fermerHud() {
   fermerHudEffort();
   fermerHudTemp();
   fermerHudContexte();
+  fermerHudJournal();
   /* Le navigateur est un HUD DOCKÉ (comme le rendu) : il ne ferme pas au clic
      extérieur, sinon on ne pourrait plus cliquer la conversation en naviguant.
      Il se ferme par son bouton, le bouton d'en-tête, ou Échap. */
@@ -6739,6 +6839,100 @@ function rendreHudContexte() {
   });
   panneau.addEventListener('click', (e) => e.stopPropagation());
   setInterval(() => { try { majBadgeContexte(); } catch (_) {} }, 5000);
+})();
+
+/* ---------- v banc 20261006 — HUD journal debug (§3) ----------
+   Bouton en pied du composeur : dernière trace (modèle servi, fin, usage,
+   latence, payload) + journal des erreurs de cascade. Tout reste local. */
+function majBadgeJournal() {
+  const el = document.getElementById('journal-actif-nom');
+  if (!el) return;
+  const dbg = window.__athenaDebug || { traces: [], journal: [] };
+  const errN = dbg.journal.length;
+  el.textContent = String(dbg.traces.length);
+  const bouton = document.getElementById('btn-journal');
+  if (bouton) bouton.title = 'Journal debug : ' + dbg.traces.length + ' appel'
+    + (dbg.traces.length > 1 ? 's' : '')
+    + (errN ? ' · ' + errN + ' erreur' + (errN > 1 ? 's' : '') + ' de cascade' : '');
+}
+function fermerHudJournal() {
+  const panneau = document.getElementById('hud-journal');
+  const bouton = document.getElementById('btn-journal');
+  if (!panneau || panneau.hidden) return;
+  panneau.hidden = true;
+  if (bouton) bouton.setAttribute('aria-expanded', 'false');
+}
+function rendreHudJournal() {
+  const panneau = document.getElementById('hud-journal');
+  if (!panneau) return;
+  panneau.replaceChildren();
+  const dbg = window.__athenaDebug || { traces: [], journal: [] };
+  majBadgeJournal();
+  const titre = document.createElement('div');
+  titre.className = 'hud-section-titre';
+  titre.textContent = 'Journal debug — appels récents';
+  panneau.appendChild(titre);
+  const vider = document.createElement('button');
+  vider.type = 'button';
+  vider.className = 'settings-tab';
+  vider.textContent = 'Vider le journal';
+  vider.addEventListener('click', () => {
+    dbg.traces.length = 0;
+    dbg.journal.length = 0;
+    dernierTracer = null;
+    rendreHudJournal();
+  });
+  panneau.appendChild(vider);
+  if (dbg.journal.length) {
+    const he = document.createElement('div');
+    he.className = 'hud-note';
+    he.textContent = 'Erreurs de cascade (' + dbg.journal.length + ') :';
+    panneau.appendChild(he);
+    dbg.journal.slice(-8).forEach((l) => {
+      const r = document.createElement('div');
+      r.className = 'hud-note';
+      r.textContent = '✗ ' + l;
+      panneau.appendChild(r);
+    });
+  }
+  const traces = dbg.traces.slice(-40).reverse();
+  if (!traces.length) {
+    const vide = document.createElement('div');
+    vide.className = 'hud-note';
+    vide.textContent = 'Aucun appel enregistré pour l\'instant.';
+    panneau.appendChild(vide);
+    return;
+  }
+  traces.forEach((t) => {
+    const r = document.createElement('div');
+    r.className = 'hud-note';
+    const hh = new Date(t.t).toLocaleTimeString('fr-FR');
+    const u = t.usage;
+    r.textContent = (t.erreur ? '✗ ' : '✓ ') + hh + ' · ' + (t.provider || '?')
+      + ' · ' + (t.servi || '?')
+      + (t.fin ? ' · fin=' + t.fin : '')
+      + (u ? ' · p' + u.prompt + '/c' + u.complet + ' (r' + u.raison + ')' : '')
+      + ' · ' + (Math.round((t.ms || 0) / 100) / 10) + ' s'
+      + (t.payload && t.payload.max_tokens ? ' · mt' + t.payload.max_tokens : '')
+      + (t.erreur ? ' · ' + t.erreur : '');
+    r.title = JSON.stringify(t.payload || {});
+    panneau.appendChild(r);
+  });
+}
+(function initHudJournal() {
+  const bouton = document.getElementById('btn-journal');
+  const panneau = document.getElementById('hud-journal');
+  if (!bouton || !panneau) return;
+  majBadgeJournal();
+  bouton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!panneau.hidden) { fermerHudJournal(); return; }
+    fermerHud(); /* un seul panneau ouvert à la fois */
+    rendreHudJournal();
+    panneau.hidden = false;
+    bouton.setAttribute('aria-expanded', 'true');
+  });
+  panneau.addEventListener('click', (e) => e.stopPropagation());
 })();
 
 (function initHudEffort() {

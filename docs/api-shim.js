@@ -29,6 +29,55 @@
      le même effort s'applique à la voie skill ET à la voie shim, testable
      de bout en bout. null = HUD seul (comportement historique). */
   var effortDemande = null;
+  /* v banc 20261006 (§8.2) : vrai pendant l'UNIQUE retry « réflexion seule »
+     (effort forcé low dans effortNvidia) — voir la boucle cascade. */
+  var effortBaissent = false;
+
+  /* v banc 20261006 (§3 observabilité) : trace PAR APPEL — payload résumé,
+     modèle réellement servi, finish_reason, usage (part de raisonnement) et
+     latence. Ring de 200 exposé sur window.__athenaTraces + ligne NDJSON
+     {type:'trace'} vers l'UI (HUD « journal ») : « pourquoi cette réponse
+     était courte » devient consultable au lieu de deviné. */
+  var TRACES_SHIM = [];
+  function tracerEssai(entry, pk, ms, erreur) {
+    var c = entry._corps || {};
+    var u = entry._usage || null;
+    var msgs = c.messages || [];
+    var charsMsgs = null;
+    try { charsMsgs = JSON.stringify(msgs).length; } catch (e) {}
+    return {
+      t: Date.now(),
+      provider: pk,
+      id: entry.id || null,
+      servi: entry._modeleReel || c.model
+        || (Array.isArray(c.models) ? c.models.join(' > ') : null) || '?',
+      fin: entry._fin || null,
+      usage: u ? {
+        prompt: u.prompt_tokens || 0,
+        complet: u.completion_tokens || 0,
+        raison: (u.completion_tokens_details && u.completion_tokens_details.reasoning_tokens) || 0,
+      } : null,
+      payload: {
+        model: c.model || c.models || null,
+        max_tokens: typeof c.max_tokens === 'number' ? c.max_tokens : null,
+        temperature: typeof c.temperature === 'number' ? c.temperature : null,
+        reasoning: c.reasoning || null,
+        stream_options: c.stream_options || null,
+        messages: msgs.length,
+        chars: charsMsgs,
+      },
+      ms: ms,
+      erreur: erreur || null,
+    };
+  }
+  function noterTrace(t, emit) {
+    try {
+      TRACES_SHIM.push(t);
+      if (TRACES_SHIM.length > 200) TRACES_SHIM.shift();
+      window.__athenaTraces = TRACES_SHIM;
+    } catch (e) {}
+    if (emit) { try { emit({ type: 'trace', trace: t }); } catch (e) {} }
+  }
 
   /* Effort de raisonnement choisi dans le HUD (bouton à droite du sélecteur
      de modèle) : localStorage « athena_effort ». Échelle HUD = low / medium /
@@ -54,6 +103,12 @@
        modèles gratuits (TTFB 40-46 s mesuré). Seul le REPLI change ; le
        choix explicite dans le HUD reste prioritaire. */
     if (EFFORTS_HUD.indexOf(v) < 0) v = 'medium';
+    /* v banc 20261006 (§8.2) : retry « réflexion seule » — effort forcé low
+       pour CET essai (banc H2 : effort max bouffait tout le budget →
+       réponse visible vide). lireSSE lit aussi effortNvidia avec le flag
+       posé : bornes de délai basses AUSSI (borné, puisque l'effort low est
+       censé répondre vite) — on ne dépasse pas la borne du HUD. */
+    if (effortBaissent) v = 'low';
     var admis = (entry && entry.efforts) || EFFORTS_HUD;
     if (admis.indexOf(v) >= 0) return v;
     /* v20260926d (kimi) : repli vers l'échelon admis le plus PROCHE, en
@@ -1314,12 +1369,10 @@
         messages: messages,
         temperature: 0.6,
         stream: !!enFlux,
-        /* v1.2 (pleine puissance) : AUCUN max_tokens. 4096 par défaut puis
-           relevé par modèle — chaque plafond tronquait une réponse en pleine
-           phrase, et le flux SSE se terminait SANS erreur (donc sans que
-           l'utilisateur comprenne pourquoi le texte s'arrêtait net). Le
-           provider connaît sa propre fenêtre de sortie et signale
-           proprement une troncature (finish_reason 'length'). */
+        /* v20261006 : plafond d'entrée = 16384 si personne ne l'impose
+           (voir ci-dessous — banc flemme V0/V2). L'ancien « aucun
+           max_tokens » laissait le défaut 4096 du provider tronquer 50 %
+           des réponses longues. */
       };
       /* cadrage spécifique : provider (nvidia → kimi-k3 : temperature 1,
          seed 0, max_tokens 32768, reasoning_effort = effort HUD) ; une entry
@@ -1331,10 +1384,23 @@
       if (opts) {
         Object.keys(opts).forEach(function (k) { c[k] = opts[k]; });
       }
-      /* v1.2 (pleine puissance) : AUCUN max_tokens injecté. Le plafond était
-         la source n°1 de réponses tronquées ; on délègue au provider. Les
-         payloads explicites d'une entry (NVIDIA : 16384, trad : 2048) restent
-         respectés — ce sont des valeurs propres au modèle, pas les nôtres. */
+      /* v20261006 (banc flemme) : le défaut provider (4096) coupait 50 % des
+         réponses (fin=length) et rendait parfois une réponse VISIBLE vide
+         (tout le budget bouffé par le raisonnement) — banc V0 vs V2 :
+         cut 50 % → 0 %, chars ×2. On injecte donc 16384 quand ni l'entrée
+         ni le provider payload ne fixe de plafond. Pollinations est exempt :
+         son relais /api/relais conserve son propre défaut 8192. */
+      if (typeof c.max_tokens !== 'number' && pk !== 'pollinations') {
+        c.max_tokens = 16384;
+      }
+      /* v banc 20261006 (§3 observabilité) : usage réel (prompt/completion +
+         part de raisonnement) — OpenRouter (spec OpenAI) n'envoie le chunk
+         final d'usage QUE si stream_options.include_usage est demandé ;
+         sans lui la trace reste usage:null et la part « flemme » invisible.
+         Même exemption que max_tokens (pollinations a son propre relais). */
+      if (enFlux && pk !== 'pollinations' && !c.stream_options) {
+        c.stream_options = { include_usage: true };
+      }
       /* v20261001 (HUD) : ordre de température = corps de la requête
          (réglage HUD) > payload provider (ex. NVIDIA temperature 1) >
          localStorage > 0.6. Avant, le payload écrasait le réglage du HUD
@@ -1364,6 +1430,8 @@
           c.messages = ms;
         }
       } catch (eCons) {}
+      /* trace (§3) : snapshot du payload FINAL pour tracerEssai. */
+      try { entry._corps = c; } catch (eCorps) {}
       return JSON.stringify(c);
     }
 
@@ -1441,6 +1509,10 @@
          budget (l'UI le dit au lieu de laisser croire à un bâclage). */
       if (ch && typeof ch.finish_reason === 'string') {
         try { entry._fin = ch.finish_reason; } catch (e) {}
+      }
+      /* trace (§3) : usage non-stream (part de raisonnement). */
+      if (d && d.usage) {
+        try { entry._usage = d.usage; } catch (e) {}
       }
       return txt ? String(txt) : '';
     }
@@ -1584,6 +1656,10 @@
             if (typeof delta.content === 'string') contenu += delta.content;
             if (d && d.model) {
               try { entry._modeleReel = String(d.model); } catch (e) {}
+            }
+            /* trace (§3) : chunk d'usage SSE (souvent accolé à finish). */
+            if (d && d.usage) {
+              try { entry._usage = d.usage; } catch (e) {}
             }
             diffuser();
             jetons();
@@ -2090,11 +2166,14 @@
         /* v20261001 (quota) : essai abortable — au timeout, le fetch réel
            est coupé (sinon double POST pendant le retry → quota free). */
         var essaiJ = signalEssai(signal);
+        var tEssaiJ = Date.now();
         try {
           var texte = await appelBorne(callModel(entry, messages, essaiJ.signal), bornePour(entry), abandonner(essaiJ));
           noterModele(entry.id, true);
+          noterTrace(tracerEssai(entry, pkEssai, Date.now() - tEssaiJ, null));
           return json(assembler(entry, texte).payload);
         } catch (err) {
+          noterTrace(tracerEssai(entry, pkEssai, Date.now() - tEssaiJ, String((err && err.message) || err).slice(0, 160)));
           if (err && err.name === 'AbortError') throw err;
           if (/timeout \d+ ms/.test(String((err && err.message) || '')) && !rejoues[pkEssai]) {
             rejoues[pkEssai] = true;
@@ -2184,6 +2263,7 @@
           /* v1.2 (anti-coupure) : on ne rejoue un timeout que si RIEN n'a
              été diffusé — rejouer après des jetons dupliquerait le texte. */
           var jetonsVus = 0;
+          var tEssai = Date.now();
           var onDelta = p && p.sse
             ? function (etape, message) {
                 /* v20260926b (direct) : les jetons partent en {type:'jeton'}
@@ -2210,10 +2290,34 @@
             /* v20261001 (quota) : essai abortable — au timeout de la borne,
                le fetch + le flux SSE réels sont coupés (sinon la boucle
                lireSSE tournait en fond pendant toute la cascade). */
-            var essaiS = signalEssai(signal);
-            var texte = await appelBorne(callModel(entry, messages, essaiS.signal, onDelta), borne, abandonner(essaiS));
+            /* v banc 20261006 (§8.2) : réflexion SANS réponse (« le modèle
+               n'a pas fini de réfléchir ») — UN essai sur CE modèle avec
+               effort baissé (corps low) avant d'abandonner : le raisonnement
+               bouffait tout le budget (banc H2), et sauter tout de suite au
+               modèle suivant brûlait une requête de plus. Deux essais max,
+               puis la cascade classique enchaîne. */
+            var texte = null;
+            for (var nEssaiBas = 0; nEssaiBas < 2; nEssaiBas++) {
+              effortBaissent = nEssaiBas === 1;
+              var essaiS = signalEssai(signal);
+              try {
+                texte = await appelBorne(callModel(entry, messages, essaiS.signal, onDelta), borne, abandonner(essaiS));
+                break;
+              } catch (eBas) {
+                if (nEssaiBas === 0 && /raisonnement seul/.test(String((eBas && eBas.message) || ''))) {
+                  try { journal.push(entry.id + ' :: réflexion seule — retry effort low'); } catch (eJ) {}
+                  noterTrace(tracerEssai(entry, pk, Date.now() - tEssai, String((eBas && eBas.message) || eBas).slice(0, 160)), emit);
+                  continue;
+                }
+                throw eBas;
+              } finally {
+                effortBaissent = false;
+              }
+            }
             noterModele(entry.id, true);
             var fin = assembler(entry, texte);
+            /* trace (§3) : succès — AVANT le final, l'UI l'associe au pied. */
+            noterTrace(tracerEssai(entry, pk, Date.now() - tEssai, null), emit);
             /* v20260926g : pas de progress « Réponse générée via X » — nom
                technique masqué, le final suffit. */
             emit({
@@ -2235,6 +2339,9 @@
             return;
           } catch (e2) {
             try { journal.push(entry.id + ' :: ' + String((e2 && e2.message) || e2).slice(0, 160)); } catch (eJ) {}
+            /* trace (§3) : échec de cet essai (avant AbortError, le journal
+               reste complet : le HUD montre CE qui a échoué et pourquoi). */
+            noterTrace(tracerEssai(entry, pk, Date.now() - tEssai, String((e2 && e2.message) || e2).slice(0, 160)), emit);
             if (e2 && e2.name === 'AbortError') {
               try { ctrl.error(e2); } catch (e3) {}
               return;
