@@ -153,6 +153,27 @@ setTimeout(() => {
   V(raisonnables.length > 0 && raisonnables.every((c2) => c2.temperature === undefined),
     'temperature retiree des corps reasoning (§8.6-4)',
     JSON.stringify(raisonnables.map((c2) => ({ temp: c2.temperature, eff: c2.reasoning.effort }))));
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 19/19 OK');
+  /* §8.7 (plus de repli de modèle auto) : modèle choisi = chaine d'une
+     seule entrée strictChoisi ; models[] OpenRouter serre a la cible
+     unique en strict, trio de relais conserve en mode auto. */
+  const s87 = chargerAvecPauses(null, null);
+  const w87 = s87.w;
+  V(typeof w87.__athenaConstruireChaine === 'function' && typeof w87.__athenaOrModelsBody === 'function',
+    '8.7: construireChaine + orModelsBody exposes',
+    typeof w87.__athenaConstruireChaine + ' / ' + typeof w87.__athenaOrModelsBody);
+  const planAuto87 = w87.__athenaConstruireChaine('');
+  const cible87 = planAuto87.chaine && planAuto87.chaine[0] && planAuto87.chaine[0].id;
+  V(!!cible87, '8.7: auto a au moins un modele', JSON.stringify(cible87));
+  const planChoisi87 = w87.__athenaConstruireChaine(cible87);
+  V(planChoisi87.chaine.length === 1 && planChoisi87.chaine[0].strictChoisi === true,
+    '8.7: modele choisi = SEUL de la chaine (aucun relais)',
+    'len=' + planChoisi87.chaine.length + ' strict=' + (planChoisi87.chaine[0] || {}).strictChoisi);
+  const orStrict = w87.__athenaOrModelsBody({ model: 'google/gemma-4-31b-it:free', strictChoisi: true });
+  V(Array.isArray(orStrict) && orStrict.length === 1 && orStrict[0] === 'google/gemma-4-31b-it:free',
+    '8.7: models[] serre a la cible unique en strict', JSON.stringify(orStrict));
+  const orAuto = w87.__athenaOrModelsBody({ model: 'google/gemma-4-31b-it:free' });
+  V(Array.isArray(orAuto) && orAuto.length > 1,
+    '8.7: auto garde le trio de relais', JSON.stringify(orAuto));
+  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 24/24 OK');
   process.exit(echecs ? 1 : 0);
 }, 35000);

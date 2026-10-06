@@ -1482,9 +1482,12 @@ function dansAllowDir(cwd) {
 }
 
 /* §8.6-6 (opencode DOOM_LOOP_THRESHOLD=3) : même commande 3 fois de suite
-   sans résultat différent = boucle — l'historique mesure « le modèle relançait
-   la même commande 49 fois » (commentaire §8.3 plus bas). Tant que la boucle
-   dure on refuse (409) ; une commande différente remet le compteur à zéro. */
+   sans résultat différent = boucle suspecte (« le modèle relançait la même
+   commande 49 fois »). §8.7 : le 409 REFUSAIT l'exécution et cassait les
+   chaînes (console : « POST /exec 409 (Conflict) » + tâche arrêtée) — on
+   exécute TOUJOURS et on pose un simple AVERTISSEMENT dans la sortie à la
+   3e occurrence (une seule fois par salve). Une commande différente remet le
+   compteur à zéro. */
 let doomCle = null;
 let doomN = 0;
 function verifierDoom(commande) {
@@ -1492,10 +1495,10 @@ function verifierDoom(commande) {
   if (!cle) return null;
   if (cle === doomCle) doomN += 1;
   else { doomCle = cle; doomN = 1; }
-  if (doomN >= 3) {
-    return "doom-loop : même commande exécutée 3 fois de suite sans résultat "
-      + "différent — change d'approche (autre commande, autre outil) au lieu de "
-      + "répéter. Une commande différente remet le compteur à zéro.";
+  if (doomN === 3) {
+    return 'même commande exécutée 3 fois de suite sans résultat différent — '
+      + 'vérifie que tu ne tournes pas en rond (autre commande, autre outil) ; '
+      + 'une commande différente remet le compteur à zéro.';
   }
   return null;
 }
@@ -1877,13 +1880,11 @@ const serveur = http.createServer(async (req, res) => {
         }, origin, req);
         return;
       }
-      /* §8.6-6 doom-loop : on ne compte que ce qui allait VRAIMENT s'exécuter
-         (après validation/refus/lint/confirme) — 3 passages identiques = 409. */
-      const avertDoom = verifierDoom(commande);
-      if (avertDoom) {
-        json(res, 409, { erreur: avertDoom, doom_loop: true }, origin, req);
-        return;
-      }
+      /* §8.6-6 → §8.7 : JAMAIS de 409 (cela cassait les chaînes auto du
+         shim — « POST /exec 409 (Conflict) » en console et tâche arrêtée).
+         On compte, on exécute, et à la 3e occurrence l'avertissement est
+         ajouté à la sortie (voir plus bas, après executer). */
+      const noteDoom = verifierDoom(commande);
       const cwdDemande = typeof corps.cwd === 'string' && corps.cwd ? corps.cwd : process.cwd();
       /* v20260926d (kimi) : cwd inexistant = 400 explicite (avant : repli
          silencieux sur le cwd de l'agent — la commande tournait ailleurs).
@@ -1931,6 +1932,10 @@ const serveur = http.createServer(async (req, res) => {
         };
         journaliser(entreef);
         console.log(`[local-agent] ${rf.ok ? 'OK' : 'ERR'} code=${rf.code} ${rf.duree_ms}ms :: ${entreef.commande}`);
+        if (noteDoom) {
+          rf.stdout = String(rf.stdout || '') + '\n[avertissement] ' + noteDoom;
+          rf.doom_loop = true;
+        }
         ligne({ type: 'fin', ...rf, commande });
         reponseFinie = true;
         res.end();
@@ -1946,6 +1951,10 @@ const serveur = http.createServer(async (req, res) => {
       };
       journaliser(entree);
       console.log(`[local-agent] ${r.ok ? 'OK' : 'ERR'} code=${r.code} ${r.duree_ms}ms :: ${entree.commande}`);
+      if (noteDoom) {
+        r.stdout = String(r.stdout || '') + '\n[avertissement] ' + noteDoom;
+        r.doom_loop = true;
+      }
       json(res, 200, { ...r, commande }, origin, req);
       return;
     }
@@ -1955,6 +1964,17 @@ const serveur = http.createServer(async (req, res) => {
        confirme:false → 428 (avec `existe`) ; existe && !ecraser → 409.
        Garde-fous : origine (plus haut), DENY_WRITE (dossiers système),
        taille bornée, journal. */
+    /* §8.7 (arrêt obligatoire) : tue TOUTES les commandes en cours — l'UI
+       l'appelle à l'arrêt de la conversation. L'abort côté client ne coupe
+       que le flux : l'arbre serveur continuerait jusqu'au timeout, puis la
+       chaîne recevrait quand même son résultat. */
+    if (req.method === 'POST' && chemin === '/kill') {
+      const arrets = enfantsActifs.size;
+      for (const e of [...enfantsActifs]) { try { tuerArbre(e); } catch (_) {} }
+      json(res, 200, { arrets: arrets }, origin, req);
+      return;
+    }
+
     if (req.method === 'POST' && chemin === '/write') {
       let brutw;
       try {

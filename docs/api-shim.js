@@ -168,6 +168,9 @@
     return Math.round(base + base * 0.25 * Math.random());
   }
   try { window.__athenaBackoff = delaiBackoff; } catch (eBo) {}
+  /* §8.7 (tests) : chaîne de modèles + relais OpenRouter exposés. */
+  try { window.__athenaConstruireChaine = construireChaine; } catch (eCch) {}
+  try { window.__athenaOrModelsBody = orModelsBody; } catch (eEmb) {}
 
   var PROVIDERS = {
     /* v20260926b (direct) : pollinations et openrouter parlent SSE OpenAI
@@ -612,20 +615,30 @@
       var up = !!(p && (p.free || (aBase && (aCle || p.viaProxy))));
       /* v20261004b (choix HUD honoré) : le HUD ne propose que ce qui sert
          VRAIMENT — modèle mort (audit 2026-10-04) et provider/model en pause
-         (402/403/429 sanctionnés) passent en `down` (grisé, non cliquable) ;
+         (402/403/429 sanctionnés) passent en `down` (grisé) ;
          un choix périmé mémorisé devient donc « invalide » → cascade auto. */
+      var enPause = false;
       if (up && m.mort) up = false;
-      if (up && !providerSain(m.provider)) up = false;
-      if (up && !providerSain(id)) up = false;
+      if (up && !providerSain(m.provider)) { up = false; enPause = true; }
+      if (up && !providerSain(id)) { up = false; enPause = true; }
       var label = p ? p.label : m.provider;
       if (m.mort) {
         label = m.provider + ' · indisponible';
+      } else if (up === false && enPause) {
+        /* §8.7 : la PAUSE était affichée « proxy non déployé » / « clé
+           manquante » (libellé clé alors que la clé est là) — on dit la
+           vérité : en pause, avec le temps restant. Sélectionnable (le clic
+           est autorisé côté HUD) : le modèle CHOISI tente et reçoit l'erreur
+           honnête du provider. */
+        var finPause = Math.max(providersEnPause[m.provider] || 0, providersEnPause[id] || 0);
+        var reste = finPause > Date.now() ? Math.ceil((finPause - Date.now()) / 60000) : 0;
+        label = m.provider + ' · en pause' + (reste ? ' (~' + reste + ' min)' : '');
       } else if (!up && p && !p.free) {
         label = m.provider + ' · ' + ((!aCle && !p.viaProxy) ? 'clé manquante' : 'proxy non déployé');
       } else if (!up) {
-        label = m.provider + ' · en pause';
+        label = m.provider + ' · indisponible';
       }
-      return { id: id, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, payload: m.payload || null, efforts: m.efforts || null, chat: m.chat !== false };
+      return { id: id, name: m.name, model: m.model, provider: label, providerKey: m.provider, active: false, local: false, up: up, pause: enPause, payload: m.payload || null, efforts: m.efforts || null, chat: m.chat !== false };
     });
     if (DYN.err && keyFor('tokenrouter') && keyFor('tokenrouter_proxy')) {
       var st = DYN.err.replace(/[\{\}<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 70);
@@ -883,8 +896,13 @@
     'openai:gpt-4o-mini': 16384, 'deepseek:deepseek-chat': 8192, 'gemini:gemini-2.0-flash': 8192,
     'pollinations:openai-fast': 16384, 'pollinations:openai': 16384,
   };
-  function orModelsBody(entryModel) {
+  function orModelsBody(entry) {
+    var entryModel = entry && entry.model;
     if (OR_FREE.indexOf(entryModel) < 0) return null;
+    /* §8.7 : modèle choisi strict = la CIBLE UNIQUE — jamais le trio de
+       relais (OpenRouter basculerait silencieusement sur un autre modèle
+       sur 429/5xx, exactement le « repli modèle auto » interdit). */
+    if (entry && entry.strictChoisi) return [entryModel];
     /* OpenRouter : models[] = 3 items max (400 au-delà). */
     if (OR_TRIO.indexOf(entryModel) >= 0) {
       var autresTrio = OR_TRIO.filter(function (m) { return m !== entryModel; });
@@ -1458,6 +1476,19 @@
     return new Error('aucun modèle n\'a répondu en ' + (BUDGET_CASCADE / 60000)
       + ' min (cascade épuisée) — réessayez plus tard.');
   }
+  /* §8.7 : ZÉRO tentative (toutes les voies en pause au moment du tour) —
+     message honnête avec les pauses en cours, au lieu de « erreur inconnue ». */
+  function errAucuneTentative() {
+    var maintenant = Date.now();
+    var noms = Object.keys(providersEnPause).filter(function (pk) { return providersEnPause[pk] > maintenant; });
+    if (!noms.length) return new Error('aucun modèle disponible pour l\'instant — réessayez plus tard.');
+    var detail = noms.map(function (pk) {
+      var reste = Math.max(1, Math.ceil((providersEnPause[pk] - maintenant) / 60000));
+      return pk + ' (~' + reste + ' min)';
+    });
+    return new Error('modèle choisi en pause (quota ou erreur récente) : '
+      + detail.join(', ') + ' — réessayez après la fin de la pause ou choisissez un autre modèle.');
+  }
 
   /* onDelta (etape, message) : fourni par gererChat sur un flux NDJSON —
      chaque tranche de raisonnement part alors EN DIRECT vers l'UI. */
@@ -1477,7 +1508,7 @@
       var x = p.extra();
       Object.keys(x).forEach(function (k) { headers[k] = x[k]; });
     }
-    var orList = pk === 'openrouter' ? orModelsBody(entry.model) : null;
+    var orList = pk === 'openrouter' ? orModelsBody(entry) : null;
     var orBase = orList ? orList.slice() : null;
 
     function corpsPour(liste, enFlux) {
@@ -1520,11 +1551,21 @@
          rejetterait en 400). entry._effortIgnore = le provider a rejet� ce
          champ en session : on n'insiste plus (auto-gu�rison, voir
          avecRetry). */
-      if (pk === 'openrouter' && !c.reasoning && entry && !entry._effortIgnore
+      if (pk === 'openrouter' && entry && !entry._effortIgnore
           && Array.isArray(entry.efforts)) {
-        var eOR = effortNvidia(entry);
-        var OR_EFFORTS = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high', max: 'high' };
-        c.reasoning = { effort: OR_EFFORTS[eOR] || 'medium' };
+        var eOR = effortNvidia(entry); /* déjà borné aux efforts déclarés */
+        if (!c.reasoning) {
+          c.reasoning = { effort: eOR };
+        } else if (c.reasoning.enabled !== false && typeof c.reasoning.effort !== 'string') {
+          /* §8.5-1 corrigé : les payloads gemma/famille posent DÉJÀ
+             reasoning {enabled:...} — l'ancien garde `!c.reasoning` faisait
+             que le NIVEAU d'effort du HUD n'était JAMAIS transmis (bouton
+             effort sans effet au-delà de low). On COMBINE. */
+          c.reasoning.effort = eOR;
+          if (c.reasoning.exclude === undefined) c.reasoning.exclude = false;
+        }
+        /* effort = low sur gemma-family → payload {enabled:false} : on
+           respecte (raisonnement coupé = choix « rapide » du HUD). */
       }
       /* v banc 20261006 (§3 observabilité) : usage réel (prompt/completion +
          part de raisonnement) — OpenRouter (spec OpenAI) n'envoie le chunk
@@ -2122,12 +2163,16 @@
       }
     }
 
-    if (choixValide && providerSain(parId[modelId].id)) {
-      var garde = {};
-      garde[parId[modelId].id] = 1;
+    /* §8.7 (plus de repli de modèle auto) : un modèle CHOISI part SEUL —
+       ni cascade shim (ajouterCascade), ni relais models[] OpenRouter. Son
+       erreur honnête remonte si lui échoue, jamais une réponse surprise
+       d'un autre modèle (toast « repli sur le modèle auto » mort avec).
+       Seul un choix qui n'existe plus au catalogue (id périmé) retombe en
+       auto : rien d'appelable autrement. */
+    if (modelId && parId[modelId]) {
+      parId[modelId].strictChoisi = true;
       chaine.push(parId[modelId]);
-      ajouterCascade(garde);
-      return { chaine: chaine, choisiOk: true, strict: true };
+      return { chaine: chaine, choisiOk: parId[modelId].up, strict: true };
     }
     /* v1.2 (strict) : mode auto = le plus fiable disponible, sans relais —
        ordre : openrouter free avec clé (cascade interne models[] côté
@@ -2326,8 +2371,11 @@
         }
         var pkEssai = entry.providerKey || entry.provider || entry.id;
         /* v banc 20261005 : même saut qu'en flux (provider mis en pause pendant
-           ce tour, ex. quota journalier openrouter) — voir la boucle NDJSON. */
-        if (!providerSain(pkEssai)) continue;
+           ce tour, ex. quota journalier openrouter) — voir la boucle NDJSON.
+           §8.7 : le modèle CHOISI (strictChoisi) tente MALGRÉ la pause —
+           choix explicite > protection auto ; l'erreur honnête du provider
+           (429 quota...) remonte au lieu d'un silence « erreur inconnue ». */
+        if (!providerSain(pkEssai) && !entry.strictChoisi) continue;
         /* v20261001 (quota) : essai abortable — au timeout, le fetch réel
            est coupé (sinon double POST pendant le retry → quota free). */
         var essaiJ = signalEssai(signal);
@@ -2376,6 +2424,7 @@
           dernierErr = err;
         }
       }
+      if (!dernierErr) dernierErr = errAucuneTentative();
       var msg = detailAffichable((dernierErr && dernierErr.message) || 'erreur inconnue', plan.strict);
       return json({ erreur: msg }, 400);
     }
@@ -2411,10 +2460,12 @@
           }
           var pk = entry.providerKey || entry.provider;
           /* v banc 20261005 : provider mis en pause pendant CE tour (quota
-             journalier, 402/403…) → ses entrées restantes sont SAUTÉES :
-             avant, chacune relançait un appel mort (30-90 s perdus par essai)
-             alors que pollinations/nvidia répondaient juste après. */
-          if (!providerSain(pk)) continue;
+              journalier, 402/403…) → ses entrées restantes sont SAUTÉES :
+              avant, chacune relançait un appel mort (30-90 s perdus par essai)
+              alors que pollinations/nvidia répondaient juste après.
+              §8.7 : sauf modèle CHOISI (strictChoisi) — l'utilisateur a
+              demandé CE modèle, il tente et reçoit l'erreur honnête. */
+          if (!providerSain(pk) && !entry.strictChoisi) continue;
           if (sauterProvider[pk]) {
             /* v20260926f : 3 providers distincts qui timeoutent = panne
                large, pas un hoquet — on rend la main au lieu de mouliner
@@ -2566,12 +2617,15 @@
             if (e2 && e2.quotidien && !quotaSignale) {
               quotaSignale = true;
               emit({ type: 'progress', etape: 'quota',
-                message: 'Quota gratuit du jour épuisé sur ' + String(pk) + ' — passage aux autres providers…' });
+                message: 'Quota gratuit du jour épuisé sur ' + String(pk)
+                  + (plan.chaine.length > 1 ? ' — passage aux autres providers…'
+                    : ' — réessayez au prochain reset ou choisissez un autre modèle.') });
             }
             noterModele(entry.id, false);
             err = e2;
           }
         }
+        if (!err) err = errAucuneTentative();
         emit({ type: 'erreur', erreur: detailAffichable((err && err.message) || 'erreur inconnue', plan.strict), debug: journal });
         try { ctrl.close(); } catch (e) {}
       },
@@ -2660,6 +2714,28 @@
             erreur: 'agent local injoignable ou Local Network bloqué — autorisez le site (⋮ → Local Network → Allow)',
             port: 3020,
           }, 503);
+        }
+      }
+      return json({ erreur: 'méthode' }, 405);
+    }
+    /* §8.7 (arrêt obligatoire) : relaye la tuerie des commandes en cours
+       vers l'agent local — l'UI l'appelle à l'arrêt de la conversation
+       (l'abort client ne coupe que le flux, pas l'arbre serveur). */
+    if (path === '/api/kill') {
+      if (method === 'POST') {
+        try {
+          var rqK;
+          try {
+            rqK = new Request(LOCAL_AGENT + '/kill', { method: 'POST' });
+            if ('targetAddressSpace' in rqK) rqK.targetAddressSpace = 'loopback';
+            var rK = await realFetch(rqK);
+          } catch (eK0) {
+            rK = await realFetch(LOCAL_AGENT + '/kill', { method: 'POST' });
+          }
+          return json(await rK.json(), rK.status);
+        } catch (eK) {
+          /* agent injoignable : rien à tuer (ou déjà mort) — pas d'erreur. */
+          return json({ arrets: 0, agent: false });
         }
       }
       return json({ erreur: 'méthode' }, 405);

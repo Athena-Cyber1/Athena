@@ -127,6 +127,12 @@ function icoSvg(nom) {
 
 let messages = [];   // référence vers les messages de la conversation OUVERTE
 let occupe = false;
+/* §8.7 (arrêt après une suite) : compteur de générations vivantes (une suite
+   peut démarrer pendant que l'appelant rend la main) + demande d'arrêt
+   posée pendant l'exécution d'une commande (aucun contrôleur à annuler à ce
+   moment-là — enchainerApresExec consulte le drapeau avant de repartir). */
+let generationsEnCours = 0;
+let chaineInterrompue = false;
 let fichiersJoints = [];
 /* v20260926a (pièces jointes) : contenu TEXTUEL lu côté navigateur à l'ajout
    du fichier, indexé par file_id. Non persisté (les conversations gardent
@@ -865,6 +871,16 @@ function ouvrirConversation(id) {
   fermerInterpreteur();
   fermerHudFichier();
   basculerPanneauFichiers(false);
+  /* v20261006 (sessions) : les puces de pièces jointes NON ENVOYÉES ne
+     suivent pas l'utilisateur d'une conversation à l'autre — fichiersJoints
+     n'était effacé qu'à l'envoi (envoyer) : un fichier joint dans A partait
+     avec le premier message de B (fuite de contexte entre sessions). */
+  if (fichiersJoints.length) {
+    fichiersJoints = [];
+    fichiersEl.value = '';
+    afficherFichiers();
+    majBouton();
+  }
   /* v20260926e (kimi) : la voix ne continue pas sur une conversation
      détruite/reaffichée. */
   try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch {}
@@ -3108,6 +3124,13 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
     let terminal = null;
     let tFlux = null;
     const ctrlFlux = ('AbortController' in window) ? new AbortController() : null;
+    /* §8.7 (arrêt obligatoire) : ce flux rejoint le registre global —
+       l'arrêt de la conversation doit pouvoir l'annuler, pas seulement le
+       contrôleur de génération en cours. */
+    if (ctrlFlux) {
+      window.__athenaCtrlsExec = window.__athenaCtrlsExec || new Set();
+      window.__athenaCtrlsExec.add(ctrlFlux);
+    }
     /* v1.2 (anti-timeout) : borne client 90 s (agent : 60 s) — sans elle, un
        flux qui cale laisse le bouton sur '…' pour toujours. */
     const BORNE_FLUX_MS = 90000;
@@ -3167,6 +3190,12 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       }
       if (!rf) {
         if (terminal && terminal.el) terminal.el.remove();
+        if (ctrlFlux && ctrlFlux.signal.aborted) {
+          /* §8.7 : annulation demandée (arrêt ou borne 90 s) — pas un
+             « agent injoignable » qui induirait en erreur le modèle. */
+          return echec(chaineInterrompue ? '[arrêt demandé] commande annulée.'
+            : 'Exécution interrompue (annulation client).');
+        }
         return echec('Agent local injoignable après 3 tentatives — '
           + String((dernierErr && dernierErr.message) || dernierErr || '').slice(0, 200));
       }
@@ -3199,13 +3228,14 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       return conclureExec(codeEl, brut, d, auto, convoId);
     } catch (e) {
       if (terminal && terminal.el) terminal.el.remove();
-      if (e && e.name === 'AbortError') return echec('Délai dépassé (90 s) — commande trop longue ou agent bloqué.');
+      if (e && e.name === 'AbortError') return echec(chaineInterrompue ? '[arrêt demandé] commande annulée.' : 'Délai dépassé (90 s) — commande trop longue ou agent bloqué.');
       return echec(String((e && e.message) || e).slice(0, 400));
     }
   } catch (e) {
     return echec(String((e && e.message) || e).slice(0, 400));
   } finally {
     if (tFlux) clearTimeout(tFlux);
+    if (ctrlFlux) { try { window.__athenaCtrlsExec.delete(ctrlFlux); } catch (eRg) {} }
     bouton.disabled = false;
     bouton.textContent = 'Exécuter';
   }
@@ -3233,6 +3263,8 @@ function autoExecBlocs(bulleEl) {
   return (async () => {
     const resultats = [];
     for (const pre of blocs) {
+      /* §8.7 (arrêt obligatoire) : plus rien ne se lance après l'arrêt. */
+      if (chaineInterrompue) break;
       const codeEl = pre.querySelector('code');
       const bouton = pre.querySelector('.code-exec');
       if (!codeEl || !bouton || pre.dataset.execAuto === '1') continue;
@@ -3418,7 +3450,16 @@ function relancerSiPromesse(convo, bulleEl) {
 }
 
 function enchainerApresExec(convo, resultats, bulleSuite) {
-  if (!convo || !Array.isArray(resultats) || !resultats.length) return;
+  /* §8.7 (arrêt après une suite) : ■ pressé pendant l'exécution d'une
+     commande (aucun AbortController à annuler à ce moment-là) — on
+     n'enchaîne PLUS, on libère le verrou. */
+  if (chaineInterrompue) {
+    chaineInterrompue = false;
+    deverrouillerChaine();
+    notifier('Suite arrêtée — aucune commande supplémentaire.');
+    return;
+  }
+  if (!convo || !Array.isArray(resultats) || !resultats.length) { deverrouillerChaine(); return; }
   /* v1.2 : la chaîne ne s'arrête que sur l'arrêt NATUREL du modèle (une réponse
      sans bloc de commande) — plus de plafond arbitraire qui coupait une tâche
      en cours. ABSOLU_TOURS_EXEC est le seul filet, et il force le verdict
@@ -3428,7 +3469,7 @@ function enchainerApresExec(convo, resultats, bulleSuite) {
      un modèle qui réémet indéfiniment des commandes reboucle pour toujours
      (mesuré : 86 appels et toujours pas d'arrêt avant correction). Un tour
      final est offert pour rendre le verdict, puis plus rien. */
-  if (convo._budgetEpuise) return;
+  if (convo._budgetEpuise) { deverrouillerChaine(); return; }
   const presse = deja >= ABSOLU_TOURS_EXEC;
   if (presse) convo._budgetEpuise = true;
   if (!Array.isArray(convo._cmdExecutees)) convo._cmdExecutees = [];
@@ -3604,6 +3645,8 @@ function autoFileBlocs(bulleEl) {
   return (async () => {
     const resultats = [];
     for (const carte of cartes) {
+      /* §8.7 (arrêt obligatoire) : plus rien ne s'écrit après l'arrêt. */
+      if (chaineInterrompue) break;
       if (carte.dataset.fileAuto === '1') continue;
       const contenu = carte._contenuComplet != null ? carte._contenuComplet : '';
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
@@ -5039,9 +5082,18 @@ function majBoutonArret() {
     btnEl.classList.remove('en-cours');
   }
 }
+/* §8.7 : libère le verrou UNIQUEMENT quand plus aucune génération ne vit —
+   appelé en fin de chaîne (enchainerApresExec sans suite à lancer). */
+function deverrouillerChaine() {
+  if (!generationsEnCours) occupe = false;
+  majBoutonArret();
+  majBouton();
+}
 
 async function envoyer(texte) {
   if (occupe) return;
+  /* §8.7 : une demande d'arrêt ne survit pas à une NOUVELLE demande. */
+  chaineInterrompue = false;
   /* v20260922j (bug 12) : `let` — le contenu est RE-LU après les modales
      (le champ peut être édité pendant une modale via Tab, et l'ancien code
      écrasait cette édition avec la capture faite AVANT l'ouverture). */
@@ -5180,6 +5232,19 @@ async function genererReponse(convo, opts) {
      (le modèle en a besoin), seul l'AFFICHAGE est continu. */
   const suiteDe = opts && opts.suiteDe && opts.suiteDe.isConnected
     ? (opts.suiteDe.closest('.bubble') || opts.suiteDe) : null;
+  /* §8.7 : verrou SYSTÉMATIQUE. Les suites (enchainerApresExec,
+     relancerSiPromesse, « Continuer ») appelaient genererReponse SANS verrou :
+     occupe restait false pendant tout le tour suivant, le bouton restait en
+     « Envoyer » (impossible d'arrêter) et une frappe en envoyait un nouveau
+     par-dessus. Un compteur rend le dé-verrouillage sûr même quand deux tours
+     se chevauchent (relance synchrone avant le finally de l'appelant). */
+  generationsEnCours += 1;
+  occupe = true;
+  majBoutonArret();
+  /* verrouChaine : la réponse porte de quoi enchaîner (exec/fichiers) → le
+     lock tient jusqu'à la résolution de la chaîne : le finally s'exécute
+     AVANT le .then, il ne suffit plus à lui seul. */
+  let verrouChaine = false;
   let think, suiteBox = null;
   if (suiteDe) {
     /* v1.2 (discrétion) : la suite ne rejoue PAS tout le cirque « le modèle
@@ -5269,10 +5334,8 @@ async function genererReponse(convo, opts) {
         }
       }
       controleurEnCours = null;
-      occupe = false;
-      majBoutonArret();
-      majBouton();
-      if (vueOuverte()) saisieEl.focus();
+      /* §8.7 : dé-verrouillage géré par le finally (compteur) — ne pas
+         forcer occupe=false ici : une suite peut déjà avoir repris la main. */
       return;
     }
     r = { ok: false, erreur: 'Erreur inattendue.' };
@@ -5388,9 +5451,12 @@ async function genererReponse(convo, opts) {
            « Continuer » envoie « continue » et la suite s'écrit DANS LA MÊME
            bulle (mécanique suiteDe déjà en place pour l'exec). */
         if (r.tronquee) {
+          /* §8.7 : le texte « Réponse coupée par la limite du modèle. » est
+             retiré (badge = bouton seul, sans phrase d'erreur en incrustation ;
+             le toast équivalent aussi). Le bouton « Continuer » et son
+             infobulle restent — le mécanisme suite est inchangé. */
           const badge = document.createElement('div');
           badge.className = 'coupe-badge';
-          badge.textContent = 'Réponse coupée par la limite du modèle.';
           const btnCont = document.createElement('button');
           btnCont.type = 'button';
           btnCont.className = 'coupe-continue';
@@ -5414,7 +5480,6 @@ async function genererReponse(convo, opts) {
           });
           badge.appendChild(btnCont);
           conteneurTour.appendChild(badge);
-          notifier('Réponse coupée par la limite (pas un bâclage) — bouton « Continuer » disponible.');
         }
         /* v1.2 (anti-bâclage, item 10) : voie réellement servie — discret,
            sous la réponse (ni provider techniques, juste le modèle). */
@@ -5459,13 +5524,18 @@ async function genererReponse(convo, opts) {
            suivant continue DANS LA MÊME bulle, et le conteneur du tour
            pour ne scanner que les NOUVEAUX blocs. */
         if (preferences.executionAuto !== false) {
+          /* §8.7 : le verrou TIENT pendant que la chaîne vit (commandes en
+             cours + suite suivante) — sinon le bouton repassait en
+             « Envoyer » entre les tours et la conversation n'était plus
+             arrêtable après une suite. */
+          verrouChaine = true;
           /* v1.2 (audit 14:27) : UNE SEULE chaîne avec commandes + fichiers.
              Avant, les fichiers partaient en fire-and-forget : le modèle ne
              savait jamais où son fichier avait atterri, devinait un chemin,
              et l'exec suivante échouait dessus. */
           Promise.all([autoExecBlocs(conteneurTour), autoFileBlocs(conteneurTour)])
             .then(([resExec, resFich]) => enchainerApresExec(convo, [...resExec, ...resFich], bAssist))
-            .catch(() => {});
+            .catch(() => deverrouillerChaine());
         }
         /* v1.2 (suite) : on passe le CONTENEUR DU TOUR, pas la bulle
            partagée — sinon le .exec-bloc d'un tour précédent fait croire
@@ -5492,7 +5562,11 @@ async function genererReponse(convo, opts) {
     if (console && console.warn) console.warn('rendu de la réponse : erreur non fatale', e);
   } finally {
     if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
-    occupe = false;
+    /* §8.7 : le dé-verrouillage est COMPTEUR-driven (une suite en cours
+       garde ■) et subordonné au verrou de chaîne (le finally précède le
+       .then de la chaîne). */
+    generationsEnCours = Math.max(0, generationsEnCours - 1);
+    if (!generationsEnCours && !verrouChaine) occupe = false;
     majBoutonArret();
     majBouton();
     if (vueOuverte()) saisieEl.focus();
@@ -5544,10 +5618,43 @@ function majCompteurSaisie() {
   compteurSaisieEl.classList.toggle('visible', proche);
   compteurSaisieEl.classList.toggle('limite', n >= MAX_SAISIE);
 }
+/* §8.7 (arrêt obligatoire) : registre des contrôleurs de flux d'exécution
+   — l'arrêt de la conversation doit couvrir TOUT ce qui tourne, pas seul
+   le contrôleur de génération en cours. */
+function arreterFluxExecs() {
+  const jeu = window.__athenaCtrlsExec;
+  if (!jeu) return;
+  for (const c of jeu) { try { c.abort(); } catch (eC) {} }
+}
+/* §8.7 : tue l'arbre des commandes côté agent (l'abort client ne coupe
+   que le flux — le process serveur continuerait jusqu'au timeout et son
+   résultat rejoindrait la chaîne). Best effort : agent absent = rien. */
+function tuerExecsAgent() {
+  try {
+    fetch('/api/kill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).catch(() => {});
+  } catch (eK) {}
+}
 $('form').addEventListener('submit', (e) => {
   e.preventDefault();
   if (occupe) {
-    if (controleurEnCours) controleurEnCours.abort();
+    /* §8.7 v2 (arrêt obligatoire) : le marqueur est TOUJOURS posé (la
+       chaîne ne repart jamais — enchainerApresExec rend la main), les
+       flux d'exécution client sont abortés et l'arbre de commandes est
+       TUÉ côté agent (/api/kill). Un AbortController de génération ne
+       suffisait pas : sans lui, fenêtre d'exécution = la suite partait
+       quand même. */
+    chaineInterrompue = true;
+    arreterFluxExecs();
+    tuerExecsAgent();
+    if (controleurEnCours) {
+      controleurEnCours.abort();
+    } else {
+      notifier('Arrêt demandé — la suite s\'arrête.');
+    }
     dernierStop = Date.now();
     return;
   }
@@ -5627,20 +5734,27 @@ ouvrirCompteEl.addEventListener('click', () => {
    sandboxée (allow-scripts, sans allow-same-origin → aucun accès au stockage
    ni au DOM parent) avec relais console/erreurs via postMessage. */
 function fichiersDeLaConversation() {
+  /* §8.7 (la dernière version gagne) : un même chemin réapparu plus bas
+     dans le fil (fichier créé puis modifié) REMPLACE l'ancienne carte.
+     Avant, le Set first-wins gardait la V1 — le HUD du bouton fichiers
+     n'affichait jamais les modifications, toujours le contenu initial.
+     L'ORDRE reste celui de la première apparition (Map : insertion
+     originale conservée, valeur écrasée par la carte la plus récente). */
   const fichiers = [];
-  const vus = new Set();
+  const cartesParChemin = new Map();
   document.querySelectorAll('#msgs .file-bloc').forEach((carte) => {
-    const chemin = carte.dataset.chemin || 'fichier.txt';
-    if (vus.has('c:' + chemin)) return;
-    vus.add('c:' + chemin);
+    cartesParChemin.set(carte.dataset.chemin || 'fichier.txt', carte);
+  });
+  const jointsParNom = new Map();
+  document.querySelectorAll('#msgs .fichier-joint-item').forEach((item) => {
+    const n = item.querySelector('.fichier-joint-nom');
+    jointsParNom.set((n && n.textContent) || 'Fichier sans nom', item);
+  });
+  cartesParChemin.forEach((carte, chemin) => {
     const contenu = carte._contenuComplet != null ? String(carte._contenuComplet) : '';
     fichiers.push({ nom: nomBaseFichier(chemin), chemin, contenu, carte: carte, attache: null, meta: '' });
   });
-  document.querySelectorAll('#msgs .fichier-joint-item').forEach((item) => {
-    const n = item.querySelector('.fichier-joint-nom');
-    const nom = (n && n.textContent) || 'Fichier sans nom';
-    if (vus.has('a:' + nom)) return;
-    vus.add('a:' + nom);
+  jointsParNom.forEach((item, nom) => {
     const m = item.querySelector('.fichier-joint-meta');
     fichiers.push({ nom: nom, chemin: nom, contenu: null, carte: null, attache: item, meta: m ? m.textContent : 'analysé' });
   });
@@ -6405,7 +6519,14 @@ function itemModeleHud(m, selectionCourante) {
   const item = document.createElement('button');
   item.type = 'button';
   item.className = 'hud-item' + (m.id === selectionCourante ? ' actif' : '') + (m.up ? '' : ' down');
-  if (!m.up) item.title = 'Momentanément indisponible.';
+  if (!m.up) {
+    /* §8.7 : la pause reste GRISÉE mais devient SÉLECTIONNABLE — l'ancien
+       clic bloqué + libellé « proxy non déployé » empêchait littéralement
+       d'utiliser un modèle openrouter en pause (quotidien). */
+    item.title = m.pause
+      ? 'En pause (quota ou erreur récente) — sélectionnable : tentative + erreur honnête.'
+      : 'Momentanément indisponible.';
+  }
   const point = document.createElement('span');
   point.className = 'hud-point';
   point.setAttribute('aria-hidden', 'true');
@@ -6432,7 +6553,7 @@ function itemModeleHud(m, selectionCourante) {
   }
   item.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (!m.up) return; // grisé : rien (tooltip neutre)
+    if (!m.up && !m.pause) return; /* mort / clé manquante : rien à tenter */
     /* « auto » = retour à la cascade par défaut : on RETIRE la sélection
        (aucun model_id envoyé) plutôt que de stocker un pseudo-modèle. */
     if (m.id === 'auto') {

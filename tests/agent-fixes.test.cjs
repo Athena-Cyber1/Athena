@@ -96,15 +96,19 @@ async function main() {
   const s3 = String(e3.j.stdout || '');
   V(s3.includes('café') && s3.includes('中文') && s3.includes('😀'), 'UTF-8 intact (pas de mojibake)', JSON.stringify(s3.trim()));
 
-  /* 4. Doom-loop (§8.6-6) : 3 passages identiques -> 409 + reset au suivant. */
+  /* 4. Doom-loop (§8.6-6 → §8.7) : PLUS DE 409 — la 3e occurrence reçoit un
+      avertissement DANS la sortie, l'exécution a toujours lieu. */
   const dCmd = WIN ? "Write-Output 'doom-1'" : "echo doom-1";
   const d1 = await post('/exec', { commande: dCmd, confirme: true });
   const d2 = await post('/exec', { commande: dCmd, confirme: true });
   const d3 = await post('/exec', { commande: dCmd, confirme: true });
   const d4 = await post('/exec', { commande: dCmd, confirme: true });
-  V(d1.st === 200 && d2.st === 200, 'doom: 1er et 2e passages executent', JSON.stringify([d1.st, d2.st]));
-  V(d3.st === 409 && d3.j.doom_loop === true, 'doom: 3e passage refuse 409', 'st=' + d3.st + ' ' + JSON.stringify(d3.j).slice(0, 120));
-  V(d4.st === 409, 'doom: refus persistant tant que la boucle dure', 'st=' + d4.st);
+  V(d1.st === 200 && d2.st === 200 && !d1.j.doom_loop && !d2.j.doom_loop,
+    'doom: 1er et 2e passages executes sans note', JSON.stringify([d1.st, d2.st]));
+  V(d3.st === 200 && d3.j.doom_loop === true && String(d3.j.stdout || '').includes('[avertissement]'),
+    'doom: 3e passage EXECUTE + avertissement dans la sortie (jamais de 409)',
+    'st=' + d3.st + ' ' + JSON.stringify(String(d3.j.stdout || '').slice(-140)));
+  V(d4.st === 200 && !d4.j.doom_loop, 'doom: 4e passage execute, note une seule fois par salve', 'st=' + d4.st);
   const d5 = await post('/exec', { commande: WIN ? "Write-Output 'autre-cmd'" : "echo autre-cmd", confirme: true });
   V(d5.st === 200, 'doom: commande differente remet le compteur', 'st=' + d5.st + ' ' + JSON.stringify(d5.j).slice(0, 80));
 
@@ -115,7 +119,19 @@ async function main() {
   V(!!m5, 'spill: mention du fichier dans la sortie tronquee', JSON.stringify(s5.slice(-200)));
   V(m5 ? fs.existsSync(m5[3]) : false, 'spill: fichier reellement ecrit sur disque', m5 ? m5[3] : 'pas de match');
 
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 13/13 OK' + (demarre ? ' (agent auto-start)' : ''));
+  /* 6. §8.7 (arrêt obligatoire) : /kill tue la commande en cours — l'UI
+     l'appelle à l'arrêt de la conversation (abort client ≠ tuerie serveur). */
+  const tK = Date.now();
+  const pLongue = post('/exec', { commande: WIN ? 'Start-Sleep 30' : 'exec sleep 30', confirme: true, timeout_ms: 30000 });
+  await new Promise((r) => setTimeout(r, 900));
+  const k = await post('/kill', {});
+  const rLong = await pLongue;
+  const dK = Date.now() - tK;
+  V(k.st === 200 && typeof k.j.arrets === 'number', 'kill: /kill repond 200', JSON.stringify(k.j));
+  V(dK < 15000, 'kill: commande longue tuee avant son terme', dK + ' ms');
+  V(rLong.st === 200, 'kill: /exec resout apres tuerie (pas de hang)', JSON.stringify(rLong.j).slice(0, 120));
+
+  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 16/16 OK' + (demarre ? ' (agent auto-start)' : ''));
   process.exit(echecs ? 1 : 0);
 }
 
