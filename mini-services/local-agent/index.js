@@ -1421,12 +1421,18 @@ function refus(cmd) {
 /* v1.2 (audit UI) : syntaxes vouées à l'échec sous PowerShell (l'agent tourne
    sous powershell.exe, pas cmd/bash). 400 + correction plutôt qu'exécution
    ratée : le modèle peut se corriger au tour suivant au lieu d'empiler des
-   code=1 incompréhensibles. Vérifié APRÈS refus() (la sécurité d'abord). */
+   code=1 incompréhensibles. Vérifié APRÈS refus() (la sécurité d'abord).
+   fix CI (cv) : ces 3 règles ne valent que LÀ où le shell est PowerShell —
+   sous linux l'agent spawn /bin/sh et `i=0;` / `export X` sont VALIDES ; les
+   rejeter rendait test:agent rouge sur ubuntu (stdout vide, len=0). */
+const SUR_POWERSHELL = process.platform === 'win32';
 const LINT = [
   [/^start\s+""/i, 'syntaxe cmd : utilisez Start-Process -FilePath ...'],
-  [/^export\s+[A-Za-z_]/i, "syntaxe bash : utilisez $env:NOM='valeur'"],
-  [/^[A-Za-z_][A-Za-z0-9_]*=(\S|$)/, "assignation bash : utilisez $env:NOM='valeur'"],
-  [/^set\s+[A-Za-z_][A-Za-z0-9_]*=/i, "syntaxe cmd : utilisez $env:NOM='valeur'"],
+  ...(SUR_POWERSHELL ? [
+    [/^export\s+[A-Za-z_]/i, "syntaxe bash : utilisez $env:NOM='valeur'"],
+    [/^[A-Za-z_][A-Za-z0-9_]*=(\S|$)/, "assignation bash : utilisez $env:NOM='valeur'"],
+    [/^set\s+[A-Za-z_][A-Za-z0-9_]*=/i, "syntaxe cmd : utilisez $env:NOM='valeur'"],
+  ] : []),
 ];
 /* v1.2 (anti-timeout) : récursion NON BORNÉE sur une zone large = 20 s+ de
    balayage puis timeout garanti (ex. Get-ChildItem -Recurse $HOME). On refuse
