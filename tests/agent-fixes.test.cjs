@@ -2,9 +2,12 @@
    Vérifie les correctifs v1.2 : DENY_WRITE AVANT tout mkdir (aucun dossier
    système créé, message avec le chemin), sortie LONGUE tronquée au milieu
    (tête ET queue conservées), UTF-8 intact (setEncoding + OutputEncoding PS).
+   §8.6-6 : doom-loop (même commande ×3 -> 409, commande différente reset).
+   §8.6-8 : spill (sortie > MAX_OUT -> fichier 7 j + chemin dans stdout).
    S'exécute seul (auto-start :3020 si besoin) ou sur un agent déjà levé.
    Windows et Linux (CI ubuntu) : les commandes sont adaptées par plateforme. */
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const B = 'http://127.0.0.1:3020';
@@ -93,7 +96,26 @@ async function main() {
   const s3 = String(e3.j.stdout || '');
   V(s3.includes('café') && s3.includes('中文') && s3.includes('😀'), 'UTF-8 intact (pas de mojibake)', JSON.stringify(s3.trim()));
 
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 7/7 OK' + (demarre ? ' (agent auto-start)' : ''));
+  /* 4. Doom-loop (§8.6-6) : 3 passages identiques -> 409 + reset au suivant. */
+  const dCmd = WIN ? "Write-Output 'doom-1'" : "echo doom-1";
+  const d1 = await post('/exec', { commande: dCmd, confirme: true });
+  const d2 = await post('/exec', { commande: dCmd, confirme: true });
+  const d3 = await post('/exec', { commande: dCmd, confirme: true });
+  const d4 = await post('/exec', { commande: dCmd, confirme: true });
+  V(d1.st === 200 && d2.st === 200, 'doom: 1er et 2e passages executent', JSON.stringify([d1.st, d2.st]));
+  V(d3.st === 409 && d3.j.doom_loop === true, 'doom: 3e passage refuse 409', 'st=' + d3.st + ' ' + JSON.stringify(d3.j).slice(0, 120));
+  V(d4.st === 409, 'doom: refus persistant tant que la boucle dure', 'st=' + d4.st);
+  const d5 = await post('/exec', { commande: WIN ? "Write-Output 'autre-cmd'" : "echo autre-cmd", confirme: true });
+  V(d5.st === 200, 'doom: commande differente remet le compteur', 'st=' + d5.st + ' ' + JSON.stringify(d5.j).slice(0, 80));
+
+  /* 5. Spill (§8.6-8) : sortie > MAX_OUT -> fichier épinglé + chemin. */
+  const e5 = await post('/exec', { commande: CMD.longue, confirme: true, timeout_ms: 30000 });
+  const s5 = String(e5.j.stdout || '');
+  const m5 = s5.match(/sortie complète \((\d+) caractères, (\d+) lignes\) écrite dans : (.+?) — purgée après 7 jours/);
+  V(!!m5, 'spill: mention du fichier dans la sortie tronquee', JSON.stringify(s5.slice(-200)));
+  V(m5 ? fs.existsSync(m5[3]) : false, 'spill: fichier reellement ecrit sur disque', m5 ? m5[3] : 'pas de match');
+
+  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 13/13 OK' + (demarre ? ' (agent auto-start)' : ''));
   process.exit(echecs ? 1 : 0);
 }
 

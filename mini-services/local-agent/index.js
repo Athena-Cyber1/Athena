@@ -37,6 +37,12 @@ const TIMEOUT_MIN_MS = 100;
 const MAX_OUT = 64 * 1024;
 /* v1.1 (direct) : écriture de fichiers créés par le modèle. */
 const MAX_WRITE = 2 * 1024 * 1024;
+/* §8.6-8 (spillover, opencode 50 Ko/2000 lignes en mémoire) : au-delà de
+   MAX_OUT, la sortie COMPLÈTE (plafond SPILL_MAX) part dans un fichier à
+   rétention 7 jours et le chemin est ajouté à la sortie tronquée — le modèle
+   lit la trace ET garde le droit au détail. */
+const SPILL_MAX = 2 * 1024 * 1024;
+const SPILL_DIR = path.join(os.tmpdir(), 'athena', 'tool-output');
 /* ---- v1.3 (navigateur) : Firefox intégré piloté par le modèle ----
    Session Playwright persistante en mémoire : une seule fenêtre vivante,
    réutilisée d'une action à l'autre (sinon chaque bloc relancerait un
@@ -1469,6 +1475,47 @@ function dansAllowDir(cwd) {
   return reel === baseReelle || reel.startsWith(baseReelle + path.sep);
 }
 
+/* §8.6-6 (opencode DOOM_LOOP_THRESHOLD=3) : même commande 3 fois de suite
+   sans résultat différent = boucle — l'historique mesure « le modèle relançait
+   la même commande 49 fois » (commentaire §8.3 plus bas). Tant que la boucle
+   dure on refuse (409) ; une commande différente remet le compteur à zéro. */
+let doomCle = null;
+let doomN = 0;
+function verifierDoom(commande) {
+  const cle = String(commande || '');
+  if (!cle) return null;
+  if (cle === doomCle) doomN += 1;
+  else { doomCle = cle; doomN = 1; }
+  if (doomN >= 3) {
+    return "doom-loop : même commande exécutée 3 fois de suite sans résultat "
+      + "différent — change d'approche (autre commande, autre outil) au lieu de "
+      + "répéter. Une commande différente remet le compteur à zéro.";
+  }
+  return null;
+}
+
+/* §8.6-8 : purgatoire des sorties épinglées (> 7 jours) + écriture. */
+function nettoyerDebordements() {
+  try {
+    const limite = Date.now() - 7 * 24 * 3600 * 1000;
+    for (const f of fs.readdirSync(SPILL_DIR)) {
+      const p = path.join(SPILL_DIR, f);
+      try { if (fs.statSync(p).mtimeMs < limite) fs.unlinkSync(p); } catch (_) {}
+    }
+  } catch (_) {}
+}
+function ecrireDebordement(txt) {
+  try {
+    fs.mkdirSync(SPILL_DIR, { recursive: true });
+    nettoyerDebordements();
+    const nom = 'sortie-' + Date.now().toString(36) + '-' + process.pid + '-'
+      + Math.random().toString(36).slice(2, 6) + '.txt';
+    const chemin = path.join(SPILL_DIR, nom);
+    fs.writeFileSync(chemin, txt, 'utf8');
+    return chemin;
+  } catch (_) { return null; }
+}
+
 /* v1.1 (direct) : surDonnees(canal, texte) optionnel — appelé à chaque
    paquet stdout/stderr pour la diffusion EN DIRECT (NDJSON) ; sans lui,
    comportement historique (attente de la fin). capsule (optionnel) reçoit
@@ -1492,6 +1539,8 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
     let err = '';
     let code = null;
     let termine = false;
+    /* §8.6-8 : copie COMPLÈTE (bornée SPILL_MAX) pour l'épingle disque. */
+    let complet = '';
 
     const enfant = spawn(shell, args, {
       cwd: cwd && estDossier(cwd) ? cwd : process.cwd(),
@@ -1516,6 +1565,19 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
       const queue = (acc.slice(moitie) + d).slice(-moitie);
       return tete + '\n…[sortie tronquée au milieu — début et fin conservés]…\n' + queue;
     };
+    /* §8.6-8 : si la sortie COMPLÈTE dépasse MAX_OUT, on l'épingle dans
+       SPILL_DIR (rétention 7 jours) et on donne le chemin à côté de la
+       tête+queue tronquée — le modèle ne perd jamais le détail. */
+    const sortirSpill = (base) => {
+      const tronquee = base.slice(0, MAX_OUT);
+      if (complet.length <= MAX_OUT) return tronquee;
+      const chemin = ecrireDebordement(complet);
+      if (!chemin) return tronquee;
+      return tronquee
+        + '\n[sortie complète (' + complet.length + ' caractères, '
+        + complet.split('\n').length + ' lignes) écrite dans : ' + chemin
+        + ' — purgée après 7 jours]';
+    };
     /* v20260926d (kimi) : la déconnexion client en plein flux tue l'arbre
        (sinon le process orphelin tourne jusqu'au timeout). */
     if (capsule) {
@@ -1537,7 +1599,7 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
         ok: false,
         code: null,
         signal: 'TIMEOUT',
-        stdout: sortie.slice(0, MAX_OUT),
+        stdout: sortirSpill(sortie),
         stderr: (err + `\n[timeout ${timeoutMs} ms]`).slice(0, MAX_OUT),
         duree_ms: Date.now() - debut,
       });
@@ -1555,6 +1617,7 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
     };
     enfant.stdout.on('data', (d) => {
       sortie = emboutir(sortie, d);
+      if (complet.length < SPILL_MAX) complet = (complet + d).slice(0, SPILL_MAX);
       diffuser('stdout', d);
     });
     enfant.stderr.on('data', (d) => {
@@ -1591,7 +1654,7 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
         ok: !(c !== 0 && errFin.trim()),
         code: c,
         signal: null,
-        stdout: sortie.slice(0, MAX_OUT),
+        stdout: sortirSpill(sortie),
         stderr: errFin,
         duree_ms: Date.now() - debut,
       });
@@ -1615,6 +1678,20 @@ const serveur = http.createServer(async (req, res) => {
   if (!ORIGINES_OK(origin)) {
     json(res, 403, { erreur: 'origine non autorisée' }, origin, req);
     return;
+  }
+
+  /* §8.6-7 (opencode : loopback + bearer token) : HOST est déjà 127.0.0.1
+     (unicast, pas de loopback-path-scan) ; si ATHENA_AGENT_TOKEN est défini,
+     chaque route exige Authorization: Bearer <token> ou x-athena-token.
+     Sans variable → mode historique inchangé (zéro friction). */
+  const jeton = process.env.ATHENA_AGENT_TOKEN || '';
+  if (jeton && req.method !== 'OPTIONS') {
+    const hAuth = String(req.headers['authorization'] || req.headers['x-athena-token'] || '');
+    const porteur = hAuth.startsWith('Bearer ') ? hAuth.slice(7) : hAuth;
+    if (porteur !== jeton) {
+      json(res, 401, { erreur: 'ATHENA_AGENT_TOKEN requis (Authorization: Bearer …)' }, origin, req);
+      return;
+    }
   }
 
   try {
@@ -1792,6 +1869,13 @@ const serveur = http.createServer(async (req, res) => {
           pret: true,
           hint: 'Renvoyez avec confirme:true après validation utilisateur',
         }, origin, req);
+        return;
+      }
+      /* §8.6-6 doom-loop : on ne compte que ce qui allait VRAIMENT s'exécuter
+         (après validation/refus/lint/confirme) — 3 passages identiques = 409. */
+      const avertDoom = verifierDoom(commande);
+      if (avertDoom) {
+        json(res, 409, { erreur: avertDoom, doom_loop: true }, origin, req);
         return;
       }
       const cwdDemande = typeof corps.cwd === 'string' && corps.cwd ? corps.cwd : process.cwd();

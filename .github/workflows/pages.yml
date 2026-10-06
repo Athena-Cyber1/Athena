@@ -32,6 +32,8 @@ jobs:
         run: npm run test:agent
       - name: Bench (jsdom)
         run: npm run test:bench
+      - name: Shim (pauses + traces + effort + cot)
+        run: npm run test:shim
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

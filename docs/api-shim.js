@@ -39,6 +39,16 @@
      {type:'trace'} vers l'UI (HUD « journal ») : « pourquoi cette réponse
      était courte » devient consultable au lieu de deviné. */
   var TRACES_SHIM = [];
+  /* v20261007 : les traces sont aussi PERSISTÉES (50 dernières, ~15 ko) — un
+     F5 perdait la trace de la requête posant problème et « analyse ma dernière
+     requête » devenait impossible hors page ouverte. Même format que la mémoire,
+     tronqué aux 50 plus récentes. */
+  var CLE_TRACES = 'athena_traces';
+  try {
+    var brutT = JSON.parse(localStorage.getItem(CLE_TRACES) || '[]');
+    if (Array.isArray(brutT)) TRACES_SHIM = brutT.slice(-200);
+  } catch (eT) {}
+  window.__athenaTraces = TRACES_SHIM;
   function tracerEssai(entry, pk, ms, erreur) {
     var c = entry._corps || {};
     var u = entry._usage || null;
@@ -75,6 +85,9 @@
       TRACES_SHIM.push(t);
       if (TRACES_SHIM.length > 200) TRACES_SHIM.shift();
       window.__athenaTraces = TRACES_SHIM;
+      /* persistance : 50 dernières seules (les plus utiles pour diagnostiquer
+         la dernière requête), en échec silencieux (quota localStorage). */
+      try { localStorage.setItem(CLE_TRACES, JSON.stringify(TRACES_SHIM.slice(-50))); } catch (eP) {}
     } catch (e) {}
     if (emit) { try { emit({ type: 'trace', trace: t }); } catch (e) {} }
   }
@@ -121,6 +134,40 @@
     while (j < EFFORTS_HUD.length - 1 && admis.indexOf(EFFORTS_HUD[j + 1]) < 0) j += 1;
     return admis.indexOf(EFFORTS_HUD[j]) >= 0 ? EFFORTS_HUD[j] : admis[0];
   }
+
+  /* v20261007 (§8.5-2, garde CoT vomi) : certains mod�les rendent leur
+     cha�ne de pens�e comme CONTENU visible (« Here's a thinking process: »
+     suivi d'�tapes, z�ro r�ponse) - la garde « r�ponse vide » ne
+     d�clenchait pas car le texte existe. nettoyageCot() rend :
+     - la cha�ne INCHANG�E si pas de pr�ambule CoT (cas normal) ;
+     - la cha�ne NETTOY�E si le pr�ambule est suivi d'une vraie r�ponse
+       (bloc ``` ou balise HTML) ;
+     - null si tout est raisonnement -> le chemin jette « CoT vomi », la
+       cascade passe au mod�le suivant (m�me traitement que r�ponse vide),
+       avec UN retry effort low sur CE mod�le (condition 2358). */
+  function nettoyageCot(txt) {
+    var t = typeof txt === 'string' ? txt : '';
+    var m = t.match(/^\s*(?:sure[, ]*)?(?:here'?s|here is|voici)\s+(?:a |the |mon |ma |le |la )?(?:thinking|reasoning|reasoned|réflexion|raisonnement|process(?:us)?)[^\n:]{0,40}:\s*/i);
+    if (!m) return t;
+    var reste = t.slice(m[0].length);
+    var repondu = /```|^\s*#{1,4}\s|\n\s*<(?:!DOCTYPE|html|body|div|pre|canvas)/im.test(reste);
+    return repondu ? reste : null;
+  }
+  try { window.__athenaCot = nettoyageCot; } catch (eCot) {}
+
+  /* §8.6-3 (opencode retry.ts) : backoff 2 s × 2^n + jitter 25 %, plafond
+     30 s ; Retry-After prioritaire (branche avecRetry). La SATURATION garde
+     son palier COURT (bascule provider rapide — banc validé) : opencode ne
+     cascadant pas de provider, ses 5 retries 2/4/8/16/32 s serviraient ici
+     uniquement à retarder le changement de modèle. RETRY_MAX = 3 essais
+     (opencode : 5) car chaque retry tourne déjà la liste des modèles. */
+  function delaiBackoff(n, sat) {
+    var base = sat
+      ? [500, 1500, 3000, 6000, 10000][Math.min(Math.max(n, 0), 4)]
+      : Math.min(2000 * Math.pow(2, Math.max(n, 0)), 30000);
+    return Math.round(base + base * 0.25 * Math.random());
+  }
+  try { window.__athenaBackoff = delaiBackoff; } catch (eBo) {}
 
   var PROVIDERS = {
     /* v20260926b (direct) : pollinations et openrouter parlent SSE OpenAI
@@ -338,17 +385,61 @@
      « Échec du modèle : … 403 Missing Turnstile token » et de tuer la
      conversation (dont l'historique — donc le contexte d'un skill — dépend). */
   var providersEnPause = {};
+  /* v20261006 (console propre) : la pause est PERSISTÉE (localStorage) —
+     une recharge de page repartait « vierge » et re-tentait le provider déjà
+     sanctionné : +1 ligne « 429 » dans la console à chaque F5, sur un quota
+     déjà épuisé (50 req/jour, reset 00:00 UTC). Les pauses lues au démarrage
+     sont bornées à 6 h (même plafond que le 429), elles expirent donc toutes
+     seules au plus tard au reset. */
+  var CLE_PAUSES = 'athena_pauses_providers';
+  var PAUSE_PLAFOND_MS = 6 * 3600000;
+  function chargerPauses() {
+    try {
+      var brut = localStorage.getItem(CLE_PAUSES);
+      if (!brut) return;
+      var obj = JSON.parse(brut) || {};
+      var maintenant = Date.now();
+      var restant = 0;
+      Object.keys(obj).forEach(function (pk) {
+        var fin = Number(obj[pk]);
+        if (Number.isFinite(fin) && fin > maintenant && fin - maintenant <= PAUSE_PLAFOND_MS + 60000) {
+          providersEnPause[pk] = fin;
+          restant++;
+        }
+      });
+      if (!restant) localStorage.removeItem(CLE_PAUSES);
+    } catch (e) {}
+  }
+  function sauverPauses() {
+    try { localStorage.setItem(CLE_PAUSES, JSON.stringify(providersEnPause)); } catch (e) {}
+  }
   function marquerPause(pk, ms) {
     if (!pk) return;
-    providersEnPause[pk] = Date.now() + (ms || 180000);
+    providersEnPause[pk] = Date.now() + Math.min(ms || 180000, PAUSE_PLAFOND_MS);
+    sauverPauses();
   }
   function providerSain(pk) {
     if (!pk) return true;
     var fin = providersEnPause[pk];
     if (!fin) return true;
-    if (Date.now() >= fin) { delete providersEnPause[pk]; return true; }
+    if (Date.now() >= fin) { delete providersEnPause[pk]; sauverPauses(); return true; }
     return false;
   }
+  /* Exposé pour l'observabilité (HUD/tests) : état des pauses, sans toucher
+     au détail interne de la cascade. */
+  window.__athenaPauses = {
+    cle: CLE_PAUSES,
+    etat: function () {
+      var copie = {};
+      Object.keys(providersEnPause).forEach(function (pk) { copie[pk] = providersEnPause[pk]; });
+      return copie;
+    },
+    restantMs: function (pk) {
+      var fin = providersEnPause[pk];
+      return fin ? Math.max(0, fin - Date.now()) : 0;
+    },
+  };
+  chargerPauses();
   function bloquageAmont(err) {
     var st = err && err.status;
     if (st === 402 || st === 403 || st === 429) return true;
@@ -655,6 +746,30 @@
     }
     return touche;
   }
+  /* §8.6-5 (opencode « small model ») : le résumé de compaction est un job
+     AUXILIAIRE — il ne doit ni brûler le modèle principal ni le gaspiller.
+     On préfère un petit modèle rapide (north-mini-code écrit déjà nos
+     correctifs, ling 3.0 / laguna sont des modèles légers), le premier
+     openrouter venu reste le repli. */
+  function petitPourResume(cat) {
+    var ordre = [
+      'cohere/north-mini-code:free',
+      'inclusionai/ling-3.0-flash-sante:free',
+      'inclusionai/ling-3.0-flash-fin:free',
+      'poolside/laguna-s-2.1:free',
+      'poolside/laguna-xs-2.1:free',
+    ];
+    for (var p = 0; p < ordre.length; p++) {
+      for (var q = 0; q < cat.length; q++) {
+        var e = cat[q];
+        if (e && e.model === ordre[p] && e.up && e.chat !== false
+            && providerSain(e.providerKey)) return e;
+      }
+    }
+    return null;
+  }
+  try { window.__athenaPetitPourResume = petitPourResume; } catch (ePr) {}
+
   async function compresserSiPlein(msgs, entry, signal) {
     var limite = limiteModele(entry);
     var travail = (msgs || []).slice();
@@ -698,9 +813,10 @@
     try {
       var cat = catalogue();
       /* v1.2 : openrouter d'abord (pollinations est muré anti-robot dans
-         les navigateurs — Turnstile 403 garanti, inutile de l'essayer). */
-      var eRes = null;
-      for (var i = 0; i < cat.length; i++) {
+         les navigateurs — Turnstile 403 garanti, inutile de l'essayer).
+         §8.6-5 : un PETIT modèle d'abord (job auxiliaire, opencode-style). */
+      var eRes = petitPourResume(cat);
+      for (var i = 0; !eRes && i < cat.length; i++) {
         if (cat[i].up && cat[i].providerKey === 'openrouter') { eRes = cat[i]; break; }
       }
       if (!eRes) {
@@ -1393,6 +1509,23 @@
       if (typeof c.max_tokens !== 'number' && pk !== 'pollinations') {
         c.max_tokens = 16384;
       }
+      /* v20261007 (§8.5-1, effort transmis) : l'effort du HUD n'arrivait
+         JAMAIS chez openrouter (reasoning: null en trace) - seul NVIDIA
+         recevait reasoning_effort (payload provider). Cons�quence mesur�e
+         : nemotron vomissait son CoT en contenu (1247/1200 tokens de raison)
+         et north-mini-code bouffait 1160/1198 avant le code. On envoie donc
+         reasoning.effort quand l'Entr�e D�CLARE ses efforts (marqueur
+         « mod�le raisonneur v�rifi� ») ; �chelle openrouter born�e
+         low/medium/high (xhigh/max remont�s � high, au-del� le provider
+         rejetterait en 400). entry._effortIgnore = le provider a rejet� ce
+         champ en session : on n'insiste plus (auto-gu�rison, voir
+         avecRetry). */
+      if (pk === 'openrouter' && !c.reasoning && entry && !entry._effortIgnore
+          && Array.isArray(entry.efforts)) {
+        var eOR = effortNvidia(entry);
+        var OR_EFFORTS = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high', max: 'high' };
+        c.reasoning = { effort: OR_EFFORTS[eOR] || 'medium' };
+      }
       /* v banc 20261006 (§3 observabilité) : usage réel (prompt/completion +
          part de raisonnement) — OpenRouter (spec OpenAI) n'envoie le chunk
          final d'usage QUE si stream_options.include_usage est demandé ;
@@ -1417,6 +1550,11 @@
         } catch (e) {}
         if (tPref !== null) c.temperature = tPref;
       }
+      /* §8.6-4 (opencode : strip temperature des modèles reasoning) — un
+         modèle raisonneur l'IGNORE au mieux, y RÉPOND 400 au pire ( Copilot
+         opencode retire temperature/top_p sur les modèles reasoning). On ne
+         l'envoie donc plus aux entries qui déclarent `efforts`. */
+      if (entry && Array.isArray(entry.efforts)) delete c.temperature;
       if (liste) c.models = liste;
       else c.model = entry.model;
       /* v1.2 (langue, proximité) : rappel collé au DERNIER message user —
@@ -1684,6 +1822,14 @@
         throw new Error(entry.provider + ' : réponse vide'
           + (String(pensee).trim() ? ' (raisonnement seul, sans réponse)' : ''));
       }
+      /* §8.5-2 : contenu = CoT visible (« Here's a thinking process: ... »)
+         → même traitement que réponse vide (jeté hors try/catch, sans
+         marqueur `partiel`) : la cascade enchaîne, un retry effort low
+         part sur CE modèle (condition « CoT vomi » du retry 2401). */
+      txt = nettoyageCot(txt);
+      if (txt === null) {
+        throw new Error(entry.provider + ' : réponse = raisonnement visible (CoT vomi)');
+      }
       /* v20260926d (kimi) : reliquat de jetons PUIS contrôle de fin. */
       if (onDelta) {
         if (pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
@@ -1809,6 +1955,9 @@
           var d = null;
           try { d = JSON.parse(t); } catch (e) { d = null; }
           var txt = texteDe(d);
+          /* §8.5-2 : CoT vomi → cascade (identique au flux). */
+          txt = nettoyageCot(txt);
+          if (txt === null) throw new Error(entry.provider + ' : réponse = raisonnement visible (CoT vomi)');
           if (!txt || !String(txt).trim()) throw new Error(entry.provider + ' : réponse vide');
           return txt;
         });
@@ -1833,8 +1982,8 @@
        saturation de capacité, pas un quota épuisé — elle retombe en quelques
        secondes. On attend plus longtemps et on fait tourner le modèle gratuit
        suivant. Le quota réel de la clé garde l'escalier court d'origine. */
-    var delaisRetry = [500, 1500];
     var delaisRetrySaturation = [500, 1500, 3000, 6000, 10000];
+    var RETRY_MAX = 3;
     function saturation(err) {
       if (!err) return false;
       /* v banc 20261005 : le quota JOURNALIER (free-models-per-day) n'est
@@ -1851,6 +2000,15 @@
       return uneTentative(liste).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
         if (err && err.pasRetry) throw err;
+        /* §8.5-1 auto-guérison : le provider REJETTE le champ reasoning
+           (400/422 « reasoning/effort not supported ») → on marque CETTE
+           entrée et on re-essai immédiatement SANS l'effort (corpsPour
+           voit _effortIgnore) au lieu de tuer toute la cascade. */
+        if (err && (err.status === 400 || err.status === 422) && entry && !entry._effortIgnore
+            && /reasoning|effort/i.test(String(err.message || ''))) {
+          entry._effortIgnore = true;
+          return avecRetry(n, liste);
+        }
         /* flux déjà diffusé en partie → re-POST interdit (étapes en double) */
         if (err && err.partiel) throw err;
         /* v banc 20261005 : quota journalier épuisé → AUCUNE attente (le
@@ -1859,19 +2017,19 @@
         if (err && err.quotidien) throw err;
         var st = err && err.status;
         var sat = saturation(err);
-        var ladder = sat ? delaisRetrySaturation : delaisRetry;
+        var maxEssais = sat ? delaisRetrySaturation.length : RETRY_MAX;
         /* Saturation = réponse vide / upsteam exhausted : c'est transitoire,
            on retente même si le statut HTTP n'est pas 429 (OpenRouter
            sanitise parfois en 400). Sans cela, une tâche longue meurt sur un
            simple pic de capacité. */
         var retryable = st === 429 || st === 502 || st === 503 || sat;
-        if (retryable && n < ladder.length && !(signal && signal.aborted)) {
+        if (retryable && n < maxEssais && !(signal && signal.aborted)) {
           var prochaine = liste;
           if (liste && liste.length > 1) {
             /* rotation : modèle rate-limité passe en fin de file */
             prochaine = liste.slice(1).concat(liste.slice(0, 1));
           }
-          var attente = ladder[n];
+          var attente = delaiBackoff(n, sat);
           /* quota OpenRouter free/min : on attend le reset SEULEMENT s'il est
              proche (≤ 8 s), sinon fail-fast → le provider suivant répond
              tout de suite (v20260926f, lags). */
@@ -1882,12 +2040,19 @@
             } else if (reste >= 8000) {
               /* Saturation de capacité : on patiente jusqu'au reset (plafonné
                  à 30 s) au lieu d'abandonner — sinon la tâche s'arrête net. */
-              if (sat && n < ladder.length) attente = Math.min(reste + 250, 30000);
+              if (sat && n < delaisRetrySaturation.length) attente = Math.min(reste + 250, 30000);
               else throw err;
             }
           } else if (err.retryAfter) {
+            /* §8.6-3 (opencode retry.ts) : Retry-After EST prioritaire sur le
+               backoff calculé — on attend exactement l'en-tête, plafonné à
+               30 s ; au-delà on cascade vers le provider suivant plutôt que
+               d'attendre (avant : honoré seulement si ra < 8). */
             var ra = parseInt(err.retryAfter, 10);
-            if (!isNaN(ra) && ra > 0 && ra < 8) attente = Math.min(ra * 1000, 5000);
+            if (!isNaN(ra) && ra > 0) {
+              if (ra <= 30) attente = Math.min(ra * 1000 + 250, 30000);
+              else throw err;
+            }
           }
           /* free-models-per-min : 1 seul cycle d'attente-reset puis on rend la
              main — SAUF en saturation, où le palier gratuit repartira tout
@@ -2304,8 +2469,8 @@
                 texte = await appelBorne(callModel(entry, messages, essaiS.signal, onDelta), borne, abandonner(essaiS));
                 break;
               } catch (eBas) {
-                if (nEssaiBas === 0 && /raisonnement seul/.test(String((eBas && eBas.message) || ''))) {
-                  try { journal.push(entry.id + ' :: réflexion seule — retry effort low'); } catch (eJ) {}
+                if (nEssaiBas === 0 && /raisonnement seul|CoT vomi/.test(String((eBas && eBas.message) || ''))) {
+                  try { journal.push(entry.id + ' :: ' + (/CoT vomi/.test(String(eBas.message || '')) ? 'cot vomi' : 'réflexion seule') + ' — retry effort low'); } catch (eJ) {}
                   noterTrace(tracerEssai(entry, pk, Date.now() - tEssai, String((eBas && eBas.message) || eBas).slice(0, 160)), emit);
                   continue;
                 }

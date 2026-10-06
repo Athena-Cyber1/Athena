@@ -10,6 +10,7 @@
     "agent": "node mini-services/local-agent/index.js",
     "test:agent": "node tests/agent-fixes.test.cjs",
     "test:bench": "node tests/bench-jsdom.cjs",
+    "test:shim": "node tests/shim-pauses.test.cjs",
     "sync:assets": "node tools/prepare-assets.js",
     "check": "node tools/prepare-assets.js && node tools/check.js"
   },
