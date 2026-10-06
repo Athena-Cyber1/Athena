@@ -131,7 +131,50 @@ async function main() {
   V(dK < 15000, 'kill: commande longue tuee avant son terme', dK + ' ms');
   V(rLong.st === 200, 'kill: /exec resout apres tuerie (pas de hang)', JSON.stringify(rLong.j).slice(0, 120));
 
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 16/16 OK' + (demarre ? ' (agent auto-start)' : ''));
+  /* 7. §8.7-2 : outils de lecture DÉDIÉS — /read /list /grep : sûrs (pas de
+      shell), bornés (fenêtre, plafonds), zones système refusées (403 avant
+      toute lecture), motif exigé. */
+  const repo = path.join(__dirname, '..');
+  const pkg = path.join(repo, 'package.json');
+  const lire = (qs) => fetch(B + qs, { headers: { Origin: 'http://localhost:3000' } })
+    .then(async (r) => ({ st: r.status, j: await r.json().catch(() => ({})) }));
+  const g7 = await lire('/read?chemin=' + encodeURIComponent(pkg) + '&debut=1&fin=6');
+  V(g7.st === 200 && g7.j.ok === true && String(g7.j.texte || '').includes('"athena"'),
+    'read: fenetre de lignes lue sur package.json', 'st=' + g7.st + ' ' + JSON.stringify(g7.j).slice(0, 100));
+  V(typeof g7.j.octets === 'number' && typeof g7.j.lignes_total === 'number' && g7.j.tronque === false,
+    'read: metriques honnetes (octets, lignes_total, tronque)',
+    JSON.stringify({ o: g7.j.octets, l: g7.j.lignes_total, t: g7.j.tronque }));
+  const gSans = await lire('/read');
+  V(gSans.st === 400, 'read: sans chemin -> 400', 'st=' + gSans.st);
+  const gZone = await lire('/read?chemin=' + encodeURIComponent(DOSSIER_INTERDIT));
+  V(gZone.st === 403 && /bloqu|zone|refus/i.test(String(gZone.j.erreur || '')),
+    'read: zone systeme DENY_WRITE -> 403 avant lecture', 'st=' + gZone.st + ' ' + String(gZone.j.erreur || '').slice(0, 70));
+  const gList = await lire('/list?chemin=' + encodeURIComponent(repo));
+  const nomsL = (gList.j.entrees || []).map((e) => e.nom + (e.type === 'd' ? '/' : ''));
+  V(gList.st === 200 && nomsL.includes('package.json') && nomsL.includes('docs/'),
+    'list: entrees du repo (fichier + dossier rendus)', JSON.stringify(nomsL.slice(0, 8)));
+  V(nomsL.length > 0 && nomsL[0].endsWith('/'),
+    'list: dossiers tries avant les fichiers (1re entree = dossier)',
+    JSON.stringify(nomsL.slice(0, 5)));
+  const gListFichier = await lire('/list?chemin=' + encodeURIComponent(pkg));
+  V(gListFichier.st === 400, 'list: un fichier n est pas un dossier -> 400', 'st=' + gListFichier.st);
+  const gGrep = await post('/grep', { motif: '"name": "athena"', chemin: repo, sous: false });
+  V(gGrep.st === 200 && Array.isArray(gGrep.j.occurrences) && gGrep.j.occurrences.length >= 1
+    && gGrep.j.occurrences[0].n >= 1 && typeof gGrep.j.occurrences[0].fichier === 'string',
+    'grep: occurrence racine trouvee (fichier:ligne)', JSON.stringify(gGrep.j.occurrences || []).slice(0, 140));
+  const gPlat = await post('/grep', { motif: 'hud-plan', chemin: repo, sous: false });
+  V(gPlat.st === 200 && Array.isArray(gPlat.j.occurrences) && gPlat.j.occurrences.length === 0,
+    'grep: sous=false -> platt sans descente (match seulement dans docs/ ignore)',
+    'occ=' + (gPlat.j.occurrences || []).length);
+  const gRec = await post('/grep', { motif: 'id="hud-plan"', chemin: repo, sous: true });
+  V(gRec.st === 200 && (gGrep.j.occurrences || []).length >= 0
+    && (gRec.j.occurrences || []).length >= 1,
+    'grep: sous=true -> descente recurse (match dans docs/index.html)',
+    'occ=' + (gRec.j.occurrences || []).length);
+  const gGrepSans = await post('/grep', { chemin: repo });
+  V(gGrepSans.st === 400, 'grep: motif absent -> 400', 'st=' + gGrepSans.st);
+
+  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 27/27 OK' + (demarre ? ' (agent auto-start)' : ''));
   process.exit(echecs ? 1 : 0);
 }
 

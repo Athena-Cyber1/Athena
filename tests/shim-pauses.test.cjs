@@ -78,6 +78,73 @@ V(eNord && eNord.model === 'cohere/north-mini-code:free' && eVide === null,
   'resume compaction : north-mini prefere, sinon repli null',
   JSON.stringify([eNord && eNord.model, eVide]));
 
+/* 3d (§8.7-4) : plan visible REINJECTE a chaque tour — helper pur
+     avecPlan (window.__athenaPlanConsigne) collé au system par gererChat. */
+const pc = a.w.__athenaPlanConsigne;
+V(typeof pc === 'function', 'window.__athenaPlanConsigne expose', typeof pc);
+const basePC = 'CONSIGNES.';
+const avecPC = pc(basePC, ['[ ] etat initial', '[x] analyser le depot']);
+V(typeof avecPC === 'string' && avecPC !== basePC
+  && avecPC.indexOf('PLAN EN COURS') >= 0 && avecPC.indexOf('[x] analyser') >= 0,
+  'plan non vide -> consigne PLAN EN COURS avec etapes',
+  String(avecPC).slice(0, 120));
+V(pc(basePC, []) === basePC && pc(basePC, null) === basePC,
+  'plan vide/absent -> consignes inchangees (rien a injecter)', String(pc(basePC, [])).slice(0, 40));
+
+/* 3e (§8.7-3) : outils NATIFS — schema expose, injection conditionnee fc,
+     traduction tool_calls -> blocs athena-* (un seul chemin d'execution). */
+const ao = a.w.__athenaOutils;
+V(ao && typeof ao.schema === 'object' && typeof ao.ajouter === 'function'
+  && typeof ao.accumuler === 'function' && typeof ao.versBlocs === 'function',
+  'window.__athenaOutils expose (schema/ajouter/accumuler/versBlocs)',
+  JSON.stringify(Object.keys(ao || {})));
+const nomsOutils = (ao.schema || []).map((s) => s && s.function && s.function.name).join(',');
+V(nomsOutils === 'exec,read_file,grep,list_dir,write_file',
+  'schema function calling : 5 outils attendus', nomsOutils);
+const cFc = ao.ajouter({ fc: true }, {});
+V(cFc && Array.isArray(cFc.tools) && cFc.tools.length === 5 && cFc.tool_choice === 'auto',
+  'entree fc -> corps porte tools + tool_choice auto',
+  JSON.stringify({ n: cFc && cFc.tools && cFc.tools.length, tc: cFc && cFc.tool_choice }));
+const cNoFc = ao.ajouter({ fc: false }, {});
+const cIg = ao.ajouter({ fc: true, _toolsIgnore: true }, {});
+V(!cNoFc.tools && !cIg.tools,
+  'sans fc / _toolsIgnore -> aucun champ tools (repli blocs texte)',
+  JSON.stringify({ nofc: !!cNoFc.tools, ig: !!cIg.tools }));
+const blocsExec = ao.versBlocs([{ name: 'exec', args: JSON.stringify({ commande: 'Get-ChildItem' }) }]);
+const blocsLect = ao.versBlocs([
+  { name: 'read_file', args: JSON.stringify({ fichier: 'C:\\a\\b.js', debut: 1, fin: 20 }) },
+  { name: 'list_dir', args: JSON.stringify({ chemin: 'C:\\a' }) },
+]);
+V(blocsExec.indexOf('```athena-exec\nGet-ChildItem\n```') === 0,
+  'tool_call exec -> bloc athena-exec', JSON.stringify(blocsExec));
+V(blocsLect.indexOf('```athena-read fichier="C:\\a\\b.js" debut=1 fin=20') >= 0
+  && blocsLect.indexOf('```athena-list chemin="C:\\a"') >= 0,
+  'tool_calls read/list -> blocs athena-read / athena-list', JSON.stringify(blocsLect).slice(0, 200));
+const blocsSuite = ao.versBlocs([
+  { name: 'grep', args: JSON.stringify({ motif: 'TODO', chemin: 'C:\\a', sous: false }) },
+  { name: 'write_file', args: JSON.stringify({ chemin: 'C:\\a\\f.txt', contenu: 'salut' }) },
+  { name: 'exec', args: '{json illisible' },
+]);
+V(blocsSuite.indexOf('```athena-grep motif="TODO" chemin="C:\\a" sous=false') >= 0
+  && blocsSuite.indexOf('```athena-file chemin="C:\\a\\f.txt"\nsalut') >= 0,
+  'tool_calls grep/write -> blocs athena-grep / athena-file (args illisible ignore)',
+  JSON.stringify(blocsSuite).slice(0, 240));
+const appelsAcc = ao.accumuler(ao.accumuler([], { tool_calls: [{ index: 0, function: { name: 'exe' } }] }),
+  { tool_calls: [{ index: 0, function: { name: 'c', arguments: '{"commande":"ls"}' } }] });
+V(appelsAcc.length === 1 && appelsAcc[0].name === 'exec' && appelsAcc[0].args === '{"commande":"ls"}',
+  'deltas tool_calls (nom+args decoupes) accumules par index',
+  JSON.stringify(appelsAcc));
+
+/* 3f : drapeau fc PROPAGE par catalogue() (copie blistee explicitement). */
+const planFc = a.w.__athenaConstruireChaine('openrouter:qwen/qwen3.8-27b:free');
+V(planFc.chaine.length === 1 && planFc.chaine[0].fc === true,
+  'fc marque present sur l entree catalogue qwen (fc:true)',
+  JSON.stringify({ n: planFc.chaine.length, fc: (planFc.chaine[0] || {}).fc }));
+const planNoFc = a.w.__athenaConstruireChaine('openrouter:google/gemma-4-31b-it:free');
+V(planNoFc.chaine.length === 1 && !planNoFc.chaine[0].fc,
+  'entree sans fc -> fc=false (pas d outils natifs envoyes)',
+  JSON.stringify({ fc: (planNoFc.chaine[0] || {}).fc }));
+
 /* 4. Traces PERSISTEES (§8.1 v20261007) : restauration au demarrage, puis
       ecriture apres un essai reel (fetch en echec) — « analyse ma derniere
       requete » doit survivre a un F5. Le verdict est DIFFERE (setTimeout) :
@@ -128,11 +195,16 @@ V(cot('Bonjour ! Voici ton animation three.js, elle tourne a 60 fps.') === 'Bonj
 /* 5. Effort HUD TRANSMIS a openrouter (§8.5-1) : on declenche un essai
       reel (fetch rejette) — le corps openrouter doit porter
       reasoning.effort = 'high' (athena_effort pose plus haut). Verdict
-      DIFFERE comme la trace (tour de cascade a besoin de l'event loop). */
+      DIFFERE comme la trace (tour de cascade a besoin de l'event loop).
+      §8.7-4 : body.plan (HUD) doit etre recolle au system dans le corps
+      provider — meme essai, meme capture. */
 w5.fetch('/api/chat', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ messages: [{ role: 'user', content: 'salut' }] }),
+  body: JSON.stringify({
+    messages: [{ role: 'user', content: 'salut' }],
+    plan: ['[ ] etat initial', '[x] analyser le depot'],
+  }),
 }).catch(() => {});
 
 setTimeout(() => {
@@ -153,6 +225,13 @@ setTimeout(() => {
   V(raisonnables.length > 0 && raisonnables.every((c2) => c2.temperature === undefined),
     'temperature retiree des corps reasoning (§8.6-4)',
     JSON.stringify(raisonnables.map((c2) => ({ temp: c2.temperature, eff: c2.reasoning.effort }))));
+  /* §8.7-4 bout-en-bout : le system du corps provider porte le plan du HUD
+     (avecPlan geree par gererChat, pas seulement le helper expose). */
+  const sysPlan = corpsOk.map((c2) => (c2.messages && c2.messages[0]
+    && c2.messages[0].role === 'system' ? c2.messages[0].content : '') || '');
+  V(sysPlan.some((s2) => s2.indexOf('PLAN EN COURS') >= 0 && s2.indexOf('[x] analyser le depot') >= 0),
+    'plan HUD recolle au system du corps provider (gererChat)',
+    JSON.stringify(sysPlan.map((s2) => s2.indexOf('PLAN EN COURS'))));
   /* §8.7 (plus de repli de modèle auto) : modèle choisi = chaine d'une
      seule entrée strictChoisi ; models[] OpenRouter serre a la cible
      unique en strict, trio de relais conserve en mode auto. */
@@ -174,6 +253,6 @@ setTimeout(() => {
   const orAuto = w87.__athenaOrModelsBody({ model: 'google/gemma-4-31b-it:free' });
   V(Array.isArray(orAuto) && orAuto.length > 1,
     '8.7: auto garde le trio de relais', JSON.stringify(orAuto));
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 24/24 OK');
+  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 38/38 OK');
   process.exit(echecs ? 1 : 0);
 }, 35000);

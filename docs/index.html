@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20260925cs" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20261007da" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -211,6 +211,13 @@
           </button>
         </header>
 
+        <!-- §8.7-4 : plan de travail visible — alimenté par le bloc athena-plan
+             (majPlan), persisté par conversation (_plan), réinjecté à chaque
+             tour (body.plan → consigne système). Masqué quand il est vide. -->
+        <div id="hud-plan" class="hud-plan" hidden role="status" aria-label="Plan de travail en cours">
+          <div class="plan-tete">Plan de travail</div>
+          <ol class="plan-liste"></ol>
+        </div>
         <div id="msgs" class="msgs" role="log" aria-live="polite" aria-label="Fil de discussion"></div>
 
         <div id="file-preview" class="file-preview" aria-live="polite"></div>
@@ -362,10 +369,10 @@
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
     <script src="./keys.js?v=20260925cs"></script>
-    <script src="./api-shim.js?v=20261006cz"></script>
+    <script src="./api-shim.js?v=20261007da"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20261006cz"></script>
+    <script src="./chat-demo.js?v=20261007da"></script>
   </div>
 </body>
 </html>

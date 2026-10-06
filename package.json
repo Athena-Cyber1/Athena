@@ -11,6 +11,7 @@
     "test:agent": "node tests/agent-fixes.test.cjs",
     "test:bench": "node tests/bench-jsdom.cjs",
     "test:shim": "node tests/shim-pauses.test.cjs",
+    "test:boucle": "node tests/boucle-outils.test.cjs",
     "sync:assets": "node tools/prepare-assets.js",
     "check": "node tools/prepare-assets.js && node tools/check.js"
   },

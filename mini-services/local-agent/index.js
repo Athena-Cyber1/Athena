@@ -30,7 +30,7 @@ const os = require('os');
 
 const PORT = 3020;
 const HOST = '127.0.0.1';
-const VERSION = '1.3.6';
+const VERSION = '1.3.7';
 const AUTO = process.argv.includes('--auto');
 const TIMEOUT_MS = 60000;
 const TIMEOUT_MIN_MS = 100;
@@ -1574,11 +1574,20 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
       const queue = (acc.slice(moitie) + d).slice(-moitie);
       return tete + '\n…[sortie tronquée au milieu — début et fin conservés]…\n' + queue;
     };
+    /* §8.7-1 (queue rognée) : borne générique tête+queue. L'ancien
+       slice(0, MAX_OUT) coupait la FIN d'une sortie déjà tronquée par
+       emboutir (~50 car. au-delà de MAX_OUT) — pile la queue préservée,
+       là où vivent stacktrace et « ERR » final. Plus jamais de coupe têle. */
+    const bornerQueue = (s, n) => {
+      if (s.length <= n) return s;
+      const moitie = Math.floor(n / 2);
+      return s.slice(0, moitie) + '\n…[tronqué au milieu — début et fin conservés]…\n' + s.slice(-moitie);
+    };
     /* §8.6-8 : si la sortie COMPLÈTE dépasse MAX_OUT, on l'épingle dans
        SPILL_DIR (rétention 7 jours) et on donne le chemin à côté de la
        tête+queue tronquée — le modèle ne perd jamais le détail. */
     const sortirSpill = (base) => {
-      const tronquee = base.slice(0, MAX_OUT);
+      const tronquee = base.length <= MAX_OUT + 120 ? base : bornerQueue(base, MAX_OUT);
       if (complet.length <= MAX_OUT) return tronquee;
       const chemin = ecrireDebordement(complet);
       if (!chemin) return tronquee;
@@ -1609,7 +1618,7 @@ function executer(commande, cwd, timeoutMs, surDonnees, capsule) {
         code: null,
         signal: 'TIMEOUT',
         stdout: sortirSpill(sortie),
-        stderr: (err + `\n[timeout ${timeoutMs} ms]`).slice(0, MAX_OUT),
+        stderr: bornerQueue(err + `\n[timeout ${timeoutMs} ms]`, MAX_OUT),
         duree_ms: Date.now() - debut,
       });
     }, timeoutMs);
@@ -2336,7 +2345,164 @@ const serveur = http.createServer(async (req, res) => {
       return;
     }
 
-    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, POST /exec, POST /write, POST /browser)' }, origin, req);
+    /* §8.7-2 (outils de lecture dédiés) : read_file / list_dir / grep à côté
+       de /exec — résultats BORNÉS, déterministes et sûrs : le modèle lit du
+       code sans shell (pas d'accident, pas d'interprétation de ligne de
+       commande). Lecture seule : aucun `confirme` exigé. */
+    if (req.method === 'GET' && (chemin === '/read' || chemin === '/list')) {
+      const brutL = String(url.searchParams.get('chemin') || url.searchParams.get('path') || '').trim();
+      if (!brutL || brutL.length > 500 || brutL.includes('\0')) {
+        json(res, 400, { erreur: 'chemin requis (max 500 caracteres)' }, origin, req);
+        return;
+      }
+      const absL = path.resolve(process.cwd(), brutL);
+      if (DENY_WRITE.some((re) => re.test(absL))) {
+        json(res, 403, { erreur: 'lecture bloquee : dossier systeme - ' + absL, chemin: absL }, origin, req);
+        return;
+      }
+      if (!dansAllowDir(absL)) {
+        json(res, 403, { erreur: 'hors zone autorisee (--allow) : ' + absL, chemin: absL }, origin, req);
+        return;
+      }
+      if (chemin === '/list') {
+        if (!estDossier(absL)) {
+          json(res, 400, { erreur: 'pas un dossier : ' + absL, existe: fs.existsSync(absL), dossier: estDossier(absL) }, origin, req);
+          return;
+        }
+        const noms = fs.readdirSync(absL);
+        const entrees = [];
+        for (const nom of noms.slice(0, 500)) {
+          const p = path.join(absL, nom);
+          try {
+            const st = fs.statSync(p);
+            entrees.push({ nom, type: st.isDirectory() ? 'd' : 'f', taille: st.isFile() ? st.size : null, mtime: Math.round(st.mtimeMs) });
+          } catch (_) { entrees.push({ nom, type: '?', taille: null, mtime: null }); }
+        }
+        entrees.sort((a, b) => ((a.type === 'd') ? 0 : 1) - ((b.type === 'd') ? 0 : 1) || a.nom.localeCompare(b.nom));
+        json(res, 200, { ok: true, chemin: absL, total: noms.length, entrees, tronque: noms.length > 500 }, origin, req);
+        return;
+      }
+      if (!estFichier(absL)) {
+        json(res, 400, { erreur: 'pas un fichier : ' + absL, existe: fs.existsSync(absL), dossier: estDossier(absL) }, origin, req);
+        return;
+      }
+      const stR = fs.statSync(absL);
+      if (stR.size > 8 * 1024 * 1024) {
+        json(res, 413, { erreur: 'fichier trop volumineux pour une lecture complete (' + stR.size + ' octets > 8 Mo) - cible un sous-ensemble avec /grep', octets: stR.size }, origin, req);
+        return;
+      }
+      const octetsR = fs.readFileSync(absL);
+      if (octetsR.includes(0)) {
+        json(res, 415, { erreur: 'fichier binaire (octet nul) : lecture texte refusee', octets: stR.size }, origin, req);
+        return;
+      }
+      const texteR = octetsR.toString('utf8');
+      const lignesR = texteR.split('\n');
+      const debutR = Math.max(1, parseInt(url.searchParams.get('debut'), 10) || 1);
+      const maxR = Math.min(64000, Math.max(1000, parseInt(url.searchParams.get('max'), 10) || 20000));
+      const finR = debutR - 1 + Math.max(1, parseInt(url.searchParams.get('fin'), 10) || 200);
+      const fenetreR = lignesR.slice(debutR - 1, finR).join('\n');
+      const tronqueR = fenetreR.length > maxR;
+      json(res, 200, {
+        ok: true,
+        chemin: absL,
+        octets: stR.size,
+        lignes_total: lignesR.length,
+        debut: debutR,
+        fin: Math.min(finR, lignesR.length),
+        texte: tronqueR ? fenetreR.slice(0, maxR) : fenetreR,
+        tronque: tronqueR,
+      }, origin, req);
+      return;
+    }
+    if (req.method === 'POST' && chemin === '/grep') {
+      let brutG;
+      try { brutG = await lireCorps(req, 64 * 1024); } catch (eG) {
+        json(res, (eG && eG.code) || 400, { erreur: (eG && eG.message) || 'corps illisible' }, origin, req);
+        return;
+      }
+      let corpsG = {};
+      try { corpsG = JSON.parse(brutG || '{}'); } catch (_) {}
+      const motifG = String(corpsG.motif || corpsG.pattern || '').slice(0, 200);
+      const cibleG = String(corpsG.chemin || corpsG.path || '.').trim();
+      if (!motifG || cibleG.length > 500 || cibleG.includes('\0')) {
+        json(res, 400, { erreur: 'motif requis (max 200 caracteres) + chemin optionnel' }, origin, req);
+        return;
+      }
+      let rxG;
+      try { rxG = new RegExp(motifG, corpsG.sensible === true ? 'g' : 'gi'); }
+      catch (eR) { json(res, 400, { erreur: 'regex invalide : ' + String(eR.message).slice(0, 160) }, origin, req); return; }
+      const absG = path.resolve(process.cwd(), cibleG);
+      if (DENY_WRITE.some((re) => re.test(absG))) {
+        json(res, 403, { erreur: 'recherche bloquee : dossier systeme - ' + absG }, origin, req);
+        return;
+      }
+      if (!dansAllowDir(absG)) {
+        json(res, 403, { erreur: 'hors zone autorisee (--allow) : ' + absG }, origin, req);
+        return;
+      }
+      const maxFichiers = Math.min(2000, Math.max(1, parseInt(corpsG.max_fichiers, 10) || 300));
+      const maxOcc = Math.min(2000, Math.max(1, parseInt(corpsG.max_occurrences, 10) || 200));
+      /* sous=false : recherche PLATTE — on scanne les fichiers du dossier cible
+         sans descendre (le document de prompt le promet, la boucle obéit). */
+      const sousG = !(corpsG.sous === false || corpsG.sous === 'false');
+      const saut = new Set(['node_modules', '.git', '.next', 'dist', 'build', 'coverage', '__pycache__', '.venv', 'venv', '.cache']);
+      const binExt = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.gz', '.7z', '.exe', '.dll', '.sys', '.pdb', '.woff', '.woff2', '.ttf', '.mp4', '.mp3', '.db', '.sqlite', '.pack', '.idx', '.wasm']);
+      const occG = [];
+      const t0G = Date.now();
+      let fichiersG = 0;
+      let tronqueG = false;
+      let arretG = null;
+      const piste = [absG];
+      while (piste.length) {
+        const courant = piste.pop();
+        if (occG.length >= maxOcc) { tronqueG = true; arretG = 'plafond d\'occurrences (' + maxOcc + ')'; break; }
+        if (fichiersG >= maxFichiers) { tronqueG = true; arretG = 'plafond de fichiers (' + maxFichiers + ')'; break; }
+        if (Date.now() - t0G > 5000) { tronqueG = true; arretG = 'budget 5 s depasse'; break; }
+        let stG;
+        try { stG = fs.statSync(courant); } catch (_) { continue; }
+        if (stG.isDirectory()) {
+          let nomsG;
+          try { nomsG = fs.readdirSync(courant); } catch (_) { continue; }
+          for (const nomG of nomsG) {
+            if (saut.has(nomG)) continue;
+            const entreeG = path.join(courant, nomG);
+            if (sousG) { piste.push(entreeG); continue; }
+            /* sous=false : platt — les FICHIERS du dossier comptent, les
+               sous-dossiers non (sinon on ne scanne rien du tout). */
+            try { if (fs.statSync(entreeG).isFile()) piste.push(entreeG); } catch (_) {}
+          }
+          continue;
+        }
+        if (!stG.isFile() || stG.size > 1.5 * 1024 * 1024) continue;
+        if (binExt.has(path.extname(courant).toLowerCase())) continue;
+        fichiersG += 1;
+        let contenuG;
+        try { contenuG = fs.readFileSync(courant, 'utf8'); } catch (_) { continue; }
+        if (contenuG.includes('\0')) continue;
+        const lignesG = contenuG.split('\n');
+        const relG = path.relative(process.cwd(), courant) || courant;
+        for (let nG = 0; nG < lignesG.length && occG.length < maxOcc; nG++) {
+          rxG.lastIndex = 0;
+          const mG = rxG.exec(lignesG[nG]);
+          if (!mG) continue;
+          occG.push({ fichier: relG, n: nG + 1, echantillon: String(mG[0]).slice(0, 120), ligne: lignesG[nG].trim().slice(0, 300) });
+        }
+      }
+      json(res, 200, {
+        ok: true,
+        motif: motifG,
+        cible: absG,
+        fichiers: fichiersG,
+        occurrences: occG,
+        tronque: tronqueG || occG.length >= maxOcc,
+        arret: arretG,
+        duree_ms: Date.now() - t0G,
+      }, origin, req);
+      return;
+    }
+
+    json(res, 404, { erreur: 'route inconnue (GET /sante, GET /journal, GET /read, GET /list, POST /grep, POST /exec, POST /write, POST /browser)' }, origin, req);
   } catch (e) {
     json(res, 500, { erreur: String((e && e.message) || e).slice(0, 200) }, origin, req);
   }
@@ -2347,6 +2513,7 @@ serveur.listen(PORT, HOST, () => {
   console.log(`  auto=${AUTO} allow=${ALLOW_DIR || '(tout)'}`);
   console.log('  POST /exec {commande, confirme:true, cwd?, timeout_ms?, flux?} (flux:true = NDJSON en direct)');
   console.log('  POST /write {chemin, contenu, confirme:true, ecraser?} (428 = confirmation requise)');
+  console.log('  GET  /read?chemin=&debut=&fin=   GET /list?chemin=   POST /grep {motif, chemin?, sous?, max_fichiers?}');
   console.log(`  POST /browser {action, arg?, confirme?} (navigateur : ${pw ? 'playwright ok' : 'playwright ABSENT — npm install playwright && npx playwright install firefox'})`);
   console.log(`  actions navigateur : ${NAV_ACTIONS.join(', ')}`);
 });

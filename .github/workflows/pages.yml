@@ -34,6 +34,10 @@ jobs:
         run: npm run test:bench
       - name: Shim (pauses + traces + effort + cot)
         run: npm run test:shim
+      # §8.7-6 — boucle « modèle propose, harnais dispose » : scénarios
+      # exec / lecture / écriture+relecture / plan + non-régression (arrêts).
+      - name: Boucle outils (scenarios non-regression)
+        run: npm run test:boucle
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
