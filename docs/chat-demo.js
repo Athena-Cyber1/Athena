@@ -7317,33 +7317,33 @@ try {
 } catch { /* stockage optionnel — « auto » par défaut */ }
 
 function majBadgeModele() {
-  const el = document.getElementById('modele-actif-nom');
-  if (el) el.textContent = modeleChoisi ? modeleChoisi.name : 'auto';
-  const bouton = document.getElementById('btn-modele');
-  if (bouton) {
-    bouton.title = modeleChoisi
-      ? `Modèle actif : ${modeleChoisi.name} - clic pour changer`
-      : 'Modèle de langue - auto = meilleur dispo, sans relais';
+    const el = document.getElementById('modele-actif-nom');
+    if (el) el.textContent = modeleChoisi ? modeleChoisi.name : 'auto';
+    majBadgeContexte();
+    majBadgeEffort();
   }
-  majBadgeContexte();
-  majBadgeEffort();
-}
+  /* v20261007 (dh) : modèle, effort et température partagent désormais UN bouton
+     et UN panneau (#btn-reglages / #hud-reglages). Les trois sections
+     (#hud-modeles, #hud-efforts, #hud-temp) sont des sous-panneaux du
+     panneau commun : les fonctions de rendu existantes les remplissent sans
+     changement. Choisir une valeur laisse le panneau ouvert, pour pouvoir
+     régler les deux autres sans le rouvrir. */
+  function panneauReglages() { return document.getElementById('hud-reglages'); }
+  function boutonReglages() { return document.getElementById('btn-reglages'); }
 
-function fermerHud() {
-  const panneau = document.getElementById('hud-modeles');
-  const bouton = document.getElementById('btn-modele');
-  if (panneau && !panneau.hidden) {
-    panneau.hidden = true;
-    if (bouton) bouton.setAttribute('aria-expanded', 'false');
+  function fermerHud() {
+    const panneau = panneauReglages();
+    const bouton = boutonReglages();
+    if (panneau && !panneau.hidden) {
+      panneau.hidden = true;
+      if (bouton) bouton.setAttribute('aria-expanded', 'false');
+    }
+    fermerHudContexte();
+    fermerHudJournal();
+    /* Le navigateur est un HUD DOCKÉ (comme le rendu) : il ne ferme pas au clic
+       extérieur, sinon on ne pourrait plus cliquer la conversation en naviguant.
+       Il se ferme par son bouton, le bouton d'en-tête, ou Échap. */
   }
-  fermerHudEffort();
-  fermerHudTemp();
-  fermerHudContexte();
-  fermerHudJournal();
-  /* Le navigateur est un HUD DOCKÉ (comme le rendu) : il ne ferme pas au clic
-     extérieur, sinon on ne pourrait plus cliquer la conversation en naviguant.
-     Il se ferme par son bouton, le bouton d'en-tête, ou Échap. */
-}
 
 function itemModeleHud(m, selectionCourante) {
   const item = document.createElement('button');
@@ -7486,23 +7486,26 @@ async function chargerModelesHud(rafraichir = false) {
   } catch { /* silencieux : le panneau garde l'ancien contenu ou « indisponible » */ }
 }
 
-(function initHudModele() {
-  const bouton = document.getElementById('btn-modele');
-  const panneau = document.getElementById('hud-modeles');
+(function initHudReglages() {
+  const bouton = boutonReglages();
+  const panneau = panneauReglages();
   if (!bouton || !panneau) return;
   majBadgeModele();
+  majBadgeTemp();
   /* Modèle restauré depuis localStorage : effort cas par cas ré-appliqué
      dès le chargement (sinon un vieux réglage global perdurait). DANS L'ORDRE
      des listeners : le try/catch garantit que l'abonnement au clic du bouton
-     modèle (ci-dessous) est TOUJOURS posé, quoi qu'il arrive à l'effort. */
+     (ci-dessous) est TOUJOURS posé, quoi qu'il arrive à l'effort. */
   try { appliquerEffortModele(); } catch { /* effort best-effort */ }
   bouton.addEventListener('click', (e) => {
     e.stopPropagation();
     if (!panneau.hidden) { fermerHud(); return; }
-    /* v1.3 : fermerHud() ferme TOUS les panneaux (modèle, effort, temp,
-       contexte, navigateur) — fermerHudEffort() seul laissait temp et
-       contexte ouverts en même temps que le sélecteur de modèle. */
+    /* un seul panneau ouvert à la fois */
     fermerHud();
+    /* Les trois sections sont toujours rendues : effort et température ne
+       dépendent pas du catalogue, seul le modèle peut manquer (chargement). */
+    rendreHudEffort();
+    rendreHudTemp();
     panneau.hidden = false;
     bouton.setAttribute('aria-expanded', 'true');
     if (!hudCharge) chargerModelesHud(false);
@@ -7530,34 +7533,32 @@ async function chargerModelesHud(rafraichir = false) {
 /* EFFORTS et effortChoisi déclarés près de CLE_MODELE (anti-TDZ, voir ci-dessus). */
 
 function majBadgeEffort() {
-  const el = document.getElementById('effort-actif-nom');
-  if (el) el.textContent = effortChoisi;
-  const bouton = document.getElementById('btn-effort');
-  if (bouton) {
+    const el = document.getElementById('effort-actif-nom');
+    if (el) el.textContent = effortChoisi;
+    /* v20261007 (dh) : plus de bouton « effort » séparé. L'information
+       « sans effet sur ce modèle » ne peut plus se traduire par `disabled`
+       (ça désactiverait aussi le choix du modèle et de la température) :
+       on atténue la partie effort du bouton unique, et le panneau explique. */
     const courant = EFFORTS.find((e) => e.v === effortChoisi);
-    /* v1.2 (anti-bâclage, item 11) : l'effort ne sert qu'aux modèles qui
-       l'acceptent (NVIDIA, entrées avec `efforts`) — sinon sélecteur grisé
-       avec « sans effet » (plus de réglage mort). En auto ou catalogue
-       inconnu : on laisse actif (la cascade peut viser un tel modèle). */
     const eff = modeleChoisi ? effortsConnus[modeleChoisi.id] : undefined;
     const sansEffet = Boolean(modeleChoisi) && catalogueEffortsCharge
       && !String(modeleChoisi.id).startsWith('nvidia:')
       && !(Array.isArray(eff) && eff.length);
-    bouton.disabled = sansEffet;
+    const partie = document.querySelector('.reglage-partie-effort');
     const reco = modeleChoisi && !modeleChoisi.local ? EFFORT_MODELES[modeleChoisi.id] : null;
-    bouton.title = `Effort de raisonnement : ${effortChoisi} — ${courant ? courant.aide : ''} (clic pour changer)`
-      + (sansEffet ? ' — sans effet sur ce modèle' : '')
-      + (reco ? ` — recommandé pour ${modeleChoisi.name} : ${reco}` : '');
+    if (partie) {
+      partie.classList.toggle('sans-effet', sansEffet);
+      partie.title = sansEffet
+        ? 'Sans effet sur ce modèle : il n annonce aucun niveau de raisonnement.'
+        : `Effort de raisonnement : ${effortChoisi} — ${courant ? courant.aide : ''}`
+          + (reco ? ` — recommandé pour ${modeleChoisi.name} : ${reco}` : '');
+    }
   }
-}
 
-function fermerHudEffort() {
-  const panneau = document.getElementById('hud-efforts');
-  const bouton = document.getElementById('btn-effort');
-  if (!panneau || panneau.hidden) return;
-  panneau.hidden = true;
-  if (bouton) bouton.setAttribute('aria-expanded', 'false');
-}
+/* v20261007 (dh) : effort et température vivent dans le panneau COMMUN.
+   Choisir une valeur ne le referme donc plus : on peut régler le modèle, puis
+   l'effort et la température, sans rouvrir le panneau à chaque fois. */
+function fermerHudEffort() { /* panneau commun : la sélection ne le ferme plus */ }
 
 function itemEffortHud(e) {
   const item = document.createElement('button');
@@ -7627,16 +7628,11 @@ function temperatureChoisie() {
 function majBadgeTemp() {
   const el = document.getElementById('temp-actif-nom');
   if (el) el.textContent = temperatureChoisie().toFixed(1);
-  const bouton = document.getElementById('btn-temp');
-  if (bouton) bouton.title = `Température des modèles : ${temperatureChoisie().toFixed(1)} — clic pour changer`;
+  const partie = document.querySelector('.reglage-partie-temp');
+  if (partie) partie.title = `Température des modèles : ${temperatureChoisie().toFixed(1)}`;
 }
-function fermerHudTemp() {
-  const panneau = document.getElementById('hud-temp');
-  const bouton = document.getElementById('btn-temp');
-  if (!panneau || panneau.hidden) return;
-  panneau.hidden = true;
-  if (bouton) bouton.setAttribute('aria-expanded', 'false');
-}
+/* v20261007 (dh) : voir fermerHudEffort — panneau commun. */
+function fermerHudTemp() { /* panneau commun : la sélection ne le ferme plus */ }
 function itemTempHud(e) {
   const item = document.createElement('button');
   item.type = 'button';
@@ -7682,21 +7678,8 @@ function rendreHudTemp() {
   note.textContent = '0 = précis, 2 = audacieux. Certains modèles gardent leur réglage propre (ex. NVIDIA).';
   panneau.appendChild(note);
 }
-(function initHudTemp() {
-  const bouton = document.getElementById('btn-temp');
-  const panneau = document.getElementById('hud-temp');
-  if (!bouton || !panneau) return;
-  majBadgeTemp();
-  bouton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!panneau.hidden) { fermerHudTemp(); return; }
-    fermerHud();
-    rendreHudTemp();
-    panneau.hidden = false;
-    bouton.setAttribute('aria-expanded', 'true');
-  });
-  panneau.addEventListener('click', (e) => e.stopPropagation());
-})();
+/* v20261007 (dh) : l'initialisation de la température est faite par
+   initHudReglages — un seul bouton pour modèle + effort + température. */
 
 /* ---------- Contexte (tokens de la discussion) ---------- */
 /* LIMITES_CTX déclarées près de CLE_MODELE (anti-TDZ à l'init). */
@@ -7886,21 +7869,8 @@ function rendreHudJournal() {
   panneau.addEventListener('click', (e) => e.stopPropagation());
 })();
 
-(function initHudEffort() {
-  const bouton = document.getElementById('btn-effort');
-  const panneau = document.getElementById('hud-efforts');
-  if (!bouton || !panneau) return;
-  majBadgeEffort();
-  bouton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!panneau.hidden) { fermerHudEffort(); return; }
-    fermerHud(); /* un seul panneau ouvert à la fois */
-    rendreHudEffort();
-    panneau.hidden = false;
-    bouton.setAttribute('aria-expanded', 'true');
-  });
-  panneau.addEventListener('click', (e) => e.stopPropagation());
-})();
+/* v20261007 (dh) : l'initialisation de l'effort est faite par
+   initHudReglages — un seul bouton pour modèle + effort + température. */
 
 /* ---------- HUD — NAVIGATEUR DU MODÈLE (v1.3, surface interactive) ----------
    Le panneau EST le navigateur : une image de la page que la personne peut

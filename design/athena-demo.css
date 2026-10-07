@@ -3706,16 +3706,9 @@ details.raisonnement li.doute {
 
 .composeur-pied {
   display: flex;
-  /* Le pied fait 744 px — la largeur de la carte du composeur, donc les deux
-     blocs ne tiennent pas sur une ligne (345 + 446 px). C'est voulu : le
-     retour à la ligne est assumé. On aligne alors les deux cadres en leur
-     donnant une HAUTEUR commune, sinon la mention faisait 25 px contre 36 px
-     pour les boutons et les deux blocs semblaient posés au hasard. */
-  --pied-h: 36px;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
-  row-gap: 6px;
   max-width: 920px;
   margin: 8px auto 0;
   padding: 0 4px;
@@ -3723,35 +3716,59 @@ details.raisonnement li.doute {
   font-size: 0.7rem;
   line-height: 1.35;
 }
-/* v20261007 (da) — ENCADREMENT DU PIED.
-   Le pied alignait un texte nu et cinq boutons sur une même ligne : rien ne
-   indiquait que le texte était une mention d'avertissement et les boutons un
-   groupe de réglages. On les cadre séparément — deux blocs lisibles, avec le
-   même rayon, la même bordure et la même gouttière, pour que la ligne se
-   lise comme deux éléments et non comme un alignement fortuit.
-   Le texte passe à `var(--texte-doux)` : une bordure rend le bloc saillant,
-   et #8f8f8f sur blanc plafonnait à 3,5:1 (sous le seuil AA). */
-.composeur-pied > span {
+
+/* v20261007 (dh) — BOUTON UNIQUE modèle + effort + température.
+   Les trois réglages partageaient trois boutons (plus contexte et journal)
+   dans un pied de 744 px : le conteneur passait à la ligne, la mention
+   d'avertissement flottait seule en haut et les commandes en bas, sans lien
+   visuel. Un bouton unique porte les trois valeurs, séparées par un filet
+   vertical, et un panneau unique regroupe les trois listes. */
+.hud-reglages-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+.btn-reglages {
+  gap: 7px;
+  /* v20261007 (dh) : `.btn-modele` plafonne à 180px — largeur calibrée pour
+     UN nom de modèle. Le bouton portant les trois réglages, le nom se
+     retrouvait réduit à « a… ». On relève le plafond. */
+  max-width: 340px;
+}
+.reglage-partie {
   display: inline-flex;
   align-items: center;
-  box-sizing: border-box;
-  /* hauteur commune aux deux cadres (cf. --pied-h) */
-  min-height: var(--pied-h, 36px);
-  padding: 4px 10px;
-  border: 1px solid var(--bord);
-  border-radius: var(--rayon-s, 8px);
-  background: var(--carte-doux, rgba(255, 255, 255, 0.03));
-  color: var(--texte-doux, #8f8f8f);
+  gap: 5px;
 }
-/* Groupe de boutons : même traitement que le texte, et même hauteur. */
-.composeur-pied .composeur-modele {
-  box-sizing: border-box;
-  min-height: var(--pied-h, 36px);
-  gap: 6px;
-  padding: 3px 6px;
-  border: 1px solid var(--bord);
-  border-radius: var(--rayon-s, 8px);
-  background: var(--carte-doux, rgba(255, 255, 255, 0.03));
+.reglage-partie-modele {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reglage-val {
+  font-size: 0.78rem;
+}
+/* « sans effet sur ce modèle » : on atténue la partie, on ne désactive pas le
+   bouton (il porte aussi le modèle et la température). */
+.reglage-partie-effort.sans-effet {
+  opacity: 0.5;
+}
+.reglage-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 1px;
+  background: var(--bord);
+}
+/* Panneau commun : plus large que les anciens (300/268 px) car il porte les
+   trois listes, et plus haut pour éviter un triple défilement. */
+.hud-reglages {
+  width: 340px;
+  max-height: min(640px, calc(100vh - 140px));
+}
+.hud-reglage-section + .hud-reglage-section {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--bord);
 }
 
 .composeur-niveau {
@@ -5359,28 +5376,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* v20261007 (da) — la mention NE DOIT PAS être coupée en plein mot.
-   `text-overflow: ellipsis` ne s'applique qu'à un conteneur de bloc : le
-   cadre du texte étant `inline-flex`, la troncature devenait une coupe sèche
-   au milieu d'un mot (« … Vérifiez les répons »). Sur écran étroit on laisse
-   donc la mention se replier et le cadre grandir, et le groupe de boutons
-   passe à la ligne au lieu de déborder du pied. */
-@media (max-width: 720px) {
-  .composeur-pied > span:first-child {
-    max-width: 100%;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-    min-height: 0;
-  }
-  .composeur-pied .composeur-modele {
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    max-width: 100%;
-    margin-left: 0;
-    min-height: 0;
-  }
 }
 .composeur-modele {
   flex: 0 0 auto;

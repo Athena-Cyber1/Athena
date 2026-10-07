@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20261007df" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20261007de" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -252,30 +252,29 @@
           <div class="composeur-pied">
             <span>Les IA peuvent commettre des erreurs. Vérifiez les réponses.</span>
             <div class="composeur-modele">
-              <div class="hud-modele-wrap hud-modele-bas">
-                <button id="btn-modele" type="button" class="btn-modele" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-modeles" title="Modèle de langue — auto = cascade (gratuit → zai)">
-                  <span id="modele-actif-nom" class="modele-actif-nom">auto</span>
+              <!-- v20261007 (dh) : modèle, effort et température réunis dans UN
+                   seul bouton. Ils étaient trois boutons (plus contexte et
+                   journal) dans un pied large de 744 px : le conteneur passait
+                   à la ligne, la mention d'avertissement flottait seule en
+                   haut et les commandes en bas, sans lien. Un bouton unique
+                   affiche les trois valeurs séparées par des filets et ouvre
+                   un panneau unique regroupant les trois listes. Les ids des
+                   valeurs (modele/effort/temp) et des trois sections sont
+                   conservés : le JS existant continue de les alimenter. -->
+              <div class="hud-reglages-wrap hud-reglages-bas">
+                <button id="btn-reglages" type="button" class="btn-modele btn-reglages" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-reglages" title="Modèle, effort de raisonnement et température — clic pour changer">
+                  <span class="reglage-partie reglage-partie-modele"><span id="modele-actif-nom" class="modele-actif-nom">auto</span></span>
+                  <span class="reglage-sep" aria-hidden="true"></span>
+                  <span class="reglage-partie reglage-partie-effort"><span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></span><span id="effort-actif-nom" class="reglage-val">max</span></span>
+                  <span class="reglage-sep" aria-hidden="true"></span>
+                  <span class="reglage-partie reglage-partie-temp"><span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12h2l2-5 3 10 3-14 3 8 2-3h3"/></svg></span><span id="temp-actif-nom" class="reglage-val">0.6</span></span>
                   <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
                 </button>
-                <div id="hud-modeles" class="hud-modeles" hidden role="dialog" aria-label="Choisir le modèle de langue"></div>
-              </div>
-              <!-- Effort de raisonnement : décalé à droite du bouton modèle
-                   (celui-ci se retrouve donc poussé vers la gauche). -->
-              <div class="hud-effort-wrap hud-effort-bas">
-                <button id="btn-effort" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-efforts" title="Effort de raisonnement — clic pour changer (low / high / max)">
-                  <span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg></span>
-                  <span id="effort-actif-nom" class="modele-actif-nom effort-valeur">max</span>
-                  <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
-                </button>
-                <div id="hud-efforts" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Choisir l'effort de raisonnement"></div>
-              </div>
-              <div class="hud-effort-wrap hud-effort-bas">
-                <button id="btn-temp" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-temp" title="Température des modèles — clic pour changer">
-                  <span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12h2l2-5 3 10 3-14 3 8 2-3h3"/></svg></span>
-                  <span id="temp-actif-nom" class="modele-actif-nom effort-valeur">0.6</span>
-                  <span class="modele-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
-                </button>
-                <div id="hud-temp" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Choisir la température"></div>
+                <div id="hud-reglages" class="hud-modeles hud-reglages" hidden role="dialog" aria-label="Réglages : modèle, effort de raisonnement et température">
+                  <div id="hud-modeles" class="hud-reglage-section"></div>
+                  <div id="hud-efforts" class="hud-reglage-section"></div>
+                  <div id="hud-temp" class="hud-reglage-section"></div>
+                </div>
               </div>
               <div class="hud-effort-wrap hud-effort-bas">
                 <button id="btn-contexte" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-contexte" title="Contexte de la discussion — tokens utilisés et limite">
@@ -368,11 +367,11 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20261007df"></script>
-    <script src="./api-shim.js?v=20261007df"></script>
+    <script src="./keys.js?v=20261007de"></script>
+    <script src="./api-shim.js?v=20261007de"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20261007df"></script>
+    <script src="./chat-demo.js?v=20261007de"></script>
   </div>
 </body>
 </html>
