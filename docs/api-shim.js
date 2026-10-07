@@ -20,18 +20,32 @@
 
   var realFetch = window.fetch.bind(window);
 
-  /* v20261001 (HUD) : température DEMANDÉE dans le corps de la requête —
-     posée par gererChat, lue par corpsPour (var module : une seule requête
-     chat à la fois côté navigateur). */
-  var temperatureDemandee = null;
+  /* v20261007 (J1) : l'ÉTAT D'UNE REQUÊTE (température, effort, budget de
+     POSTs) vivait dans des variables de module PARTAGÉES. Deux requêtes chat
+     qui se chevauchent — nouvelle question envoyée pendant que la précédente
+     stream encore, ou « Stop » suivi d'un renvoi alors que la cascade
+     d'origine n'est pas terminée — se marchaient dessus : B remettait le
+     compteur de POSTs à zéro et prenait le tour de A (plafond contourné), et A
+     repartait ensuite avec la température et l'effort de B.
+     L'hypothèse « une seule requête chat à la fois » (commentaire d'origine)
+     n'était vraie que si l'UI interdisait l'envoi — ce qu'elle ne garantit pas,
+     l'arrêt ne faisant qu'abandonner la lecture client, pas le travail déjà
+     lancé dans le shim.
+     On travaille donc sur un ENREGISTREMENT par requête (`et`), transmis
+     explicitement ; `etatDefaut` ne sert plus qu'à l'affichage du diagnostic. */
+  var etatDefaut = { temperature: null, effort: null, effortBaisse: false, cleTour: '', posts: 0 };
+  function nouvelEtat() {
+    return { temperature: null, effort: null, effortBaisse: false, cleTour: '', posts: 0 };
+  }
   /* P0 (audit fainéant) : effort explicite transmis PAR LA REQUÊTE
      (body.effort, route.ts → gererChat). Précède la valeur localStorage :
      le même effort s'applique à la voie skill ET à la voie shim, testable
-     de bout en bout. null = HUD seul (comportement historique). */
-  var effortDemande = null;
+     de bout en bout. null = HUD seul (comportement historique).
+     v20261007 (J1) : porté par l'enregistrement de requête (`et.effort`),
+     et non par une variable de module partagée. */
   /* v banc 20261006 (§8.2) : vrai pendant l'UNIQUE retry « réflexion seule »
-     (effort forcé low dans effortNvidia) — voir la boucle cascade. */
-  var effortBaissent = false;
+     (effort forcé low dans effortNvidia) — voir la boucle cascade. Idem :
+     `et.effortBaisse`. */
 
   /* v banc 20261006 (§3 observabilité) : trace PAR APPEL — payload résumé,
      modèle réellement servi, finish_reason, usage (part de raisonnement) et
@@ -115,12 +129,14 @@
      low, high, and max », vérifié en direct) → repli sur l'échelon inférieur,
      sinon sur le premier admis. */
   var EFFORTS_HUD = ['low', 'medium', 'high', 'xhigh', 'max'];
-  function effortNvidia(entry) {
+  function effortNvidia(entry, et) {
     var v = '';
     /* P0 (audit fainéant) : effort de la requête courante (body.effort) prime
        sur localStorage — sinon la voie skill envoyait AUCUN effort alors que
-       le HUD en affichait un. */
-    if (effortDemande && EFFORTS_HUD.indexOf(effortDemande) >= 0) v = effortDemande;
+       le HUD en affichait un. v20261007 (J1) : `et` est l'enregistrement de la
+       requête courante, donc deux tours simultanés ne se contaminent plus. */
+    var etat = et || etatDefaut;
+    if (etat.effort && EFFORTS_HUD.indexOf(etat.effort) >= 0) v = etat.effort;
     if (!v) {
       try { v = String(localStorage.getItem('athena_effort') || ''); } catch (e) { v = ''; }
     }
@@ -134,7 +150,7 @@
        réponse visible vide). lireSSE lit aussi effortNvidia avec le flag
        posé : bornes de délai basses AUSSI (borné, puisque l'effort low est
        censé répondre vite) — on ne dépasse pas la borne du HUD. */
-    if (effortBaissent) v = 'low';
+    if (etat.effortBaisse) v = 'low';
     var admis = (entry && entry.efforts) || EFFORTS_HUD;
     if (admis.indexOf(v) >= 0) return v;
     /* v20260926d (kimi) : repli vers l'échelon admis le plus PROCHE, en
@@ -1779,9 +1795,9 @@
        jusqu'à 20 min en max, sinon 5 min ;
      - l'effort de LA REQUÊTE courante (body / localStorage, via
        effortNvidia) prime — quel que soit le modèle. */
-  function bornePour(entry) {
+  function bornePour(entry, et) {
     var ef = 'medium';
-    try { ef = effortNvidia(entry); } catch (e) {}
+    try { ef = effortNvidia(entry, et); } catch (e) {}
     if (entry.providerKey === 'openrouter') {
       if (ef === 'max') return 300000;
       if (ef === 'xhigh' || ef === 'high') return 240000;
@@ -1812,8 +1828,24 @@
      uneTentative(), donc y compris le job de compression/résumé et le relais
      pollinations. */
   var POSTS_MAX_TOUR = 12;
-  var postsTour = 0;
-  function postsRestants() { return Math.max(0, POSTS_MAX_TOUR - postsTour); }
+  /* v20261007 (Q1) : le compteur est désormais PAR TOUR UTILISATEUR, pas par
+     requête HTTP. Remis à zéro dans chaque `gererChat`, il était réarmé par
+     chaque tour de la chaîne d'outils : une tâche longue pouvait émettre
+     250 à 1 400 requêtes en restant « sous le plafond » à chaque POST. La
+     clé de tour vient du client (`tour_id`, nouveau à chaque question) ; en
+     son absence (client ancien, API directe), on reste sur le comportement
+     historique (remise à zéro par requête). */
+  /* v20261007 (J1) : le budget vit dans l'enregistrement de requête. `etatDefaut`
+     n'est utilisé que par l'affichage du diagnostic (hors requête). */
+  function debutDeTour(cle, et) {
+    var s = et || etatDefaut;
+    if (!cle) { s.posts = 0; s.cleTour = ''; return; }
+    if (cle !== s.cleTour) { s.cleTour = cle; s.posts = 0; }
+  }
+  function postsRestants(et) {
+    var s = et || etatDefaut;
+    return Math.max(0, POSTS_MAX_TOUR - s.posts);
+  }
   function errPostsTour() {
     var e = new Error('plafond de ' + POSTS_MAX_TOUR
       + ' requêtes modèles atteint pour ce tour (cascade arrêtée) — '
@@ -1821,16 +1853,17 @@
     e.tropDePosts = true;
     return e;
   }
-  function compterPost() {
-    postsTour += 1;
-    if (postsTour > POSTS_MAX_TOUR) throw errPostsTour();
+  function compterPost(et) {
+    var s = et || etatDefaut;
+    s.posts += 1;
+    if (s.posts > POSTS_MAX_TOUR) throw errPostsTour();
   }
   /* Borne RÉELLE d'un appel : la plus contraignante des deux plafonds. Avant,
      un seul appel en effort max sur nvidia (20 min) pouvait dépasser à lui
      seul le budget annoncé de 10 min au client. */
-  function borneRestante(entry, tDebut) {
+  function borneRestante(entry, tDebut, et) {
     var restant = BUDGET_CASCADE - (Date.now() - tDebut);
-    return Math.max(20000, Math.min(bornePour(entry), restant));
+    return Math.max(20000, Math.min(bornePour(entry, et), restant));
   }
   /* §8.7 : ZÉRO tentative (toutes les voies en pause au moment du tour) —
      message honnête avec les pauses en cours, au lieu de « erreur inconnue ». */
@@ -1848,7 +1881,7 @@
 
   /* onDelta (etape, message) : fourni par gererChat sur un flux NDJSON —
      chaque tranche de raisonnement part alors EN DIRECT vers l'UI. */
-  function callModel(entry, messages, signal, onDelta) {
+  function callModel(entry, messages, signal, onDelta, et) {
     /* entry.provider = label d'affichage (« nvidia · proxy CF ») ;
        la clé PROVIDERS est dans entry.providerKey ( ajouté au catalogue ). */
     var pk = entry.providerKey || entry.provider;
@@ -1867,7 +1900,7 @@
     var orList = pk === 'openrouter' ? orModelsBody(entry) : null;
     var orBase = orList ? orList.slice() : null;
 
-    function corpsPour(liste, enFlux) {
+    function corpsPour(liste, enFlux, et) {
       var c = {
         messages: messages,
         temperature: 0.6,
@@ -1909,7 +1942,7 @@
          avecRetry). */
 if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entry.id]
     && Array.isArray(entry.efforts)) {
-        var eOR = effortNvidia(entry); /* déjà borné aux efforts déclarés */
+        var eOR = effortNvidia(entry, et); /* déjà borné aux efforts déclarés */
         if (!c.reasoning) {
           c.reasoning = { effort: eOR };
         } else if (c.reasoning.enabled !== false && typeof c.reasoning.effort !== 'string') {
@@ -1947,8 +1980,9 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
          (réglage HUD) > payload provider (ex. NVIDIA temperature 1) >
          localStorage > 0.6. Avant, le payload écrasait le réglage du HUD
          sur NVIDIA — la voie principale restait donc insensible. */
-      if (temperatureDemandee !== null) {
-        c.temperature = temperatureDemandee;
+      var etatL = et || etatDefaut;
+      if (etatL.temperature !== null) {
+        c.temperature = etatL.temperature;
       } else if (!opts || opts.temperature === undefined) {
         var tPref = null;
         try {
@@ -2106,7 +2140,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
        v20260926g : les chunks ne sont pas des étapes).
        Inactivité bornée à 40 s par chunk (v20260926f, lags) : le raisonnement
        « max » est long mais jamais silencieux. */
-    async function lireSSE(r) {
+    async function lireSSE(r, et) {
       var reader = r.body.getReader();
       var dec = new TextDecoder();
       var tampon = '';
@@ -2122,7 +2156,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
       var raisonneFlux = (entry && Array.isArray(entry.efforts) && entry.efforts.length > 0)
         || (entry && entry.providerKey === 'nvidia');
       var efFlux = 'low';
-      if (raisonneFlux) { try { efFlux = effortNvidia(entry); } catch (e) {} }
+      if (raisonneFlux) { try { efFlux = effortNvidia(entry, et); } catch (e) {} }
       /* v20261001 (glm-5.3) : le premier octet arrive APRÈS le raisonnement —
          glm-5.3 « max » met ~40-46 s avant le premier jeton (mesuré) : un
          plafond fixe de 20 s coupait le flux au démarrage. Échelle par
@@ -2301,20 +2335,20 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
     /* v20261007 : tentative horodatée + comptée — la trace affiche désormais le
            nombre d'essais réellement payés (une cascade à 4 retries brûlait 4
            fois le quota sans que rien ne le dise). */
-    function uneTentative(liste) {
+    function uneTentative(liste, et) {
       entry._essais = (entry._essais || 0) + 1;
       var tRequete = Date.now();
       /* v20261007 : TOUT POST provider est compté (y compris le relais
          pollinations et le job de résumé) — le plafond du tour arrête la
          multiplication des retries avant de brûler le quota gratuit. */
-      compterPost();
+      compterPost(et);
       /* v20261004 (relais navigateur) : pollinations bloque TOUT appel émis
          depuis un navigateur (403 « Missing Turnstile token » — challenge
          Cloudflare) alors que le même appel passe côté serveur. On relaie
          donc par /api/relais (serveur → pont) : modèle choisi, cascade et
          cache du pont sont conservés, seul le blocage navigateur saute. */
       if (pk === 'pollinations') {
-        var corpsRelais = corpsPour(liste, false);
+        var corpsRelais = corpsPour(liste, false, et);
         try {
           var objR = JSON.parse(corpsRelais);
           if (typeof objR.max_tokens !== 'number') objR.max_tokens = 8192;
@@ -2371,7 +2405,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
       var raisonneTete = (entry && Array.isArray(entry.efforts) && entry.efforts.length > 0)
         || (entry && entry.providerKey === 'nvidia');
       var efTete = 'low';
-      if (raisonneTete) { try { efTete = effortNvidia(entry); } catch (e) {} }
+      if (raisonneTete) { try { efTete = effortNvidia(entry, et); } catch (e) {} }
       /* v20261001 : en-têtes non-raisonnement 30 → 45 s (même raison que
          delaiPremier : TTFB free sous charge > 30 s mesuré). */
       var delaiTete = !raisonneTete ? 45000
@@ -2410,7 +2444,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
         method: 'POST',
         headers: enTetes,
         signal: signalEnvoi,
-        body: corpsPour(liste, enFlux),
+        body: corpsPour(liste, enFlux, et),
       }).then(function (r) {
         if (courseTete) clearTimeout(courseTete);
         /* v20261007 (diagnostic) : TTFB = temps d'attente avant les EN-TÊTES
@@ -2418,7 +2452,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
            la seule durée totale ne montrait pas. */
         try { entry._ttfb = Date.now() - tRequete; } catch (eT) {}
         try { entry._statut = r.status; } catch (eS) {}
-        if (enFlux && r.ok && r.body) return lireSSE(r);
+        if (enFlux && r.ok && r.body) return lireSSE(r, et);
         return r.text().then(function (t) {
           if (!r.ok) throw erreurHttp(r, t);
           var d = null;
@@ -2453,20 +2487,30 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
        suivant. Le quota réel de la clé garde l'escalier court d'origine. */
     var delaisRetrySaturation = [500, 1500, 3000, 6000, 10000];
     var RETRY_MAX = 3;
-    function saturation(err) {
+function saturation(err) {
       if (!err) return false;
       /* v banc 20261005 : le quota JOURNALIER (free-models-per-day) n'est
-         jamais une saturation — « free_tier » matchait le regex et déclenchait
+         jamais une saturation - « free_tier » matchait le regex et déclenchait
          le long palier d'attente (30 s × 5) sur un provider bloqué jusqu'au
          reset quotidien. */
       if (err.quotidien) return false;
       var ls = String(err.limitSource || '');
       if (ls.indexOf('daily') >= 0) return false;
+      /* v20261007 (Q1) : même correction pour la limite PAR MINUTE
+         (`openrouter_free_tier_per_minute`, fenêtre de 60 s). Classée
+         « saturation », elle déclenchait l'échelle longue (5 attentes de
+         30 s) : **6 POSTs payés pour attendre une minute**, tous comptés dans
+         le quota QUOTIDIEN de 50. Or la fenêtre est courte : le provider
+         suivant (ou le suivant tour) répond tout de suite. On la sort donc de
+         `saturation` → fail-fast (avecRetry voit reste ≥ 8 s et lève), avec
+         un seul réessai si le reset est imminent (≤ 8 s). */
+      if (ls.indexOf('per_minute') >= 0 || ls.indexOf('free-models-per-min') >= 0) return false;
       var msg = String(err.message || err.erreur || '');
+      if (/free-models-per-min/i.test(msg)) return false;
       return /ResourceExhausted|Worker local|free_tier|free-models-per-min|no available|Provider returned an empty response|empty response/i.test(ls + ' ' + msg);
     }
-    function avecRetry(n, liste) {
-      return uneTentative(liste).catch(function (err) {
+    function avecRetry(n, liste, et) {
+      return uneTentative(liste, et).catch(function (err) {
         if (err && err.name === 'AbortError') throw err;
         if (err && err.pasRetry) throw err;
         /* §8.5-1 auto-guérison : le provider REJETTE le champ reasoning
@@ -2481,7 +2525,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
              les entries) — sinon on ré-envoie reasoning.effort à chaque
              requête et on perd un POST par tour et par modèle. */
           try { effortsIgnores[entry.id] = true; } catch (eEI) {}
-          return avecRetry(n + 1, liste);
+          return avecRetry(n + 1, liste, et);
         }
         /* §8.7-3 auto-guérison : le provider REJETTE le champ tools
            (400/422 « tools/tool/function not supported ») → on désarme CETTE
@@ -2493,7 +2537,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
             && /tools?|tool_calls|function[_ ]calling|function[_ ]call/i.test(String(err.message || ''))) {
           entry._toolsIgnore = true;
           try { outilsIgnores[entry.id] = true; } catch (eOI) {}
-          return avecRetry(n, liste);
+          return avecRetry(n, liste, et);
         }
         /* flux déjà diffusé en partie → re-POST interdit (étapes en double) */
         if (err && err.partiel) throw err;
@@ -2552,7 +2596,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
         throw err;
       });
     }
-    return avecRetry(0, orBase);
+    return avecRetry(0, orBase, et);
   }
 
   function construireChaine(modelId) {
@@ -2660,21 +2704,31 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
   async function gererChat(bodyStr, signal) {
     var body = {};
     try { body = JSON.parse(bodyStr || '{}'); } catch (e) { body = {}; }
+    /* v20261007 (J1) : ENREGISTREMENT D'ÉTAT PROPRE À CETTE REQUÊTE.
+       Auparavant ces valeurs vivaient dans des variables de module : deux
+       tours qui se chevauchent se contaminaient (compteur de POSTs remis à
+       zéro par l'autre, température et effort repris par l'autre). */
+    var et = nouvelEtat();
     /* v20261001 (HUD) : la température du client (réglage HUD) prime sur le
        payload provider — voir corpsPour pour l'ordre complet. */
-    temperatureDemandee = null;
     /* v20261007 : le compteur de POSTs est remis à zéro AU DÉBUT de chaque
-       tour (le shim ne sert qu'une requête chat à la fois — hypothèse déjà
-       documentée pour temperatureDemandee/effortDemande). */
-    postsTour = 0;
+       tour. Q1 : c'est le CLIENT qui définit le tour (`tour_id`), sinon la
+       chaîne d'outils réarmait le plafond à chaque tour et le garde-fou ne
+       protégeait rien. */
+    debutDeTour(typeof body.tour_id === 'string' ? body.tour_id : '', et);
     if (body && body.temperature !== undefined && body.temperature !== null
         && Number.isFinite(+body.temperature)) {
-      temperatureDemandee = Math.max(0, Math.min(2, +body.temperature));
+      et.temperature = Math.max(0, Math.min(2, +body.temperature));
     }
     /* P0 (audit fainéant) : effort de la requête (low/medium/high/max) →
        effortNvidia → reasoning_effort ; valeur inconnue → null (HUD). */
-    effortDemande = (body && typeof body.effort === 'string'
+    et.effort = (body && typeof body.effort === 'string'
       && EFFORTS_HUD.indexOf(body.effort) >= 0) ? body.effort : null;
+    /* Miroir pour l'écran de diagnostic (/api/sante hors requête). */
+    etatDefaut.temperature = et.temperature;
+    etatDefaut.effort = et.effort;
+    etatDefaut.cleTour = et.cleTour;
+    etatDefaut.posts = et.posts;
     var wantStream = body.stream === true;
     var messages = (Array.isArray(body.messages) ? body.messages : [])
       .filter(function (m) { return m && typeof m === 'object' && typeof m.content === 'string'; });
@@ -2792,7 +2846,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
     await compression(messages);
 
     /* aboutissement d'une tentative réussie — commun aux 2 chemins */
-    function assembler(entry, texte) {
+    function assembler(entry, texte, et) {
       var modeleReel = entry._modeleReel || entry.model || '';
       var modeleDemande = typeof body.model_id === 'string' && body.model_id
         ? body.model_id.split(':').slice(1).join(':')
@@ -2841,8 +2895,8 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
            inactif dans le cas « modèle choisi », chaîne = 1 entrée) ET
            plafond de POSTs : quand il est atteint, inutile d'essayer les
            entrées suivantes (chacune échouerait sans POST). */
-        if (Date.now() - tDebutJson > BUDGET_CASCADE || postsRestants() <= 0) {
-          dernierErr = postsRestants() <= 0 ? errPostsTour() : errBudget();
+        if (Date.now() - tDebutJson > BUDGET_CASCADE || postsRestants(et) <= 0) {
+          dernierErr = postsRestants(et) <= 0 ? errPostsTour() : errBudget();
           break;
         }
         var pkEssai = entry.providerKey || entry.provider || entry.id;
@@ -2857,11 +2911,11 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
         var essaiJ = signalEssai(signal);
         var tEssaiJ = Date.now();
         try {
-          var texte = await appelBorne(callModel(entry, messages, essaiJ.signal), borneRestante(entry, tDebutJson), abandonner(essaiJ));
+          var texte = await appelBorne(callModel(entry, messages, essaiJ.signal, null, et), borneRestante(entry, tDebutJson, et), abandonner(essaiJ));
           noterModele(entry.id, true);
           libererPauseSouples(entry);
           noterTrace(tracerEssai(entry, pkEssai, Date.now() - tEssaiJ, null));
-          return json(assembler(entry, texte).payload);
+          return json(assembler(entry, texte, et).payload);
         } catch (err) {
           noterTrace(tracerEssai(entry, pkEssai, Date.now() - tEssaiJ, String((err && err.message) || err).slice(0, 160)));
           if (err && err.name === 'AbortError') throw err;
@@ -2955,8 +3009,8 @@ if (err && /timeout|en-têtes jamais reçus|réponse vide/i.test(String((err && 
           /* v20261007 : budget LU DÈS LE DÉBUT (le garde `i > 0` le rendait
              inactif sur la 1re entrée, donc exactement dans le cas le plus
              courant : un modèle choisi qui timeout) + plafond de POSTs. */
-          if (Date.now() - tDebutCascade > BUDGET_CASCADE || postsRestants() <= 0) {
-            err = postsRestants() <= 0 ? errPostsTour() : errBudget();
+          if (Date.now() - tDebutCascade > BUDGET_CASCADE || postsRestants(et) <= 0) {
+            err = postsRestants(et) <= 0 ? errPostsTour() : errBudget();
             break;
           }
           var pk = entry.providerKey || entry.provider;
@@ -3015,10 +3069,11 @@ if (err && /timeout|en-têtes jamais reçus|réponse vide/i.test(String((err && 
                puis la cascade classique enchaîne. */
             var texte = null;
             for (var nEssaiBas = 0; nEssaiBas < 2; nEssaiBas++) {
-              effortBaissent = nEssaiBas === 1;
+              et = et || etatDefaut;
+    et.effortBaisse = nEssaiBas === 1;
               var essaiS = signalEssai(signal);
               try {
-                texte = await appelBorne(callModel(entry, messages, essaiS.signal, onDelta), borne, abandonner(essaiS));
+                texte = await appelBorne(callModel(entry, messages, essaiS.signal, onDelta, et), borne, abandonner(essaiS));
                 break;
               } catch (eBas) {
                 if (nEssaiBas === 0 && /raisonnement seul|CoT vomi/.test(String((eBas && eBas.message) || ''))) {
@@ -3028,12 +3083,12 @@ if (err && /timeout|en-têtes jamais reçus|réponse vide/i.test(String((err && 
                 }
                 throw eBas;
               } finally {
-                effortBaissent = false;
+                et.effortBaisse = false;
               }
             }
             noterModele(entry.id, true);
             libererPauseSouples(entry);
-            var fin = assembler(entry, texte);
+            var fin = assembler(entry, texte, et);
             /* trace (§3) : succès — AVANT le final, l'UI l'associe au pied. */
             noterTrace(tracerEssai(entry, pk, Date.now() - tEssai, null), emit);
             /* v20260926g : pas de progress « Réponse générée via X » — nom
@@ -3231,7 +3286,17 @@ if (e2 && /en-têtes jamais reçus|réponse vide/i.test(String((e2 && e2.message
         break;
       }
     }
-    return /\bmcp\b/i.test(dernier) || /mcp\s*[\(\[]/i.test(dernier);
+    /* v20261007 (S1) : plus de bascule sur le MOT NU « mcp ». Une simple
+       question (« qu'est-ce que le Model Context Protocol ? », « explique le
+       MCP ») détournait tout le tour vers le stack Next : chemin différent,
+       historique réécrit, `plan`/`effort` traités autrement, cache prompt
+       perdu, 4 à 6 appels LLM via le pont, sans que l'ait demandé. On ne
+       bascule plus que sur :
+         - un skill EXPLICITE (décision de l'utilisateur, menu « / ») ;
+         - un appel d'outil MCP EXPLICITE, forme `mcp(serveur.outil)` avec un
+           serveur et un outil nommés (comme dans le panneau MCP du client).
+       Le mot seul, ou « mcp( » sans nom d'outil, reste du chat ordinaire. */
+    return /mcp\s*\(\s*[A-Za-z0-9_-]{2,60}\s*[.:][A-Za-z0-9_.-]{1,80}\s*\)/.test(dernier);
   }
 
   async function handleApi(url, input, init) {

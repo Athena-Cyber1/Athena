@@ -1218,7 +1218,10 @@ button.dot:focus-visible,
   padding: 8px 10px;
   border: 1px solid var(--bord);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.03);
+  /* v20261007 (U1) : fond dérivé d'une variable et non blanc translucide fixe —
+     `rgba(255,255,255,.03)` sur fond blanc rendait le cadre invisible en thème
+     clair (le texte, lui, était en #d8d8d8 quasi blanc). */
+  background: var(--carte-doux, rgba(255, 255, 255, 0.03));
   font-size: 0.8rem;
 }
 .chain-detail summary {
@@ -1233,7 +1236,8 @@ button.dot:focus-visible,
 }
 .chain-detail li {
   margin: 2px 0;
-  color: #d8d8d8;
+  /* v20261007 : couleur de thème (lisibilité correcte sur les deux fonds). */
+  color: var(--texte, #d8d8d8);
 }
 .exec-sortie {
   margin-top: 8px;
@@ -2921,7 +2925,13 @@ span.think:not(details .think) {
   white-space: pre-line;
 }
 /* badge d'état dans le bouton d'en-tête (à gauche de « Partager ») */
+/* v20261007 (U1) : le badge est masqué AU REPOS et visible dès qu'il porte une
+   information (session ouverte, ou action du modèle en cours). Avant,
+   `display:none !important` neutralisait aussi les deux règles ci-dessous :
+   l'état de la navigation était donc invisible alors que c'est précisément ce
+   que ce bouton doit montrer. Le texte reste alimenté par majBadgeNavigateur. */
 .hnav-badge {
+  display: none;
   padding: 1px 7px;
   border: 1px solid var(--bord);
   border-radius: 999px;
@@ -2929,16 +2939,15 @@ span.think:not(details .think) {
   line-height: 1.5;
   color: var(--texte-doux);
 }
-/* P5 — panneau épuré : le badge session n'est plus affiché (le texte reste
-   mis à jour par majBadgeNavigateur → les tests lisent textContent). */
-.hnav-badge { display: none !important; }
 .btn-nav.nav-actif .hnav-badge {
+  display: inline-block;
   border-color: var(--ok);
   color: var(--ok);
 }
 /* v1.6 : « occupé » = une action du modèle tourne. Avant, le badge disait
    « actif » pendant tout un snapshot — impossible de voir que la page bouge. */
 .btn-nav.nav-occupe .hnav-badge {
+  display: inline-block;
   border-color: var(--primaire);
   color: var(--primaire);
   animation: hnav-pulse 1.1s ease-in-out infinite;
@@ -3703,9 +3712,21 @@ details.raisonnement li.doute {
   max-width: 920px;
   margin: 8px auto 0;
   padding: 0 4px;
-  color: #8f8f8f;
+  /* v20261007 : couleur de thème — #8f8f8f sur blanc ne descendait qu'à ~3,5:1,
+     sous le seuil AA pour du texte de 0,7 rem. */
+  color: var(--texte-doux, #8f8f8f);
   font-size: 0.7rem;
   line-height: 1.35;
+}
+/* v20261007 (U1) : emplacement de l'indicateur d'état (#dot / #statut). */
+.composeur-etat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.composeur-etat .dot {
+  cursor: pointer;
 }
 
 .composeur-niveau {
@@ -5080,6 +5101,13 @@ html[data-theme="light"] .code-lang {
 html[data-theme="light"] .side-utilitaires button,
 html[data-theme="light"] .side-utilitaires .compte-bouton {
   color: #666666;
+}
+/* v20261007 (U1) : `.filtre-discussions` gardait `color:#999` (2,85:1 sur
+   blanc) — sous le seuil de 3:1 exigé pour un composant d'interface porteur
+   de sens (WCAG 1.4.11). Les règles `…:hover` du thème clair ne couvraient
+   que l'état survolé : au repos l'icône restait quasi invisible. */
+html[data-theme="light"] .filtre-discussions {
+  color: #5c5c5c;
 }
 html[data-theme="light"] .side-utilitaires > button:hover,
 html[data-theme="light"] .side-utilitaires .compte-bouton:hover {

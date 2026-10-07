@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20261007dc" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20261007dd" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -249,8 +249,18 @@
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 10l-5 5 5 5M4 15h11a4 4 0 0 0 4-4V7"/></svg>
             </button>
           </div>
-          <div class="composeur-pied">
-            <span>Les IA peuvent commettre des erreurs. Vérifiez les réponses.</span>
+<div class="composeur-pied">
+              <!-- v20261007 (U1) : indicateur d'état du service. Le JS lit
+                   #statut et #dot depuis longtemps, et une gardereturning
+                   si l'élément est absent neutralisait l'affichage sans
+                   bruit : la feature était morte. ATTENTION — pas de
+                   caractère accent grave ni de $ ici : ce fichier est
+                   embarqué dans un littéral TypeScript par prepare-assets. -->
+              <span class="composeur-etat">
+                <span id="dot" class="dot" role="button" tabindex="0" aria-live="polite" aria-label="État du service local, cliquer pour réessayer"></span>
+                <span id="statut" aria-live="polite"></span>
+              </span>
+              <span>Les IA peuvent commettre des erreurs. Vérifiez les réponses.</span>
             <div class="composeur-modele">
               <div class="hud-modele-wrap hud-modele-bas">
                 <button id="btn-modele" type="button" class="btn-modele" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-modeles" title="Modèle de langue — auto = cascade (gratuit → zai)">
@@ -368,11 +378,11 @@
     <!-- Chargeur de thème importé (/api/design) AVANT l'application. -->
     <script src="./design/theme-loader.js"></script>
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
-    <script src="./keys.js?v=20261007dc"></script>
-    <script src="./api-shim.js?v=20261007dc"></script>
+    <script src="./keys.js?v=20261007dd"></script>
+    <script src="./api-shim.js?v=20261007dd"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20261007dc"></script>
+    <script src="./chat-demo.js?v=20261007dd"></script>
   </div>
 </body>
 </html>

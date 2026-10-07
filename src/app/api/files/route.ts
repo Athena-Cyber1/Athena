@@ -24,6 +24,9 @@ import { z } from "zod";
 const URL_SIDECAR_FILES = "http://127.0.0.1:3010/files";
 const URL_SIDECAR_INGEST = "http://127.0.0.1:3010/files/ingest";
 const MAX_OCTETS = 52_428_800; // 50 Mio, même borne que le sidecar (MAX_OCTETS_INGEST)
+/* v20261007 : plafond de corps HTTP, calé sur le pire envoi base64 légitime
+   (50 Mio → ≈ 69,9 Mo de JSON) + marge multipart. */
+const CORPS_MAX_OCTETS = 72_000_000;
 
 const schemaUploadJson = z.object({
   filename: z.string().min(1).max(300),
@@ -208,6 +211,19 @@ export async function POST(req: Request) {
       chemin: "/api/files",
     });
     return reponseRefus(garde.raison ?? "origine non autorisée");
+  }
+
+  /* v20261007 (B1) : plafond AVANT parsing/buffering. Calé sur le contrat
+     réel — un envoi légitime vaut au plus 50 Mio de binaire en base64
+     (≈ 69,9 Mo) — pas sur une valeur arbitraire : il s'agit d'écarter les
+     corps aberrants (upload torrent) avant qu'ils ne saturent la mémoire.
+     Au-delà, le sidecar applique encore MAX_OCTETS_INGEST côté fichier. */
+  const octets = Number(req.headers.get("content-length") || 0);
+  if (Number.isFinite(octets) && octets > CORPS_MAX_OCTETS) {
+    return Response.json(
+      { erreur: "Fichier trop volumineux (max 50 Mio)." },
+      { status: 413 }
+    );
   }
 
   const contentType = (req.headers.get("content-type") ?? "").toLowerCase();

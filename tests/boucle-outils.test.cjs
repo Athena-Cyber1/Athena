@@ -42,13 +42,24 @@ function charger(reponses) {
   }));
   if (!w.ResizeObserver) w.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   if (!w.IntersectionObserver) w.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
+  /* v20261007 (J1) : jsdom n'implémente pas Response ; tout navigateur en a
+     une. appelAgent reconstruit une Response après avoir bufferisé le corps,
+     donc sans elle le code du produit lève dans la fenêtre. On comble donc
+     l'écart de la plateforme au niveau du harnais. */
+  if (!w.Response) w.Response = Response;
+  if (!w.Headers) w.Headers = Headers;
   if (!w.HTMLElement.prototype.scrollIntoView) w.HTMLElement.prototype.scrollIntoView = function () {};
   w.scrollTo = () => {};
   const cap = { chat: [], exec: [], write: [], read: [], list: [], grep: [] };
-  const json = (obj) => Promise.resolve({
-    ok: true, status: 200, headers: { get: () => 'application/json' },
-    json: async () => obj, text: async () => JSON.stringify(obj),
-  });
+  /* v20261007 (J1) : le harnais renvoie de VRAIES Response. Il mimait
+     l'API par des objets plats ({ok, status, json, text}), ce qui suffisait
+     tant que le code ne faisait que `.json()`. appelAgent bufferise désormais
+     le corps (`arrayBuffer()`) pour que la borne couvre aussi la lecture —
+     la propriété est standard sur Response, donc c'est le harnais qui devait
+     être corrigé, pas le produit. */
+  const json = (obj, status = 200) => Promise.resolve(new Response(
+    JSON.stringify(obj),
+    { status, headers: { 'Content-Type': 'application/json' } }));
   const corpsDe = (opts) => { try { return JSON.parse((opts && opts.body) || '{}'); } catch (_) { return {}; } };
   w.fetch = (input, opts) => {
     const url = typeof input === 'string' ? input : (input && input.url) || '';

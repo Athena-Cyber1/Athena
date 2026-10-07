@@ -66,14 +66,17 @@ const interpreteurCodeEl = $('interpreteur-code'), interpreteurCadreEl = $('inte
 const interpreteurExeEl = $('interpreteur-exe'), interpreteurFermerEl = $('interpreteur-fermer');
 const interpreteurCorpsEl = $('interpreteur-corps'), interpreteurSplitEl = $('interpreteur-split'), interpreteurToggleEl = $('interpreteur-toggle');
 const interpreteurBordEl = $('interpreteur-bord');
-const saisieMirrorEl = $('saisie-mirror'), modelePiedEl = $('modele-pied');
+const saisieMirrorEl = $('saisie-mirror');
 const navProjetsEl = $('nav-projets'), navArtefactsEl = $('nav-artefacts');
 const navCodeEl = $('nav-code'), navPersonnaliserEl = $('nav-personnaliser');
 const statutEl = $('statut'), dotEl = $('dot');
 const fichiersEl = $('fichiers'), attacherEl = $('attacher'), apercuFichiersEl = $('file-preview');
 const compteurSaisieEl = $('compteur-saisie');
 const nouvelleDiscussionEl = $('nouvelle-discussion');
-const ouvrirProjetsEl = $('ouvrir-projets'), ouvrirParametresEl = $('ouvrir-parametres');
+/* v20261007 (U1) : `ouvrir-projets` / `ouvrir-parametres` ne sont plus dans le
+   HTML — les boutons portent les ids `nav-projets` / `nav-personnaliser`,
+   câblés plus bas. Ces deux références étaient mortes (`?.` neutralisait
+   l'échec sans bruit). */
 const ajouterProjetEl = $('ajouter-projet'), plierConversationsEl = $('plier-conversations'), listeConversationsEl = $('liste-conversations');
 const ouvrirCompteEl = $('ouvrir-compte'), menuCompteEl = $('menu-compte');
 const basculeSidebarEl = $('bascule-sidebar');
@@ -222,7 +225,29 @@ function appelAgent(chemin, options, ms) {
   const init = Object.assign({}, options || {}, { signal: ctrl.signal });
   const borne = ms || BORNES_AGENT.lecture;
   const minuterie = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, borne);
+  /* v20261007 : on BUFFERISE le corps avant de rendre la main. La promesse
+     `fetch` se résout à la réception des EN-TÊTES : le `.finally` levait donc
+     le minuteur et retirait le contrôleur alors que le corps n'était pas
+     encore lu. Un agent qui renvoyait les en-têtes puis se taisait laissait
+     `.json()` pendre SANS FIN — precisely l'accroche que la borne annonce
+     ("délai dépassé"), donc inopérante. Aucun appelant ne lit `.body` en
+     flux (tous font `.json()` / `.text()`), on peut donc rendre une Response
+     équivalente construite depuis le tampon. */
   return fetch(chemin, init)
+    .then(async (r) => {
+      const tampon = await r.arrayBuffer();
+      const entetes = new Headers();
+      r.headers.forEach((v, k) => entetes.set(k, v));
+      /* 204/205/304 n'acceptent pas de corps : le constructeur lèverait. */
+      const sansCorps = r.status === 204 || r.status === 205 || r.status === 304;
+      /* Un statut hors 200-599 (1xx) est illegal pour `new Response`. */
+      const statut = r.status >= 200 && r.status <= 599 ? r.status : 502;
+      return new Response(sansCorps ? null : tampon, {
+        status: statut,
+        statusText: r.statusText || '',
+        headers: entetes,
+      });
+    })
     .catch((e) => {
       if (e && e.name === 'AbortError') {
         const err = new Error('Délai dépassé (' + Math.round(borne / 1000)
@@ -3665,6 +3690,16 @@ function autoExecBlocs(bulleEl) {
    ABSOLU_TOURS_EXEC est un simple filet qui force le verdict final. */
 const FENETRE_EXEC = 2;
 const ABSOLU_TOURS_EXEC = 120;
+/* v20261007 (Q1) : plafond de ROUNDS DE CHAÎNE (appels modèle successifs pour
+   une seule question), indépendant du compteur de commandes. ABSOLU_TOURS_EXEC
+   compte les COMMANDES : avec MAX_BLOCS_TOUR = 6, une tâche qui n'émet qu'une
+   commande par tour enchaînait jusqu'à 120 `genererReponse`, chacune avec sa
+   cascade complète — soit jusqu'à ~1 400 requêtes provider sur une seule
+   question (quota gratuit openrouter : 50/jour). Le quota est aussi plafonné
+   côté shim (12/tour), mais celui-ci se réarmait à chaque requête : d'où ce
+   plafond, qui EST la bonne unité (une génération = au moins 1 requête).
+   Au-delà : verdict honnête + bouton « Continuer » proposé. */
+const ROUNDS_MAX_CHAINE = 8;
 /* v20261007 (coût) : 40 000 → 12 000 car. par sortie. La fenêtre était
    réinjectée à CHAQUE tour de la chaîne : 4 × 40 000 = 160 000 car.
    (~45 k jetons) d'historique d'outils, alors que le shim rogne chaque message
@@ -3898,6 +3933,7 @@ function relancerSiPromesse(convo, bulleEl) {
 function reinitialiserChaine(convo) {
   if (!convo) return;
   convo._toursExec = 0;
+  convo._roundsChaine = 0;
   convo._cmdExecutees = [];
   convo._fenetreExec = [];
   convo._msgExec = null;
@@ -3941,6 +3977,32 @@ function enchainerApresExec(convo, resultats, bulleSuite) {
      « anciennes » commandes (slice(0, négatif)). Le budget ABSOLU porte
      donc sur des commandes, comme l'annonce le message. */
   convo._toursExec = deja + blocs.length;
+  /* v20261007 (Q1) : compteur de ROUNDS DE CHAÎNE (une génération = au moins
+     une requête provider). C'est l'unité qui protège réellement le quota : le
+     compteur de commandes ne l'était pas (une commande par tour = 120
+     générations possibles, soit des centaines de requêtes sur UNE question).
+     Au plafond : on n'enchaîne plus, on le dit, et l'utilisateur peut
+     reprendre avec « Continuer ». */
+  const rounds = (Number(convo._roundsChaine) || 0) + 1;
+  convo._roundsChaine = rounds;
+  if (rounds > ROUNDS_MAX_CHAINE) {
+    convo._roundsChaine = ROUNDS_MAX_CHAINE;
+    try {
+      convo.messages.push({
+        role: 'user',
+        _exec: true,
+        content: 'BUDGET DE TOURs ATTEINT (' + ROUNDS_MAX_CHAINE + ' tours pour cette question). '
+          + 'Tu ne peux plus enchaîner une génération : REND TON VERDICT MAINTENANT — ce que '
+          + 'tu as trouvé, ce que tu as corrigé, ce qui reste à faire. '
+          + 'Si le travail est incomplet, termine-le au prochain tour.',
+      });
+      convo.maj = Date.now();
+      sauverConversations();
+    } catch (_) {}
+    notifier('Plafond de ' + ROUNDS_MAX_CHAINE + ' tours pour cette question — le modèle doit rendre son verdict.');
+    deverrouillerChaine();
+    return;
+  }
   /* MÉMOIRE BORNÉE : sans ça, chaque tour ajoutait 8 000 caractères et le
      modèle oubliait le début de son propre travail (puis dérape — observé :
      20 commandes de déversement, aucun verdict). On ne garde QUE les
@@ -3964,7 +4026,10 @@ function enchainerApresExec(convo, resultats, bulleSuite) {
      pouvait plus savoir laquelle était la sienne. */
   const dernier = convo._fenetreExec[convo._fenetreExec.length - 1] || '(aucun)';
   const precedents = convo._fenetreExec.slice(0, -1);
-  let contenu = 'Commande(s) exécutée(s) : ' + convo._toursExec + '.'
+    let contenu = 'Commande(s) exécutée(s) : ' + convo._toursExec + '.'
+    /* v20261007 (Q1) : le tour de chaîne est visible pour le modèle (sinon il
+       ne comprend pas pourquoi on lui dit d'arrêter). */
+    + ' Tour de chaîne ' + rounds + '/' + ROUNDS_MAX_CHAINE + '.'
     + (anciens > 0 ? ' Les ' + anciens + ' plus anciennes ne sont plus en mémoire ; '
       + 'elles étaient : ' + convo._cmdExecutees.slice(0, anciens).map((c) => c.slice(0, 90)).join(' | ') + '.'
       : '') + '\n\n'
@@ -4096,15 +4161,27 @@ const r = await appelAgent('/api/write', {
    l'exec le cherchait ailleurs, throw → code=1, tâche morte. Le retour
    alimente enchainerApresExec comme une commande. */
 function autoFileBlocs(bulleEl) {
-  const cartes = bulleEl ? [...bulleEl.querySelectorAll('.file-bloc')] : [];
+const cartes = bulleEl ? [...bulleEl.querySelectorAll('.file-bloc')] : [];
   if (!cartes.length) return Promise.resolve([]);
   return (async () => {
-    const resultats = [];
-    for (const carte of cartes) {
+  const resultats = [];
+  /* v20261007 (Q1) : même plafond que les commandes (autoExecBlocs). Un modèle
+     qui écrivait 40 blocs athena-file d'un coup déclenchait 40 écritures + 40
+     relectures dans UN seul tour de chaîne. Les cartes non traitées gardent
+     leur bouton (l'utilisateur peut les lancer). */
+  let ecrites = 0;
+  for (const carte of cartes) {
       /* §8.7 (arrêt obligatoire) : plus rien ne s'écrit après l'arrêt. */
       if (chaineInterrompue) break;
-      if (carte.dataset.fileAuto === '1') continue;
-      const contenu = carte._contenuComplet != null ? carte._contenuComplet : '';
+if (carte.dataset.fileAuto === '1') continue;
+    if (ecrites >= MAX_BLOCS_TOUR) {
+      const reste = cartes.length - ecrites;
+      notifier(reste + ' fichier(s) non écrits : plafond de ' + MAX_BLOCS_TOUR
+        + ' par tour (ils restent enregistrables à la main).');
+      break;
+    }
+    ecrites += 1;
+    const contenu = carte._contenuComplet != null ? carte._contenuComplet : '';
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
       const d = await enregistrerFichierLocal(carte.dataset.chemin || '', contenu, null, carte, { auto: true });
       const demande = String(carte.dataset.chemin || '');
@@ -5048,7 +5125,7 @@ function humaniserErreur(detail, statut) {
    `stream` est le SEUL paramètre qui les distingue. */
 function corpsChat(historique, attachments, stream) {
   /* Champs optionnels envoyés seulement si VALIDES : la route Next valide au
-     stricte (fil nul / modèle inconnu / joint vide = 400 « corps invalide » dès
+     strict (fil nul / modèle inconnu / joint vide = 400 « corps invalide » dès
      qu'un skill forçait l'envoi au moteur). */
   const plan = planActif();
   const t = Number(temperatureChoisie());
@@ -5056,6 +5133,11 @@ function corpsChat(historique, attachments, stream) {
     messages: historique,
     outils: preferences.outilsWeb !== false,
     ...(stream ? { stream: true } : {}),
+    /* v20261007 (Q1) : identifiant de TOUR. Le shim s'en sert pour remettre à
+       zéro son plafond de requêtes provider au bon moment : la chaîne d'outils
+       peut faire plusieurs requêtes pour UNE question de l'utilisateur, et le
+       plafond était réarmé à chaque requête HTTP (donc inoffensif). */
+    tour_id: tourId(),
     /* v20260922m (F2/F13) : conversation_id stable par conversation UI → le
        fil côté moteur devient réutilisable (compteur honnête, corrélation logs,
        format canonique « fil-xxxxxxxx »). */
@@ -5080,9 +5162,29 @@ function corpsChat(historique, attachments, stream) {
   };
 }
 
+const absous = new Set();
+/* v20261007 (Q1) : un identifiant par QUESTION posée par l'utilisateur. Toutes
+   les requêtes de la chaîne d'outils d'un même tour (message → commande →
+   suite → relance anti-promesse) partagent le même identifiant, donc le plafond
+   de requêtes provider du shim reste valable pour toute la question ; un
+   nouvel envoi de texte, « Régénérer » ou « Continuer » en crée un nouveau. */
+let tourCourant = null;
+function tourId() {
+  if (!tourCourant) tourCourant = 't' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  return tourCourant;
+}
+function nouveauTour() { tourCourant = null; }
+
 async function appelerApiClassique(historique, signal = null, attachments = []) {
   let cause = 'inconnue';
-  for (let essai = 0; essai < 3; essai++) {
+  /* v20261007 (Q1) : 1 SEUL réessai au lieu de 3. Le repli rejoue le pipeline
+     COMPLET (historique entier + pièces jointes), donc 3 essais = jusqu'à
+     3 générations payées de plus, chacune pouvant consommer jusqu'à 12
+     requêtes provider : un incident réseau isolé devenait un incident de
+     ~36 requêtes. On ne rejoue que ce qui a une chance d'être transitoire,
+     et seulement si le premier essai n'a rien reçu du tout. */
+  const MAX_ESSAIS_CLASSIQUE = 2;
+  for (let essai = 0; essai < MAX_ESSAIS_CLASSIQUE; essai++) {
     /* v20261007 : un délai dépassé n'est pas rejoué (cf. (b)). */
     if (cause === 'delai') break;
     if (essai > 0) {
@@ -5799,6 +5901,7 @@ async function envoyer(texte) {
      sans cette remise à zéro, une conversation déjà à 6 commandes ne
      pourrait plus jamais enchaîner. v20261007 : les 6 champs (et non 4). */
   reinitialiserChaine(convo);
+  nouveauTour();
   try {
     await genererReponse(convo);
   } finally {
@@ -6092,12 +6195,16 @@ async function genererReponse(convo, opts) {
           btnCont.className = 'coupe-continue';
           btnCont.textContent = 'Continuer';
           btnCont.title = 'Renvoyer « continue » — la suite s\'écrit dans la même bulle.';
-          btnCont.addEventListener('click', () => {
-            if (occupe) { notifier('Une réponse est déjà en cours.'); return; }
-            btnCont.disabled = true;
-            occupe = true;
-            majBoutonArret();
-            convo.messages.push({
+btnCont.addEventListener('click', () => {
+               if (occupe) { notifier('Une réponse est déjà en cours.'); return; }
+               btnCont.disabled = true;
+               occupe = true;
+               majBoutonArret();
+               /* Q1 : une continuation est une NOUVELLE demande (nouveau tour de
+                  requêtes) — sinon elle hériterait du quota déjà consommé par la
+                  réponse tronquée qu'elle reprend. */
+               nouveauTour();
+               convo.messages.push({
               role: 'user',
               content: 'Continue exactement là où ta dernière réponse s\'est arrêtée. '
                 + 'Reprends sans répéter ce qui a déjà été écrit.',
@@ -6433,8 +6540,6 @@ fichiersEl.addEventListener('change', () => {
 });
 nouvelleDiscussionEl.addEventListener('click', () => nouvelleDiscussion());
 /* v20260926m : tuiles retirées du DOM — gardes nulles (pas de crash). */
-ouvrirProjetsEl?.addEventListener('click', () => afficherProjets());
-ouvrirParametresEl?.addEventListener('click', () => afficherParametres());
 navProjetsEl?.addEventListener('click', () => afficherProjets());
 navArtefactsEl?.addEventListener('click', () => afficherVue('Artefacts', 'Les artefacts générés apparaîtront ici.'));
 navCodeEl?.addEventListener('click', () => afficherVue('Code', 'Les extraits et commandes exécutables apparaîtront ici.'));
@@ -7066,6 +7171,7 @@ async function regenererDerniereReponse() {
   /* v1.2 (audit) : Régénérer repart de la question — donc le budget et la
      mémoire de la chaîne repartent aussi (factorisé v20261007). */
   reinitialiserChaine(convo);
+  nouveauTour();
   convo.maj = Date.now();
   sauverConversations();
   rangeesReponse.forEach((rangee) => rangee.remove());
@@ -7224,7 +7330,6 @@ try {
 function majBadgeModele() {
   const el = document.getElementById('modele-actif-nom');
   if (el) el.textContent = modeleChoisi ? modeleChoisi.name : 'auto';
-  if (modelePiedEl) modelePiedEl.textContent = modeleChoisi ? modeleChoisi.name : 'auto';
   const bouton = document.getElementById('btn-modele');
   if (bouton) {
     bouton.title = modeleChoisi
@@ -9292,9 +9397,24 @@ function ouvrirPanneauMcp() {
   placerFigeAuDessus(panneauMcpEl);
   fermerMenuSkills();
   rendrePanneauMcp(null);
+  /* v20261007 (S1) : le GET ne lance PLUS aucun serveur (lecture seule du
+     registre). Le démarrage passe par un POST explicite — le clic sur
+     « Serveurs MCP » EST le consentement, et il est désormais visible dans la
+     trace réseau. L'utilisateur voit d'abord la configuration déclarée, puis
+     les états réels après connexion. */
   fetch('/api/mcp', { cache: 'no-store' })
     .then((r) => (r.ok ? r.json() : null))
-    .then((vue) => rendrePanneauMcp(vue))
+    .then((vue) => {
+      rendrePanneauMcp(vue);
+      return fetch('/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connecter: true }),
+        cache: 'no-store',
+      });
+    })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((vue) => { if (vue) rendrePanneauMcp(vue); })
     .catch(() => rendrePanneauMcp(null, true));
 }
 

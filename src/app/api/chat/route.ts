@@ -42,6 +42,10 @@ const TIMEOUT_MS = 150_000;
    connue. Ces bornes restent de simples garde-fous anti-déni de service. */
 const MAX_MESSAGES = 400;
 const MAX_CONTENU = 400000;
+/* Plafond de corps accepté PAR LA PASSERELLE (avant parsing). Doit rester
+   supérieur au pire cas légitime (historique + pièces + plan) mais très inférieur
+   au plafond théorique du schéma (400 × 400 000 = 160 Mo). */
+const CORPS_MAX_OCTETS = 12_000_000;
 
 /* ------------------------------------------------------------------ */
 /* Schémas                                                            */
@@ -156,6 +160,17 @@ const schemaCorpsDemo = z.object({
   // P0 (audit fainéant) : effort du HUD (low/medium/high/max) — transmis au
   // sidecar → moteur → pont (reasoning_effort). Absent → défaut modèle.
   effort: schemaEffortOptionnel,
+  // v20261007 : le PLAN visible du HUD (§8.7-4). Il était envoyé par le
+  // client à CHAQUE requête et ABSENT d'ici : `z.object` étant non-strict,
+  // zod retirait la clé en SILENCE — le moteur travaillait donc sans l'état de
+  // travail affiché, sans la moindre erreur. Pire, dès que viseMoteur()
+  // détournait la requête vers cette route (skill forcé), le plan disparaissait
+  // alors qu'il était visible à l'écran.
+  plan: z
+    .array(z.string().max(300))
+    .max(12)
+    .optional()
+    .catch(undefined),
 });
 
 const schemaMessageLegacy = z.object({
@@ -287,6 +302,25 @@ function versSidecar(corps: z.infer<typeof schemaCorps>) {
   // RequeteChat.effort → run_agent → raisonner_llm → pont (reasoning_effort).
   const effort = (corps as { effort?: string }).effort;
   if (effort) payload.effort = effort;
+  // v20261007 (§8.7-4) : le plan du HUD est transmis AU MÊME titre que
+  // l'effort ou le modèle. Avant : la clé n'était pas dans le schéma (zod la
+  // supprimait en silence) et le moteur ne voyait jamais le plan.
+  const plan = (corps as { plan?: string[] }).plan;
+  if (Array.isArray(plan) && plan.length) {
+    // (1) contrat transmis tel quel au sidecar (traces, versions futures) ;
+    payload.plan = plan;
+    // (2) ET injecté dans la question, seul point d'entrée disponible ici :
+    // le shim le fait dans le message SYSTEM (avecPlan), mais cette route
+    // passe par le sidecar dont le prompt on ne maîtrise pas la forme.
+    // Sans cela, le plan visible à l'écran n'arrivait JAMAIS au modèle
+    // (le champ était même retiré par zod, en silence).
+    const blocPlan =
+      "<plan_publie_par_ti>\n"
+      + "Plan en cours (publié par toi dans un bloc ```athena-plan, « [x] » = faite) :\n"
+      + plan.map((e) => String(e)).join("\n")
+      + "\n</plan_publie_par_ti>\n\n";
+    payload.question = blocPlan + question;
+  }
   // v10.6 (F12) : `outils` (bool OU liste) n'a pas d'équivalent sidecar —
   // les outils sont choisis par le planificateur ; le drapeau est accepté,
   // jamais simulé. `options` reste vide pour le contrat démo.
@@ -523,6 +557,19 @@ export async function POST(req: Request) {
       chemin: "/api/chat",
     });
     return reponseRefus(garde.raison ?? "origine non autorisée");
+  }
+
+  /* v20261007 (B1) : PLAFOND DE CORPS AVANT TOUT PARSAGE. Les bornes du
+     schéma (400 messages × 400 000 car.) ne s'appliquent qu'APRÈS
+     `req.json()` : un POST de 160 Mo était intégralement chargé en mémoire
+     (×2-3 en UTF-16) avant d'être rejeté → OOM du process Node, donc 503 sur
+     TOUTES les routes. On refuse donc en amont, sur l'en-tête (0 octet lu). */
+  const octetsDeclares = Number(req.headers.get("content-length") || 0);
+  if (Number.isFinite(octetsDeclares) && octetsDeclares > CORPS_MAX_OCTETS) {
+    return Response.json(
+      { erreur: `Corps trop volumineux (max ${CORPS_MAX_OCTETS} octets).` },
+      { status: 413 }
+    );
   }
 
   // 2) Validation (contrat démo ou legacy).

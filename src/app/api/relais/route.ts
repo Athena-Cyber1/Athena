@@ -25,12 +25,22 @@ const URL_PONT_COMPLETE = "http://127.0.0.1:3015/complete";
 const TIMEOUT_MS = 60_000;
 const MAX_MESSAGES = 400;
 const MAX_CONTENU = 200_000;
+/* v20261007 : plafond de corps (avant parsing) — 400 × 200 000 = 80 Mo
+   théoriques, inacceptable à charger en mémoire. */
+const CORPS_MAX_OCTETS = 12_000_000;
 
 type MessageRelais = { role: string; content: string };
 
 export async function POST(request: Request) {
   const garde = garderOrigine(request);
   if (!garde.ok) return reponseRefus(garde.raison ?? "origine non autorisée");
+
+  /* v20261007 (B1) : plafond AVANT parsing (même raison que /api/chat : un
+     corps de 80 Mo était chargé en mémoire avant d'être rejeté). */
+  const octets = Number(request.headers.get("content-length") || 0);
+  if (Number.isFinite(octets) && octets > CORPS_MAX_OCTETS) {
+    return Response.json({ erreur: "corps trop volumineux (relais)" }, { status: 413 });
+  }
 
   let corps: Record<string, unknown> | null = null;
   try {

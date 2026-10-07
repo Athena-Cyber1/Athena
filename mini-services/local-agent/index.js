@@ -399,6 +399,93 @@ const DENY_WRITE = [
   /^[a-z]:\\programdata\\microsoft([\\\/]|$)/i,
   /^\/(etc|sys|proc|bin|sbin|usr\/bin|usr\/sbin|boot)([\/]|$)/,
 ];
+/* v20261007 (J1) — CONFINELEMENT EN LECTURE.
+   `dansAllowDir` renvoie VRAI quand aucun `--allow` n'est fourni (mode
+   historique « zéro friction »). L'agent pouvait donc LIRE n'importe quel
+   fichier du poste : clés SSH, credentials cloud, cookies de navigateur,
+   fichiers .env — les seuls exclus étant les dossiers système de DENY_WRITE.
+   On ajoute une liste de refus de SENSIBLES, appliquée même sans `--allow`,
+   qui ne gêne pas le travail normal sur du code. */
+const DENY_LECTURE = [
+  /([\\\/])\.ssh([\\\/]|$)/i,
+  /([\\\/])\.gnupg([\\\/]|$)/i,
+  /([\\\/])\.aws([\\\/]|$)/i,
+  /([\\\/])\.azure([\\\/]|$)/i,
+  /([\\\/])\.kube([\\\/]|$)/i,
+  /([\\\/])\.docker([\\\/]|$)/i,
+  /([\\\/])\.config[\\\/]gh([\\\/]|$)/i,
+  /([\\\/])\.git-credentials$/i,
+  /([\\\/])\.netrc$/i,
+  /([\\\/])\.npmrc$/i,
+  /([\\\/])\.pypirc$/i,
+  /([\\\/])\.env(\.[a-z0-9_-]+)?$/i,
+  /\\credentials([\\\/]|$)/i,
+  /([\\\/])(id_rsa|id_dsa|id_ecdsa|id_ed25519)$/i,
+  /\.(pem|key|pfx|p12|kdbx)$/i,
+  /* profil navigateur : mots de passe et cookies */
+  /([\\\/])Cookies$([\\\/]?)/i,
+  /([\\\/])(Login Data|Web Data|logins\.json|cookies\.sqlite)$/i,
+  /appdata[\\\/]local[\\\/]google[\\\/]chrome/i,
+  /appdata[\\\/]roaming[\\\/]mozilla/i,
+  /appdata[\\\/]local[\\\/]microsoft[\\\/]edge/i,
+];
+function lectureBloquee(abs) {
+  return DENY_LECTURE.some((re) => re.test(abs));
+}
+
+/* Analyse statique d'un motif : renvoie une RAISON si la forme est capable de
+   retour exponentiel, sinon null. Heuristique volontairement CONSERVATRICE —
+   on refuse un motif utile plutôt que de laisser geler l'agent. */
+function risqueReDoS(motif) {
+  const m = String(motif || '');
+  if (m.length > 120) return 'motif trop long (max 120)';
+  /* référence arrière : exponentielle sur les motifs dupliqués */
+  if (/\\[1-9]/.test(m) || /\\k</.test(m)) return 'reference arriere non supportee';
+  /* groupes capturants imbriqués : on découpe et on cherche un quantificateur
+     « ouvert » ( * + {n,} ) à l'intérieur d'un groupe lui-même quantifié. */
+  const prof = [];
+  let echappe = false;
+  let classe = false;
+  for (let i = 0; i < m.length; i++) {
+    const c = m[i];
+    if (echappe) { echappe = false; continue; }
+    if (c === '\\') { echappe = true; continue; }
+    if (classe) { if (c === ']') classe = false; continue; }
+    if (c === '[') { classe = true; continue; }
+    if (c === '(') {
+      prof.push({ ouvert: false, alt: false });
+      continue;
+    }
+    if (c === '|') {
+      if (prof.length) prof[prof.length - 1].alt = true;
+      continue;
+    }
+    if (c === ')') {
+      const g = prof.pop(); if (!g) continue;
+      let j = i + 1; let quantifie = false;
+      if (m[j] === '*' || m[j] === '+') { quantifie = true; j++; }
+      else if (m[j] === '?') { quantifie = true; j++; }
+      else if (m[j] === '{') {
+        const fm = /^\{(\d*)(,?)(\d*)\}/.exec(m.slice(j));
+        if (fm) { quantifie = fm[2] === ',' && fm[3] === ''; j += fm[0].length; }
+      }
+      if (quantifie && g.ouvert) return 'quantificateur imbrique';
+      /* Alternance reproduite sous un quantificateur : `(a|a)*` teste
+         2^n chemins. `(a|b)c` en revanche est inoffensif et très courant —
+         on ne le refuse donc QUE s'il est quantifié. */
+      if (quantifie && g.alt) return 'alternance quantifiee';
+      if (prof.length && quantifie) prof[prof.length - 1].ouvert = true;
+      continue;
+    }
+    /* quantificateur ouvert à l'intérieur du groupe courant */
+    if ((c === '*' || c === '+') || (c === '{' && /^\{\d*,\}/.test(m.slice(i)))) {
+      if (prof.length) prof[prof.length - 1].ouvert = true;
+    }
+  }
+  /* (a|aa)* — quantificateur imbrique OU alternance quantifiée : les deux
+     formes sont couvertes par les tests de fermeture de groupe ci-dessus. */
+  return null;
+}
 const ALLOW_DIR = (() => {
   const i = process.argv.indexOf('--allow');
   return i >= 0 && process.argv[i + 1] ? path.resolve(process.argv[i + 1]) : null;
@@ -1364,23 +1451,29 @@ function lireCorps(req, max) {
     /* v1.2 roadmap §8.3 : un client qui envoie lentement (ou jamais finit)
        laissait le worker bloqué sans limite — 15 s max, timer nettoyé sur
        fin/erreur/trop-plein. */
-    const tempo = setTimeout(() => {
-      const e = new Error('délai dépassé en lecture du corps (15 s)');
-      e.code = 408;
-      reject(e);
-      req.destroy();
-    }, 15000);
+      const tempo = setTimeout(() => {
+        const e = new Error('délai dépassé en lecture du corps (15 s)');
+        e.code = 408;
+        reject(e);
+        /* v20261007 : on ne détruit PLUS le socket ici. `req.destroy()` coupe
+           la connexion immédiatement, donc le `json(res, 408, ...)` de
+           l'appelant n'atteint JAMAIS le client — il voyait « fetch failed »,
+           exactement le symptôme que ce chemin prétendait corriger. La
+           destruction est différée à après la réponse. */
+        setImmediate(() => { try { req.destroy(); } catch {} });
+      }, 15000);
     const arreter = () => { try { clearTimeout(tempo); } catch (_) {} };
     req.on('data', (c) => {
       t += c;
-      if (t.length > limite) {
-        /* v20260926d (kimi) : 413 explicite (avant : 500 générique). */
-        arreter();
-        const e = new Error('corps trop volumineux');
-        e.code = 413;
-        reject(e);
-        req.destroy();
-      }
+        if (t.length > limite) {
+          /* v20260926d (kimi) : 413 explicite (avant : 500 générique). */
+          arreter();
+          const e = new Error('corps trop volumineux');
+          e.code = 413;
+          reject(e);
+          /* v20261007 : idem — le destroy direct empechait l'envoi du 413. */
+          setImmediate(() => { try { req.destroy(); } catch {} });
+        }
     });
     req.on('end', () => { arreter(); resolve(t); });
     req.on('error', (e) => { arreter(); reject(e); });
@@ -2378,6 +2471,11 @@ const serveur = http.createServer(async (req, res) => {
         json(res, 403, { erreur: 'hors zone autorisee (--allow) : ' + absL, chemin: absL }, origin, req);
         return;
       }
+      /* v20261007 (J1) : refus des fichiers sensibles même hors --allow. */
+      if (lectureBloquee(absL)) {
+        json(res, 403, { erreur: 'lecture bloquee : fichier sensible - ' + absL, chemin: absL }, origin, req);
+        return;
+      }
       if (chemin === '/list') {
         if (!estDossier(absL)) {
           json(res, 400, { erreur: 'pas un dossier : ' + absL, existe: fs.existsSync(absL), dossier: estDossier(absL) }, origin, req);
@@ -2444,6 +2542,18 @@ const serveur = http.createServer(async (req, res) => {
         return;
       }
       let rxG;
+      /* v20261007 (J1) — GARDE ANTI-ReDoS.
+         Le motif venait du modèle et était compilé tel quel : `(a+)+$` ou
+         `(a|a)*` Applied sur une ligne de 200 Ko gelent le moteur de regexp
+         pendant des MINUTES. Comme l'agent est mono-thread, un seul motif
+         catastrophique tue TOUTES les requêtes (dont /kill et /sante) — déni
+         de service local. On refuse les formesodatait de retour exponentiel
+         AVANT la compilation, et on borne la taille de motif à 120. */
+      const motifRefuse = risqueReDoS(motifG);
+      if (motifRefuse) {
+        json(res, 400, { erreur: 'motif rejete (risque de deni de service) : ' + motifRefuse }, origin, req);
+        return;
+      }
       try { rxG = new RegExp(motifG, corpsG.sensible === true ? 'g' : 'gi'); }
       catch (eR) { json(res, 400, { erreur: 'regex invalide : ' + String(eR.message).slice(0, 160) }, origin, req); return; }
       const absG = path.resolve(process.cwd(), cibleG);
@@ -2453,6 +2563,12 @@ const serveur = http.createServer(async (req, res) => {
       }
       if (!dansAllowDir(absG)) {
         json(res, 403, { erreur: 'hors zone autorisee (--allow) : ' + absG }, origin, req);
+        return;
+      }
+      /* v20261007 (J1) : une recherche ne doit pas pouvoir lire un fichier
+         sensible en scannant le dossier qui le contient. */
+      if (lectureBloquee(absG)) {
+        json(res, 403, { erreur: 'recherche bloquee : zone sensible - ' + absG }, origin, req);
         return;
       }
       const maxFichiers = Math.min(2000, Math.max(1, parseInt(corpsG.max_fichiers, 10) || 300));

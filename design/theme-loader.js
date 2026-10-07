@@ -43,7 +43,13 @@
     if (!declarations.length) { majReset(false); return false; }
     var st = document.createElement("style");
     st.id = "ath-theme-importe";
-    st.textContent = ":root{" + declarations.join(";") + "}";
+    /* v20261007 (U1) : le sélecteur était `:root` = spécificité (0,1,0).
+       Or le bloc de thème clair est `html[data-theme="light"]` = (0,1,1) :
+       il le DÉPASSAIT. Conséquence : un thème importé restait totalement
+       inerte en mode clair (tous ses tokens écrasés), sans aucun message.
+       On cible `:root:root` = (0,2,0), qui l'emporte — le thème demandé par
+       l'utilisateur s'applique dans les deux modes. */
+    st.textContent = ":root:root{" + declarations.join(";") + "}";
     document.head.appendChild(st);
     majReset(true);
     return true;

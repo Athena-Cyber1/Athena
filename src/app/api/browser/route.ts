@@ -85,7 +85,7 @@ function garde(req: Request): Response | null {
  * `Cache-Control: no-transform` + `X-Accel-Buffering: no` : aucun proxy ne
  * doit regrouper les trames (sinon +100 ms de latence au pire moment).
  */
-function proxyFlux(spec: string, req: Request): Response {
+async function proxyFlux(spec: string, req: Request): Promise<Response> {
   const m = /^(\d{1,5}),(\d{1,5})$/.exec(spec.trim());
   if (!m) {
     return Response.json(
@@ -144,7 +144,15 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const interdite = garde(req);
   if (interdite) return interdite;
-  let corps: { action?: unknown; arg?: unknown; confirme?: unknown } = {};
+  /* v20261007 : `taille` fait partie du contrat transmis à l'agent, donc du
+     type du corps parsé — il manquait, et TypeScript le signalait (erreur
+     TS2339) sans que quoi que ce soit ne l'affichage. */
+  let corps: {
+    action?: unknown;
+    arg?: unknown;
+    confirme?: unknown;
+    taille?: { w?: unknown; h?: unknown };
+  } = {};
   try {
     corps = await req.json();
   } catch {
