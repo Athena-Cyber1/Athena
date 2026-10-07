@@ -38,6 +38,11 @@ jobs:
       # exec / lecture / écriture+relecture / plan + non-régression (arrêts).
       - name: Boucle outils (scenarios non-regression)
         run: npm run test:boucle
+      # §8.8 — le rendu markdown était le seul chemin non testé où une
+      # régression de sanitisation ouvrirait une XSS sans qu'aucun signal
+      # ne tire (15 vecteurs vérifiés sur le DOM parsé).
+      - name: Sanitation markdown (XSS)
+        run: npm run test:xss
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

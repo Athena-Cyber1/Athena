@@ -409,8 +409,14 @@ const ORIGINS = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:3010',
-  'null',
-]);
+  /* v20261007 (sécurité) : « null » RETIRÉ. C'est l'Origin qu'envoient TOUTES
+     les pages file:// et les iframes sandboxées (y compris un site tiers
+     malveillant) : l'accepter ouvrait un shell (exec/write/browser) sur le
+     poste à n'importe quel site. Les clients légitimes (localhost:3000,
+     Pages) ont une vraie origine ; les appels hors navigateur (curl, node)
+     n'envoient pas d'Origin du tout → traité par la branche « pas
+     d'origine » de ORIGINES_OK. */
+  ]);
 
 const DENY = [
   /\brm\s+-rf\s+[\/~]/i,
@@ -1320,7 +1326,7 @@ function cors(origin, req) {
   const o = origin || '';
   const ok = ORIGINES_OK(o);
   const h = {
-    'Access-Control-Allow-Origin': ok ? (o === 'null' ? 'null' : o) : '',
+    'Access-Control-Allow-Origin': ok ? o : '',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'content-type, x-athena-token',
     'Access-Control-Max-Age': '86400',
@@ -1336,7 +1342,9 @@ function cors(origin, req) {
 }
 
 function ORIGINES_OK(origin) {
-  if (!origin) return true; // client non-navigateur (curl local)
+  if (!origin) return true; // client non-navigateur (curl local, node)
+  /* v20261007 : une origine présente mais INCONNUE est refusée, y compris
+     « null » (file://, iframe sandboxé) : pas de repli permissif. */
   if (ORIGINS.has(origin)) return true;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
   return false;
@@ -2028,9 +2036,15 @@ const serveur = http.createServer(async (req, res) => {
       }
       /* v20260926e : dossier de travail choisi dans les réglages — les chemins
          relatifs s'y résolvent, avec confinement strict (../ ne peut pas en
-         sortir). Sans dossier : comportement historique (cwd + DENY_WRITE). */
-      let base = process.cwd();
-      let confine = false;
+         sortir).
+         v20261007 (sécurité) : le confinement est désormais TOUJOURS actif.
+         Avant, sans `dossier`, base = cwd et `confine = false` → un chemin
+         ABSOLU (que le schéma function calling annonçait comme « chemin
+         absolu ») écrivait N'IMPORTE OÙ hors DENY_WRITE : dossier Démarrage,
+         .ssh\authorized_keys, profil du navigateur… Sans dossier : base =
+         zone --allow si elle existe, sinon le cwd de l'agent. */
+      let base = ALLOW_DIR || process.cwd();
+      let confine = true;
       if (dossierDemande) {
         base = path.resolve(process.cwd(), dossierDemande);
         confine = true;

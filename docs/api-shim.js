@@ -1,7 +1,7 @@
-﻿/* ============================================================
+/* ============================================================
    Athéna Pages — api-shim.js
    Intercepte window.fetch pour les routes API de l'UI
-   (/api/chat, /chat-attache, /api/modeles, /api/files,
+   (/api/chat, /api/modeles, /api/files,
    /api/entrainer, /api/design) qui n'existent pas sur une
    Pages statique, et les route VERS LES VRAIS PROVIDERS
    (OpenAI-compatible) depuis le navigateur.
@@ -77,6 +77,19 @@
         chars: charsMsgs,
       },
       ms: ms,
+      /* v20261007 (diagnostic) : la trace ne portait QUE le message d'erreur,
+         donc ni statut HTTP, ni nombre de tentatives, ni TTFB (attente avant
+         le premier octet) ni rang dans la chaîne. Impossible de distinguer
+         « 429 quota » de « 404 slug inexistant » de « timeout à 300 s » dans
+         le HUD journal. On ajoute ce qui manque — c'est ce qui permet de
+         comprendre une cascade sans instrumentation externe. */
+      statut: entry._statut || null,
+      essais: entry._essais || null,
+      ttfb: typeof entry._ttfb === 'number' ? entry._ttfb : null,
+      rang: typeof entry._rang === 'number' ? entry._rang : null,
+      borne: entry._borne || null,
+      limiteSource: entry._limitSource || null,
+      postsTour: typeof postsRestants === 'function' ? POSTS_MAX_TOUR - postsRestants() : null,
       erreur: erreur || null,
     };
   }
@@ -223,8 +236,12 @@
        compte gratuit (sans carte) — catalogue vérifié via /models public.
        Trio prioritare d'abord (un seul endpoint chacun → cascade models[]
        côté OpenRouter si l'un est rate-limité). */
-    { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter', efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { enabled: effortNvidia(entry) !== 'low' } }; } },
-    { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter', fc: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
+    { provider: 'openrouter', model: 'google/gemma-4-31b-it:free', name: 'gemma-4-31b free · openrouter', fc: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { enabled: effortNvidia(entry) !== 'low' } }; } },
+    /* v20261007 : qwen3.8-27b:free RETIRÉ de la grille gratuite openrouter
+       (404 « unavailable for free », vérifié en direct) — sorti d'OR_TRIO,
+       chat:false (plus de repli ni d'item HUD). Le fc porté par cette entrée
+       est REPORTÉ sur gemma-4-31b (leader du trio, vivant). */
+    { provider: 'openrouter', model: 'qwen/qwen3.8-27b:free', name: 'qwen3.8-27b free · openrouter', chat: false, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], payload: function (entry) { return { reasoning: { effort: effortNvidia(entry), exclude: false } }; } },
     /* v20261001 (perf) : modèle RAISONNEUR sans déclaration `efforts` →
        watchdogs « non-raisonnement » (10 s premier octet / 30 s en-têtes) le
        tuaient au démarrage (raisonnement = TTFB long) et le bouton effort du
@@ -428,6 +445,32 @@
     if (Date.now() >= fin) { delete providersEnPause[pk]; sauverPauses(); return true; }
     return false;
   }
+  /* v20261007 (pauses souples) : certaines pauses ne sont PAS des sanctions —
+     ce sont des hoquets : le 429 « upstream_provider_shared_pool » (rétabli en
+     ~2 s), la limite openrouter « par minute » (fenêtre d'1 min), un 5xx, deux
+     timeouts, une réponse sans en-têtes. Avant, elles grisaient le modèle 3 min
+     — voire le provider ENTIER — même après qu'il avait rétabli. Elles sont
+     donc marquées « souples » (registre `pausesSouples`) et EFFACÉES dès que le
+     modèle répond à nouveau (libererPauseSouples) : le gris reflète la vérité
+     du moment. Les vraies sanctions (402/403 Turnstile, quota quotidien) ne
+     sont PAS dans le registre et survivent donc à un succès. */
+  var pausesSouples = {};
+  function marquerPauseSouple(pk, ms) {
+    if (!pk) return;
+    marquerPause(pk, ms);
+    try { pausesSouples[pk] = providersEnPause[pk]; } catch (e) {}
+  }
+  function libererPauseSouples(entry) {
+    if (!entry) return;
+    [entry.providerKey || entry.provider, entry.id].forEach(function (ck) {
+      if (!ck) return;
+      if (pausesSouples[ck] && providersEnPause[ck] === pausesSouples[ck]) {
+        delete providersEnPause[ck];
+        sauverPauses();
+      }
+      delete pausesSouples[ck];
+    });
+  }
   /* Exposé pour l'observabilité (HUD/tests) : état des pauses, sans toucher
      au détail interne de la cascade. */
   window.__athenaPauses = {
@@ -557,48 +600,14 @@
   var DYN = { ts: 0, models: [], err: '' };
 
   async function refreshDyn() {
-    /* v20260928 : tokenrouter retiré du catalogue (quota épuisé) —
-       pas d'appel réseau, même si une vieille clé traîne en localStorage. */
+    /* v20260928 : tokenrouter retiré du catalogue (quota épuisé) — plus
+       d'appel réseau du tout. v20261007 : l'ancien corps (34 lignes sous
+       `if (false)`) a été SUPPRIMÉ — il était mort depuis des mois, et sa
+       présence masquait le fait que `DYN` ne peut jamais être alimenté par le
+       réseau (donc `DYN.models` reste vide et `catalogue()` ne lit que le
+       catalogue statique). Si un jour une liste dynamique est réactivée,
+       c'est ICI qu'elle se branche, pas dans un bloc mort. */
     DYN = { ts: Date.now(), models: [], err: '' };
-    /* v20260928 : plus d'appel réseau (tokenrouter retiré). Le corps de
-       l'ancien rafraîchissement est conservé pour référence mais n'est plus
-       jamais atteint — il est mis DANS la branche pour que Firefox n'émette
-       plus « unreachable code after return statement » (2 avertissements
-       console qui polluaient chaque relevé de test). */
-    if (false) {
-    var p = PROVIDERS.tokenrouter;
-    var base = baseFor(p);
-    var key = keyFor('tokenrouter');
-    if (!base || !key) { DYN = { ts: 0, models: [], err: '' }; return; }
-    if (Date.now() - DYN.ts < 300000 && (DYN.models.length || DYN.err)) return;
-    try {
-      var r = await appelBorne(realFetch(base + '/models', {
-        method: 'GET',
-        headers: { Authorization: 'Bearer ' + key },
-      }), 8000);
-      var t = await r.text();
-      var d = null;
-      try { d = JSON.parse(t); } catch (e) { d = null; }
-      if (!r.ok) {
-        var m = (d && d.error && d.error.message) || t.slice(0, 80) || ('HTTP ' + r.status);
-        DYN = { ts: Date.now(), models: [], err: purgerCles(r.status + ' ' + m) };
-        return;
-      }
-      var ids = (d && Array.isArray(d.data) ? d.data : [])
-        .map(function (x) { return x && (x.id || x.name); })
-        .filter(function (s) { return typeof s === 'string' && s; })
-        .slice(0, 40);
-      DYN = {
-        ts: Date.now(),
-        err: ids.length ? '' : 'liste vide',
-        models: ids.map(function (id) {
-          return { provider: 'tokenrouter', model: id, name: id + ' · tokenrouter' };
-        }),
-      };
-    } catch (e) {
-      DYN = { ts: Date.now(), models: [], err: purgerCles(String((e && e.message) || e)).slice(0, 80) };
-    }
-    }
   }
 
   function catalogue() {
@@ -661,7 +670,8 @@
      glm-5.2 et nex-n2.5-* ont disparu d'OpenRouter (404). */
   var OR_TRIO = [
     'google/gemma-4-31b-it:free',
-    'qwen/qwen3.8-27b:free',
+    /* qwen3.8-27b:free retiré (v20261007) : 404 openrouter « unavailable
+       for free » — le relais models[] ne doit plus jamais le citer. */
     'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
   ];
   var OR_EXTRA = [
@@ -707,7 +717,11 @@
   };
   var LIMITES_OR = {
     'google/gemma-4-31b-it:free': 262144, 'google/gemma-4-26b-a4b-it:free': 262144,
-    'qwen/qwen3.8-27b:free': 262144, 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 262144,
+    /* v20261007 : qwen/qwen3.8-27b:free retiré de la table — le modèle n'existe
+       plus en gratuit (404 openrouter) et son entrée de catalogue est
+       chat:false : garder sa fenêtre ici n'informait plus personne et pouvait
+       faire compresser le contexte pour un modèle jamais appelé. */
+    'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 262144,
     'nvidia/nemotron-3-ultra-550b-a55b:free': 1048576, 'nvidia/nemotron-3-super-120b-a12b:free': 262144,
     'nvidia/nemotron-3.5-lightning:free': 1048576, 'nvidia/nemotron-3.5-content-safety:free': 131072,
     'poolside/laguna-s-2.1:free': 262144, 'poolside/laguna-xs-2.1:free': 262144,
@@ -729,8 +743,13 @@
     return LIMITE_DEFAUT;
   }
   function jetonsEstimes(msgs) {
+    /* v20261007 : ratio 3.0 car./jeton au lieu de 3.5 — le code et le CJK
+       sont plus denses (2.5-3), donc l'estimation à 3.5 sous-évaluait de
+       15-30 % et laissait passer des 400 « context length » sous le seuil
+       de 95 %. Sur-estimer coûte une compression de trop ; sous-estimer
+       coûte un POST perdu + une compression d'urgence. */
     var n = 0;
-    (msgs || []).forEach(function (m) { n += Math.ceil(String((m && m.content) || '').length / 3.5) + 4; });
+    (msgs || []).forEach(function (m) { n += Math.ceil(String((m && m.content) || '').length / 3.0) + 4; });
     return n;
   }
   /* v1.2 (pleine puissance) : la compression ne mord qu'en dernier recurs
@@ -740,7 +759,11 @@
      survivaient aux deux compressions et le provider rejetait en boucle.
      On garde désormais la QUEUE récente qui tient RÉELLEMENT dans 85 % de
      la fenêtre, et on coupe les messages trop longs tête+queue. */
-  var MATIERE_RESUME = 60000;
+  /* v20261007 (coût + justesse) : 60 000 → 32 000 car. de matière. La
+     matière était 2,5× la capacité du résumé (TAILLE_MAX_MESSAGE = 24 000)
+     envoyé à un modèle GRATUIT : on payait ~17 k jetons d'entrée pour ~7 k
+     de sortie, et le milieu était jeté. */
+  var MATIERE_RESUME = 32000;
   var TAILLE_MAX_MESSAGE = 24000; /* ~6 k jetons : tête + queue avec marqueur */
   function tronquerGros(messages) {
     var touche = 0;
@@ -838,7 +861,17 @@
         }
       }
       if (eRes) {
-        var matiere = anciens.map(function (m) { return (m.role || '?') + ' : ' + String(m.content || ''); }).join('\n').slice(0, MATIERE_RESUME);
+        /* v20261007 : la coupe gardait le DÉBUT du join (les messages les
+           plus ANCIENS) et jetait la fin — c'est-à-dire les faits établis en
+           dernier (bug trouvé, fichier modifié, commande qui a marché). On
+           garde la queue, qui est la partie utile d'une mémoire de travail. */
+        var matiere = anciens.map(function (m) { return (m.role || '?') + ' : ' + String(m.content || ''); }).join('\n');
+        if (matiere.length > MATIERE_RESUME) {
+          /* journal : 30 % de tête pour le contexte initial, 70 % de queue
+             pour l'état récent du travail. */
+          var teteR = Math.floor(MATIERE_RESUME * 0.3);
+          matiere = matiere.slice(0, teteR) + '\n[…]\n' + matiere.slice(-(MATIERE_RESUME - teteR));
+        }
         var txt = await appelBorne(callModel(eRes, [
           { role: 'system', content: 'Résume fidèlement et COMPLETEMENT, sans limite de lignes : '
             + 'les faits établis, les fichiers lus, les bugs trouvés, les décisions prises, '
@@ -875,27 +908,14 @@
      erreur. On laisse le provider décider de sa propre limite — c'est lui qui
      connaît sa fenêtre de sortie, et il tronque proprement (finish_reason
      'length') au lieu de nous couper en silence. Le plafond réel, si besoin,
-     se règle côté fournisseur. */
-  var MAX_SORTIE = {
-    /* Table volontairement VIDE et non plus appliquée : le plafond de sortie
-       est désormais délégué au provider (voir corpsPour). On garde la table
-       comme documentation des valeurs maximales connues, mais plus aucune
-       n'est injectée dans la requête. */
-    'openrouter:google/gemma-4-31b-it:free': 32768, 'openrouter:google/gemma-4-26b-a4b-it:free': 32768,
-    'openrouter:qwen/qwen3.8-27b:free': 235929,
-    'openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free': 65536,
-    'openrouter:nvidia/nemotron-3-ultra-550b-a55b:free': 65536,
-    'openrouter:nvidia/nemotron-3-super-120b-a12b:free': 235929,
-    'openrouter:nvidia/nemotron-3.5-lightning:free': 65536,
-    'openrouter:nvidia/nemotron-3.5-content-safety:free': 8192,
-    'openrouter:poolside/laguna-s-2.1:free': 32768, 'openrouter:poolside/laguna-xs-2.1:free': 32768,
-    'openrouter:cohere/north-mini-code:free': 64000,
-    'openrouter:inclusionai/ling-3.0-flash-sante:free': 32768, 'openrouter:inclusionai/ling-3.0-flash-fin:free': 32768,
-    'openrouter:dots-studio/dots-3-note-preview:free': 460800, 'openrouter:liquid/lfm-2.5-2.6b:free': 8192,
-    'groq:llama-3.3-70b-versatile': 32768, 'groq:llama-3.1-8b-instant': 8192,
-    'openai:gpt-4o-mini': 16384, 'deepseek:deepseek-chat': 8192, 'gemini:gemini-2.0-flash': 8192,
-    'pollinations:openai-fast': 16384, 'pollinations:openai': 16384,
-  };
+     se règle côté fournisseur.
+     v20261007 : la table MAX_SORTIE (20 lignes, « volontairement vide et non
+     appliquée ») est SUPPRIMÉE. Elle documentait des valeurs deven fausses
+     (qwen3.8:free retiré du catalogue, nemotron-3.5-content-safety en
+     chat:false) et laissoit croire qu'un plafond était appliqué — alors que
+     corpsPour envoie 16384 à TOUT modèle, y compris un liquid/lfm-2.5
+     plafonné à 8192 (donc tranché par le provider). Une information fausse
+     dans le code coûte plus cher qu'une information absente. */
   function orModelsBody(entry) {
     var entryModel = entry && entry.model;
     if (OR_FREE.indexOf(entryModel) < 0) return null;
@@ -1185,15 +1205,33 @@
      retiré — voir plus haut) ; FIN porte la règle de langue, consigneFin() la
      répète au dernier message user. */
   var ATHENA_SYSTEM_BASE = ATHENA_SYSTEM_GENERAL;
+  /* v20261007 (coût) : le bloc NAVIGATEUR (≈ 950 jetons) sort du prompt
+     standard — il n'est ajouté que si le navigateur est réellement en jeu
+     (besoinNavigateur). Il était auparavant envoyé sur TOUT tour « outils »,
+     y compris des tours purement textuels : avec ~12 POSTs possibles par tour,
+     c'était jusqu'à ~11 k jetons de prompt répétés à l'identique. */
   var ATHENA_SYSTEM_OUTILS = ATHENA_SYSTEM_BASE
     + '\n\n' + ATHENA_SYSTEM_CYCLE
     + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_LECTURE
     + '\n\n' + ATHENA_SYSTEM_FICHIER
-    + '\n\n' + ATHENA_SYSTEM_NAVIGATEUR
     + '\n\n' + ATHENA_SYSTEM_FIN;
   var ATHENA_SYSTEM_SANS_OUTILS = ATHENA_SYSTEM_BASE
     + '\n\n' + ATHENA_SYSTEM_CYCLE
     + '\n\n' + ATHENA_SYSTEM_FIN;
+  /* v20261007 (coût) : le navigateur n'est annoncé que s'il sert — un bloc ou
+     un résultat de navigateur dans l'historique, ou une demande explicite dans
+     le dernier message. Sans cela, le modèle peut demander une navigation et
+     n'a pas la syntaxe du bloc. */
+  function besoinNavigateur(msgs) {
+    var ls = msgs || [];
+    for (var i = 0; i < ls.length; i++) {
+      var c = String((ls[i] && ls[i].content) || '');
+      if (c.indexOf('```athena-browser') >= 0 || c.indexOf('<resultat_navigateur>') >= 0
+          || c.indexOf('athena-nav') >= 0 || c.indexOf('athena-url') >= 0) return true;
+    }
+    var der = String((ls[ls.length - 1] && ls[ls.length - 1].content) || '').toLowerCase();
+    return /navigateur|browser|navigate|ouvre[rs]? la page|page web|site web|internet|adresse web|wikipedia|google|cherch\w+ sur/.test(der);
+  }
   /* v1.2 (langue, proximité) : même avec FIN en fin de system, plusieurs
      milliers de tokens de dialogue suivent. On rappelle donc la règle dans le
      DERNIER message user — exactement là où le modèle lit avant de générer.
@@ -1290,12 +1328,18 @@
       type: 'function',
       function: {
         name: 'write_file',
-        description: 'Écrit (écrase) un fichier texte sur le poste — annonce toujours le chemin avant.',
+        description: 'Écrit (écrase) un fichier texte dans le dossier de travail - annonce toujours le chemin avant.',
         parameters: {
           type: 'object',
           properties: {
-            chemin: { type: 'string', description: 'Chemin absolu du fichier' },
-            contenu: { type: 'string', description: 'Contenu texte à écrire' },
+            /* v20261007 (sécurité) : chemin RELATIF au dossier de travail. Un
+               chemin ABSOLU échappait à tout garde-fou côté agent (le
+               confinement ne s'activait qu'avec un `dossier`) et permettait
+               d'écrire Startup, .ssh\authorized_keys, le profil du
+               navigateur… L'agent confine désormais TOUJOURS les écritures ;
+               le chemin relatif est donc la seule forme qui fonctionne. */
+            chemin: { type: 'string', description: 'Chemin RELATIF au dossier de travail (jamais absolu, jamais de ..)' },
+            contenu: { type: 'string', description: 'Contenu texte à écrire (max 2 Mo)', maxLength: 2000000 },
           },
           required: ['chemin', 'contenu'],
         },
@@ -1303,8 +1347,13 @@
     },
   ];
   /* catalogue() recrée les entries À CHAQUE tour : le drapeau d'auto-guérison
-     doit vivre ICI (module), sinon le provider rejette tools à chaque tour. */
+     doit vivre ICI (module), sinon le provider rejette tools à chaque tour.
+     v20261007 : même correction pour l'EFFORT — `entry._effortIgnore` était
+     posé sur l'entry (donc perdu au tour suivant) : chaque requête
+     ré-envoyait `reasoning.effort` à un modèle qui l'avait refusé en 400, et
+     payait un POST perdu par tour et par modèle. */
   var outilsIgnores = {};
+  var effortsIgnores = {};
   function ajouterOutilsNatives(entry, c) {
     if (entry && entry.fc && !entry._toolsIgnore && !outilsIgnores[entry.id]
         && c && !c.tools) {
@@ -1466,6 +1515,34 @@
     } catch (e) { return LANGUE_DEFAUT; }
   }
 
+  /* v20261007 (sécurité, §8.6-7) : ATHENA_AGENT_TOKEN, s'il est défini dans
+     l'environnement de l'agent, doit être RELAYÉ par le shim — sinon le
+     mécanisme de protection est inutilisable (401 sur toutes les routes,
+     y compris /sante). Source : window.ATHENA_AGENT_TOKEN (injecté par
+     keys.js) ou la clé `agent` de athena_api_keys. Absente = mode
+     historique inchangé (zéro friction). */
+  function jetonAgent() {
+    var t = '';
+    try { t = (typeof window !== 'undefined' && window.ATHENA_AGENT_TOKEN) || ''; } catch (eJ) {}
+    if (!t) { try { t = keyFor('agent') || ''; } catch (eK) {} }
+    return String(t || '').trim();
+  }
+  function entetesAgent(base) {
+    var h = base || { 'Content-Type': 'application/json' };
+    var j = jetonAgent();
+    if (j && !h['x-athena-token']) h['x-athena-token'] = j;
+    return h;
+  }
+  /* même chose pour un init SANS corps (GET /sante, POST /kill) */
+  function initAgent(init) {
+    init = init || {};
+    var j = jetonAgent();
+    if (!j) return init;
+    init.headers = Object.assign({}, init.headers || {});
+    if (!init.headers['x-athena-token']) init.headers['x-athena-token'] = j;
+    return init;
+  }
+
   async function agentLocalExec(payload, signal) {
     try {
       /* Chrome Local Network Access (2026) : une page HTTPS publique doit
@@ -1474,7 +1551,7 @@
          (site info → Local Network → Allow) peut rester requise. */
       var reqInit = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: entetesAgent(),
         body: JSON.stringify(payload),
         signal: signal || undefined,
       };
@@ -1522,7 +1599,7 @@
         };
         var reqInitF = {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: entetesAgent(),
           body: JSON.stringify(corpsAgent),
           signal: signal || undefined,
         };
@@ -1567,7 +1644,7 @@
     try {
       var reqInit = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: entetesAgent(),
         body: JSON.stringify(payload),
         signal: signal || undefined,
       };
@@ -1600,7 +1677,7 @@
     try {
       var reqInit = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: entetesAgent(),
         body: JSON.stringify(payload),
         signal: signal || undefined,
       };
@@ -1631,9 +1708,9 @@
      honnête si injoignable). Lecture seule, résultats bornés côté agent. */
   async function agentLocalLecture(route, options, signal) {
     try {
-      var reqInit = { method: (options && options.method) || 'GET', signal: signal || undefined };
+      var reqInit = { method: (options && options.method) || 'GET', signal: signal || undefined, headers: entetesAgent({}) };
       if (options && options.body != null) {
-        reqInit.headers = { 'Content-Type': 'application/json' };
+        reqInit.headers = entetesAgent({ 'Content-Type': 'application/json' });
         reqInit.body = options.body;
       }
       var r;
@@ -1711,6 +1788,9 @@
       return 150000;
     }
     if (entry.providerKey === 'nvidia') return ef === 'max' ? 1200000 : 300000;
+    /* v20261007 : le relais /api/relais expire à 60 s côté serveur
+       (src/app/api/relais) — attendre 90 s n'était qu'un délai perdu. */
+    if (entry.providerKey === 'pollinations') return 70000;
     return 90000;
   }
 
@@ -1722,6 +1802,35 @@
   function errBudget() {
     return new Error('aucun modèle n\'a répondu en ' + (BUDGET_CASCADE / 60000)
       + ' min (cascade épuisée) — réessayez plus tard.');
+  }
+  /* v20261007 : plafond de REQUÊTES provider par tour utilisateur. Avant, le
+     seul frein était le temps, alors que le produit des retries fait easily
+     50-60 POSTs par tour (7 entrées × 2 essais × 4-6 retries), chacun
+     portant l'historique complet : le quota gratuit openrouter (50/j) partait
+     en un tour. 12 = 4 × la longueur typical de la chaîne : les retries
+     utiles passent, les boucles ne peuvent plus. Chaque POST est compté dans
+     uneTentative(), donc y compris le job de compression/résumé et le relais
+     pollinations. */
+  var POSTS_MAX_TOUR = 12;
+  var postsTour = 0;
+  function postsRestants() { return Math.max(0, POSTS_MAX_TOUR - postsTour); }
+  function errPostsTour() {
+    var e = new Error('plafond de ' + POSTS_MAX_TOUR
+      + ' requêtes modèles atteint pour ce tour (cascade arrêtée) — '
+      + 'réessayez plus tard ou choisissez un modèle précis.');
+    e.tropDePosts = true;
+    return e;
+  }
+  function compterPost() {
+    postsTour += 1;
+    if (postsTour > POSTS_MAX_TOUR) throw errPostsTour();
+  }
+  /* Borne RÉELLE d'un appel : la plus contraignante des deux plafonds. Avant,
+     un seul appel en effort max sur nvidia (20 min) pouvait dépasser à lui
+     seul le budget annoncé de 10 min au client. */
+  function borneRestante(entry, tDebut) {
+    var restant = BUDGET_CASCADE - (Date.now() - tDebut);
+    return Math.max(20000, Math.min(bornePour(entry), restant));
   }
   /* §8.7 : ZÉRO tentative (toutes les voies en pause au moment du tour) —
      message honnête avec les pauses en cours, au lieu de « erreur inconnue ». */
@@ -1798,8 +1907,8 @@
          rejetterait en 400). entry._effortIgnore = le provider a rejet� ce
          champ en session : on n'insiste plus (auto-gu�rison, voir
          avecRetry). */
-      if (pk === 'openrouter' && entry && !entry._effortIgnore
-          && Array.isArray(entry.efforts)) {
+if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entry.id]
+    && Array.isArray(entry.efforts)) {
         var eOR = effortNvidia(entry); /* déjà borné aux efforts déclarés */
         if (!c.reasoning) {
           c.reasoning = { effort: eOR };
@@ -1813,6 +1922,18 @@
         }
         /* effort = low sur gemma-family → payload {enabled:false} : on
            respecte (raisonnement coupé = choix « rapide » du HUD). */
+      }
+      /* v20261007 (coût) : CACHE DE PROMPT côté provider. Le prompt système
+         (≈ 3 900 jetons, dont ~1 400 d'outils) est RÉPÉTÉ À L'IDENTIQUE à
+         chaque requête d'une conversation ; OpenRouter ne le facture
+         qu'avec `prompt_cache_key` (cache de bout en bout sur leur side).
+         Sans cette clé, chaque tour repaye l'intégralité du prompt — sur une
+         chaîne de 12 requêtes, c'est la différence entre payer 4 700 jetons
+         une fois et 12 fois. La clé est stable PAR MODÈLE (le cache doit
+         survivre d'un tour à l'autre) et ignorée silencieusement par les
+         providers qui ne la connaissent pas. */
+      if (pk === 'openrouter') {
+        c.prompt_cache_key = 'athena:' + String(entry.model || entry.id || 'inconnu');
       }
       /* v banc 20261006 (§3 observabilité) : usage réel (prompt/completion +
          part de raisonnement) — OpenRouter (spec OpenAI) n'envoie le chunk
@@ -1884,9 +2005,16 @@
           || (md.headers && md.headers['Retry-After'])
           || null;
         err.limitSource = md.limit_source || null;
-        /* free-models-per-min : Reset = epoch ms de fin de fenêtre */
+        /* free-models-per-min : Reset = instant de fin de fenêtre. */
         if (md.headers && md.headers['X-RateLimit-Reset']) {
-          err.resetAt = parseInt(md.headers['X-RateLimit-Reset'], 10) || null;
+          var rst = parseInt(md.headers['X-RateLimit-Reset'], 10) || null;
+          /* v20261007 (P1) : openrouter envoie cet en-tête en SECONDES, pas en
+             ms (vérifié sur un vrai X-RateLimit-Reset: 1791417600000 = 2,0e12).
+             Traité comme des ms, `resetAt - Date.now()` était hugely négatif →
+             la pause « jusqu'au reset » retombait à 3 min et l'attente du
+             reset (avecRetry) était ignorée. Normalisation : < 1e11 ⇒ secondes. */
+          if (rst && rst < 1e11) rst *= 1000;
+          err.resetAt = rst || null;
         }
       }
       /* v20261004 : blocage amont (402/403 Turnstile/429) → pause du provider
@@ -1909,10 +2037,31 @@
         if (err.quotidien && err.resetAt && err.resetAt > Date.now()) {
           pauseMs = Math.min(err.resetAt - Date.now() + 60000, 6 * 3600000);
         }
-        marquerPause(entry.providerKey || entry.provider, pauseMs);
-        marquerPause(entry.id, pauseMs);
+        /* v20261007 : pool partagé amont = congestion transitoire (pas de
+           quota ni de clé en cause) — 30 s au lieu de 3 min, effacées par
+           libererPauseSouples si la reprise du MÊME tour aboutit.
+           même traitement pour la limite PAR MINUTE (fenêtre d'1 min) : une
+           pause de 3 min pour une limite d'1 min grisaient tous les modèles
+           openrouter bien après la fenêtre. */
+        var pool = err.limitSource === 'upstream_provider_shared_pool';
+        var parMinute = err.limitSource === 'openrouter_free_tier_per_minute'
+          || /per[-_ ]?min/i.test(String(m));
+        if (pool || parMinute) pauseMs = 30000;
+        /* v20261007 : pool et limite par minute = pauses SOUPLES (registre) :
+           effacées au premier succès du tour. Les sanctions (402/403, quota
+           quotidien) restent marques historiques et survivent. */
+        var souple = pool || parMinute;
+        if (souple) {
+          marquerPauseSouple(entry.providerKey || entry.provider, pauseMs);
+          marquerPauseSouple(entry.id, pauseMs);
+        } else {
+          marquerPause(entry.providerKey || entry.provider, pauseMs);
+          marquerPause(entry.id, pauseMs);
+        }
       } else if (r.status >= 500) {
-        marquerPause(entry.id, 180000);
+        /* 5xx = hoquet amont, pas une sanction : gris levé dès que le modèle
+           répond de nouveau. */
+        marquerPauseSouple(entry.id, 180000);
       }
       return err;
     }
@@ -2149,7 +2298,16 @@
       return String(txt);
     }
 
+    /* v20261007 : tentative horodatée + comptée — la trace affiche désormais le
+           nombre d'essais réellement payés (une cascade à 4 retries brûlait 4
+           fois le quota sans que rien ne le dise). */
     function uneTentative(liste) {
+      entry._essais = (entry._essais || 0) + 1;
+      var tRequete = Date.now();
+      /* v20261007 : TOUT POST provider est compté (y compris le relais
+         pollinations et le job de résumé) — le plafond du tour arrête la
+         multiplication des retries avant de brûler le quota gratuit. */
+      compterPost();
       /* v20261004 (relais navigateur) : pollinations bloque TOUT appel émis
          depuis un navigateur (403 « Missing Turnstile token » — challenge
          Cloudflare) alors que le même appel passe côté serveur. On relaie
@@ -2255,6 +2413,11 @@
         body: corpsPour(liste, enFlux),
       }).then(function (r) {
         if (courseTete) clearTimeout(courseTete);
+        /* v20261007 (diagnostic) : TTFB = temps d'attente avant les EN-TÊTES
+           (délai d'un modèle qui flémme). Distingue « lent » de « mort », ce que
+           la seule durée totale ne montrait pas. */
+        try { entry._ttfb = Date.now() - tRequete; } catch (eT) {}
+        try { entry._statut = r.status; } catch (eS) {}
         if (enFlux && r.ok && r.body) return lireSSE(r);
         return r.text().then(function (t) {
           if (!r.ok) throw erreurHttp(r, t);
@@ -2311,9 +2474,14 @@
            entrée et on re-essai immédiatement SANS l'effort (corpsPour
            voit _effortIgnore) au lieu de tuer toute la cascade. */
         if (err && (err.status === 400 || err.status === 422) && entry && !entry._effortIgnore
+            && !effortsIgnores[entry.id]
             && /reasoning|effort/i.test(String(err.message || ''))) {
           entry._effortIgnore = true;
-          return avecRetry(n, liste);
+          /* v20261007 : le drapeau doit SURVIVRE au tour (catalogue recrée
+             les entries) — sinon on ré-envoie reasoning.effort à chaque
+             requête et on perd un POST par tour et par modèle. */
+          try { effortsIgnores[entry.id] = true; } catch (eEI) {}
+          return avecRetry(n + 1, liste);
         }
         /* §8.7-3 auto-guérison : le provider REJETTE le champ tools
            (400/422 « tools/tool/function not supported ») → on désarme CETTE
@@ -2495,6 +2663,10 @@
     /* v20261001 (HUD) : la température du client (réglage HUD) prime sur le
        payload provider — voir corpsPour pour l'ordre complet. */
     temperatureDemandee = null;
+    /* v20261007 : le compteur de POSTs est remis à zéro AU DÉBUT de chaque
+       tour (le shim ne sert qu'une requête chat à la fois — hypothèse déjà
+       documentée pour temperatureDemandee/effortDemande). */
+    postsTour = 0;
     if (body && body.temperature !== undefined && body.temperature !== null
         && Number.isFinite(+body.temperature)) {
       temperatureDemandee = Math.max(0, Math.min(2, +body.temperature));
@@ -2558,8 +2730,17 @@
        d'outils par tour. La langue n'est plus rappelée en fin de prompt
        (ligneLangue retirée) : FIN + consigneFin() portent la contrainte. */
     var aSystem = messages.some(function (m) { return m.role === 'system'; });
-    var consignes = avecPlan(besoinOutils(messages, body)
-      ? ATHENA_SYSTEM_OUTILS : ATHENA_SYSTEM_SANS_OUTILS, body.plan);
+    var outilsDemandes = besoinOutils(messages, body);
+    var consignes = avecPlan(outilsDemandes ? ATHENA_SYSTEM_OUTILS : ATHENA_SYSTEM_SANS_OUTILS, body.plan);
+    /* v20261007 (coût) : NAVIGATEUR seulement si le navigateur est en jeu. */
+    if (outilsDemandes && besoinNavigateur(messages)) {
+      consignes = avecPlan(ATHENA_SYSTEM_BASE
+        + '\n\n' + ATHENA_SYSTEM_CYCLE
+        + '\n\n' + ATHENA_SYSTEM_EXEC + '\n\n' + ATHENA_SYSTEM_LECTURE
+        + '\n\n' + ATHENA_SYSTEM_FICHIER
+        + '\n\n' + ATHENA_SYSTEM_NAVIGATEUR
+        + '\n\n' + ATHENA_SYSTEM_FIN, body.plan);
+    }
     if (!aSystem) {
       messages = [{ role: 'system', content: consignes }].concat(messages);
     } else if (messages[0] && messages[0].role === 'system') {
@@ -2589,7 +2770,17 @@
     async function compression(msgL) {
       noteCompression = null;
       try {
-        var comp = await compresserSiPlein(msgL, plan.chaine[0], signal);
+        /* v20261007 : on compresse contre la PLUS PETITE fenêtre de la chaîne,
+           pas contre chaine[0]. En auto, chaine[0] peut valoir 262 144 car.
+           (nemotron) alors qu'un repli est à 32 768 (openrouter/free) :
+           l'erreur « context length » ne survenait qu'AU MOMENT du
+           basculement de modèle, en payant un POST perdu + une compression
+           d'urgence à chaque fois. */
+        var eRef = plan.chaine[0];
+        for (var ci = 1; ci < plan.chaine.length; ci++) {
+          if (limiteModele(plan.chaine[ci]) < limiteModele(eRef)) eRef = plan.chaine[ci];
+        }
+        var comp = await compresserSiPlein(msgL, eRef, signal);
         messages = comp.messages;
         noteCompression = comp.note;
         return false;
@@ -2646,8 +2837,12 @@
       var tDebutJson = Date.now();
       for (var i = 0; i < plan.chaine.length; i++) {
         var entry = plan.chaine[i];
-        if (i > 0 && Date.now() - tDebutJson > BUDGET_CASCADE) {
-          dernierErr = errBudget();
+        /* v20261007 : budget dès la 1re entrée (le garde `i > 0` le rendait
+           inactif dans le cas « modèle choisi », chaîne = 1 entrée) ET
+           plafond de POSTs : quand il est atteint, inutile d'essayer les
+           entrées suivantes (chacune échouerait sans POST). */
+        if (Date.now() - tDebutJson > BUDGET_CASCADE || postsRestants() <= 0) {
+          dernierErr = postsRestants() <= 0 ? errPostsTour() : errBudget();
           break;
         }
         var pkEssai = entry.providerKey || entry.provider || entry.id;
@@ -2662,8 +2857,9 @@
         var essaiJ = signalEssai(signal);
         var tEssaiJ = Date.now();
         try {
-          var texte = await appelBorne(callModel(entry, messages, essaiJ.signal), bornePour(entry), abandonner(essaiJ));
+          var texte = await appelBorne(callModel(entry, messages, essaiJ.signal), borneRestante(entry, tDebutJson), abandonner(essaiJ));
           noterModele(entry.id, true);
+          libererPauseSouples(entry);
           noterTrace(tracerEssai(entry, pkEssai, Date.now() - tEssaiJ, null));
           return json(assembler(entry, texte).payload);
         } catch (err) {
@@ -2698,10 +2894,15 @@
              → écarté pour la session : les entrées suivantes de la chaîne
              prennent le relais au lieu de retenter le même blocage au tour
              d'après (et l'historique reste une vraie réponse, pas une erreur). */
-          if (err && /timeout|en-têtes jamais reçus|réponse vide/i.test(String((err && err.message) || ''))) {
-            marquerPause(entry.id, 180000);
-          }
-          noterModele(entry.id, false);
+if (err && /timeout|en-têtes jamais reçus|réponse vide/i.test(String((err && err.message) || ''))) {
+              /* v20261007 : pause SOUPLE — un timeout ou une réponse vide sont
+                 des hoquets ; le modèle qui répond au tour suivant ne doit pas
+                 rester gris. */
+              marquerPauseSouple(entry.id, 180000);
+            }
+            /* v20261007 : idem chemin JSON — pas de pénalité pour un quota
+               épuisé ou un blocage amont. */
+            if (!err.quotidien && !err.bloquageAmont && !err.tropDePosts) noterModele(entry.id, false);
           dernierErr = err;
         }
       }
@@ -2730,13 +2931,32 @@
            (un 429 sur un modèle ne condamne pas ses voisins). */
         var timeoutsParProvider = {};
         var sauterProvider = {};
+        /* v20261007 (P0) : le rejeu de timeout était gardé par une propriété
+           posée sur l'OBJET ERREUR (`e2.rejoue`), recréé à chaque essai → la
+           condition était toujours vraie et le rejeu repartait SANS FIN sur
+           la 1re entrée (chaîne = 1 entrée dès qu'un modèle est choisi).
+           Compteur PAR TOUR et PAR PROVIDER : un seul rejeu, comme le chemin
+           JSON (`rejoues[pk]`). */
+        var rejoues = {};
         var providersSautes = 0;
         var quotaSignale = false;
         var tDebutCascade = Date.now();
+        /* v20261007 (diagnostic) : JOURNAL DE CASCADE. L'utilisateur voyait
+           « Appel au modèle… » sept fois de suite (le `debug: entry.id` était
+           ignoré côté client) puis, en cas d'échec, UNE seule ligne — « Échec
+           du modèle : timeout » — sans savoir que six autres avaient échoué
+           avant. Ce tableau dit : quel modèle, quel rang, quel statut, quelle
+           durée, pourquoi. Il part dans `final` ET dans l'événement
+           d'erreur, et le client l'affiche. */
+        var chainDiag = [];
+        var raisonnementAggr = '';
         for (var i = 0; i < plan.chaine.length; i++) {
           var entry = plan.chaine[i];
-          if (i > 0 && Date.now() - tDebutCascade > BUDGET_CASCADE) {
-            err = errBudget();
+          /* v20261007 : budget LU DÈS LE DÉBUT (le garde `i > 0` le rendait
+             inactif sur la 1re entrée, donc exactement dans le cas le plus
+             courant : un modèle choisi qui timeout) + plafond de POSTs. */
+          if (Date.now() - tDebutCascade > BUDGET_CASCADE || postsRestants() <= 0) {
+            err = postsRestants() <= 0 ? errPostsTour() : errBudget();
             break;
           }
           var pk = entry.providerKey || entry.provider;
@@ -2756,7 +2976,7 @@
             continue;
           }
           var p = PROVIDERS[pk];
-          emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…', debug: entry.id });
+          emit({ type: 'progress', etape: 'appel', message: 'Appel « ' + (entry.name || entry.id) + ' »…', debug: entry.id });
           /* v1.2 (anti-coupure) : on ne rejoue un timeout que si RIEN n'a
              été diffusé — rejouer après des jetons dupliquerait le texte. */
           var jetonsVus = 0;
@@ -2779,7 +2999,7 @@
                lireSSE). v1.2 : borne adaptée à l'effort pour les modèles à
                raisonnement — un « max » mesuré dépasse 9 min ; couper à
                600 s le faisait passer pour bâclé. */
-            var borne = bornePour(entry);
+            var borne = borneRestante(entry, tDebutCascade);
             /* v banc 20261005 : le plafond par effort vit dans bornePour
                (PRIME pour tous les modèles, y compris ceux sans `efforts`
                déclarés) — l'ancien surélèvement conditionné à `efforts`
@@ -2812,11 +3032,17 @@
               }
             }
             noterModele(entry.id, true);
+            libererPauseSouples(entry);
             var fin = assembler(entry, texte);
             /* trace (§3) : succès — AVANT le final, l'UI l'associe au pied. */
             noterTrace(tracerEssai(entry, pk, Date.now() - tEssai, null), emit);
             /* v20260926g : pas de progress « Réponse générée via X » — nom
                technique masqué, le final suffit. */
+            /* v20261007 : l'entrée gagnante est inscrite dans la chaîne AVANT l'émission
+             du `final` — l'objet est sérialisé au moment de l'émission, donc
+             un push postérieur n'apparaît pas dans l'événement (constaté par
+             le scénario H). */
+            try { chainDiag.push({ id: entry.id, nom: entry.name || entry.id, rang: i + 1, ok: true, ms: Date.now() - tEssai, statut: entry._statut || 200, essais: entry._essais || 1 }); } catch (eCD) {}
             emit({
               type: 'final',
               reponse: fin.payload.reponse,
@@ -2826,7 +3052,18 @@
               rag: null,
               tache: null,
               conversation_id: fin.payload.conversation_id,
-              raisonnement: null,
+              /* v20261007 : le raisonnement était TOUJOURS null dans le final,
+                 alors que le chemin NDJSON l'avait streamed : il n'était donc
+                 persisté que via la frappe (tronquée à 4 000 car.) et
+                 totalement perdu en repli. On envoie ce qu'on a. */
+              raisonnement: raisonnementAggr,
+              /* v20261007 : contexte compressé ? combien de temps ? quelle
+                 cascade a été parcourue ? Ces trois faits expliquent la
+                 plupart des « pourquoi c'est plus lent / plus court
+                 aujourd'hui ». Ils étaient calculés et jamais transmis. */
+              compression: noteCompression,
+              ms: Date.now() - tDebutCascade,
+              chain: chainDiag,
               modele_repli: fin.payload.modele_repli,
               tronquee: fin.payload.tronquee,
               provider: fin.payload.provider,
@@ -2836,6 +3073,18 @@
             return;
           } catch (e2) {
             try { journal.push(entry.id + ' :: ' + String((e2 && e2.message) || e2).slice(0, 160)); } catch (eJ) {}
+            /* v20261007 : chaque échec entre au JOURNAL DE CASCADE — c'est ce
+               qui permet de répondre à « pourquoi ça n'a pas marché ? » sans
+               devtools : quel modèle, quel rang, quel statut, combien
+               d'essais, quelle erreur. */
+            try {
+              chainDiag.push({
+                id: entry.id, nom: entry.name || entry.id, rang: i + 1, ok: false,
+                ms: Date.now() - tEssai, statut: (e2 && e2.status) || null,
+                essais: entry._essais || 1,
+                raison: String((e2 && e2.message) || e2).slice(0, 120),
+              });
+            } catch (eCD) {}
             /* trace (§3) : échec de cet essai (avant AbortError, le journal
                reste complet : le HUD montre CE qui a échoué et pourquoi). */
             noterTrace(tracerEssai(entry, pk, Date.now() - tEssai, String((e2 && e2.message) || e2).slice(0, 160)), emit);
@@ -2856,7 +3105,7 @@
               var gardeS = Math.max(3, Math.floor(nonSysS.length * 0.35));
               messages = sysS.concat(nonSysS.slice(-gardeS));
               emit({ type: 'progress', etape: 'contexte', message: 'Contexte trop long pour le modèle — compression (' + (nonSysS.length - gardeS) + ' messages retirés)' });
-          emit({ type: 'progress', etape: 'appel', message: 'Appel au modèle…', debug: entry.id });
+          emit({ type: 'progress', etape: 'appel', message: 'Appel « ' + (entry.name || entry.id) + ' »…', debug: entry.id });
               i--;
               continue;
             }
@@ -2876,12 +3125,21 @@
                  (sur nvidia, kimi/glm morts ne condamnent pas diffusiongemma
                  qui répond en 1,6 s) — SEUL ce modèle est mis en pause, et
                  l'erreur AFFICHÉE reste la dernière réellement vue. */
-              if (timeoutsParProvider[pk] >= 2) { marquerPause(entry.id, 180000); }
+              if (timeoutsParProvider[pk] >= 2) { marquerPauseSouple(entry.id, 180000); }
+              /* v20261007 : sauterProvider était LU mais jamais ÉCRIT (`pk`
+                 seul n'était jamais posé, seule la clé `pk:compte` l'était)
+                 → la protection « 3 providers qui timeoutent = panne large »
+                 ne se déclenchait jamais. On l'écrit au 2e timeout du
+                 provider (et pas au 1er : un hoquet isolé ne doit pas
+                 priver la cascade des autres modèles du même provider). */
+              if (timeoutsParProvider[pk] >= 2 && sauterProvider[pk] === undefined) sauterProvider[pk] = true;
               err = e2;
               /* v1.2 (anti-coupure) : UNE seconde chance sur timeout si rien
-                 n'a été diffusé (même modèle, pas un relais). */
-              if (jetonsVus === 0 && !e2.rejoue) {
-                e2.rejoue = true;
+                 n'a été diffusé (même modèle, pas un relais) — UN SEUL rejeu
+                 par provider et par tour (v20261007 : avant, `e2.rejoue`
+                 repartait à l'infini car l'erreur est recréée à chaque essai). */
+              if (jetonsVus === 0 && !rejoues[pk] && Date.now() - tDebutCascade <= BUDGET_CASCADE) {
+                rejoues[pk] = true;
                 i--;
                 continue;
               }
@@ -2889,9 +3147,11 @@
             /* v20261004 : en-têtes jamais reçus / réponse vide → ce modèle
                sort de la session : la suite de la chaîne prend le relais au
                lieu de retenter le même blocage au tour d'après. */
-            if (e2 && /en-têtes jamais reçus|réponse vide/i.test(String((e2 && e2.message) || ''))) {
-              marquerPause(entry.id, 180000);
-            }
+if (e2 && /en-têtes jamais reçus|réponse vide/i.test(String((e2 && e2.message) || ''))) {
+                /* v20261007 : pause SOUPLE (cf. chemin JSON) — levée dès que le
+                   modèle rétablit. */
+                marquerPauseSouple(entry.id, 180000);
+              }
             /* v banc 20261005 : dire CLAIREMENT que le quota gratuit du jour
                est épuisé (une seule fois) — l'utilisateur comprend pourquoi
                la cascade bascule au lieu de croire au « bâclage » du modèle. */
@@ -2902,12 +3162,36 @@
                   + (plan.chaine.length > 1 ? ' — passage aux autres providers…'
                     : ' — réessayez au prochain reset ou choisissez un autre modèle.') });
             }
-            noterModele(entry.id, false);
+/* v20261007 : un quota JOURNALIER épuisé ou un pool saturé ne
+               doivent PAS couler le score du modèle (−8) : le provider se
+               remit tout seul (fenêtre d'1 min, reset quotidien) et la note
+               étant VOLATILE, le modèle était dégradé pour toute la session.
+               Seul un échec « structurel » (timeout, 5xx, réponse vide)
+               mérite la pénalité.
+               ATTENTION : ici l'erreur du tour est `e2` (le `err` de la
+               cascade est encore null à ce point) — utiliser `err` throws
+               « Cannot read properties of null » sur TOUT échec du chemin
+               NDJSON, c'est-à-dire sur le chemin que le client utilise en
+               permanence (revelé par le scénario H du test shim). */
+            if (e2 && !e2.quotidien && !e2.bloquageAmont && !e2.tropDePosts) noterModele(entry.id, false);
             err = e2;
           }
         }
         if (!err) err = errAucuneTentative();
-        emit({ type: 'erreur', erreur: detailAffichable((err && err.message) || 'erreur inconnue', plan.strict), debug: journal });
+        /* v20261007 : le message d'erreur ne portait QUE la dernière erreur. Sur une
+     cascade de 7 modèles, l'utilisateur lisait « Échec du modèle : timeout »
+     sans savoir que 6 autres avaient échoué avant, ni lesquels. `chain`
+     donne la chronologie complète à l'UI (détail affiché sous le bandeau). */
+  var echecsChain = (chainDiag || []).filter(function (x) { return x && !x.ok; });
+  var enteteEchec = echecsChain.length > 1
+    ? echecsChain.length + ' modèles ont échoué (dernier : ' + (echecsChain[echecsChain.length - 1].nom || '?') + ') — '
+    : '';
+  emit({
+    type: 'erreur',
+    erreur: enteteEchec + detailAffichable((err && err.message) || 'erreur inconnue', plan.strict),
+    debug: journal,
+    chain: chainDiag,
+  });
         try { ctrl.close(); } catch (e) {}
       },
     });
@@ -2975,19 +3259,19 @@
       }
       return json({ erreur: 'méthode' }, 405);
     }
-    if (path === '/chat-attache') {
-      if (method === 'POST') return gererChat(body, signal);
-      return json({ erreur: 'méthode' }, 405);
-    }
+    /* v20261007 : route /chat-attache SUPPRIMÉE. Aucun client ne l'appelle
+       plus (endpointChat() renvoie toujours /api/chat) ; elle contournait
+       viseMoteur(), donc une page en cache qui posterait encore là perdait
+       silencieusement le skill/MCP. Le rester aurait gardé ce piège vivant. */
     if (path === '/api/exec') {
       if (method === 'POST') return gererExec(body, signal);
       if (method === 'GET') {
         try {
-          var hsReq = new Request(LOCAL_AGENT + '/sante');
+          var hsReq = new Request(LOCAL_AGENT + '/sante', initAgent({ method: 'GET' }));
           if ('targetAddressSpace' in hsReq) hsReq.targetAddressSpace = 'loopback';
           var hs;
           try { hs = await appelBorne(realFetch(hsReq), 2000); }
-          catch (eH) { hs = await appelBorne(realFetch(LOCAL_AGENT + '/sante'), 2000); }
+          catch (eH) { hs = await appelBorne(realFetch(LOCAL_AGENT + '/sante', initAgent({ method: 'GET' })), 2000); }
           return json(await hs.json(), hs.status);
         } catch (e) {
           return json({
@@ -3007,11 +3291,11 @@
         try {
           var rqK;
           try {
-            rqK = new Request(LOCAL_AGENT + '/kill', { method: 'POST' });
+            rqK = new Request(LOCAL_AGENT + '/kill', initAgent({ method: 'POST' }));
             if ('targetAddressSpace' in rqK) rqK.targetAddressSpace = 'loopback';
             var rK = await realFetch(rqK);
           } catch (eK0) {
-            rK = await realFetch(LOCAL_AGENT + '/kill', { method: 'POST' });
+            rK = await realFetch(LOCAL_AGENT + '/kill', initAgent({ method: 'POST' }));
           }
           return json(await rK.json(), rK.status);
         } catch (eK) {
@@ -3042,11 +3326,11 @@
       if (method === 'POST') return gererBrowser(body, signal);
       if (method === 'GET') {
         try {
-          var hsReqN = new Request(LOCAL_AGENT + '/sante');
+          var hsReqN = new Request(LOCAL_AGENT + '/sante', initAgent({ method: 'GET' }));
           if ('targetAddressSpace' in hsReqN) hsReqN.targetAddressSpace = 'loopback';
           var hsN;
           try { hsN = await appelBorne(realFetch(hsReqN), 2000); }
-          catch (eHN) { hsN = await appelBorne(realFetch(LOCAL_AGENT + '/sante'), 2000); }
+          catch (eHN) { hsN = await appelBorne(realFetch(LOCAL_AGENT + '/sante', initAgent({ method: 'GET' })), 2000); }
           return json(await hsN.json(), hsN.status);
         } catch (eN) {
           return json({
@@ -3103,7 +3387,7 @@
       : (input && typeof input.url === 'string' ? input.url : '');
     if (url.charAt(0) !== '/' || url.charAt(1) === '/') {
       // absolu (https://…) ou protocol-relative : on ne touche pas
-      if (url.indexOf('/api/') === -1 && url.indexOf('/chat-attache') === -1) return realFetch(input, init);
+      if (url.indexOf('/api/') === -1) return realFetch(input, init);
       if (/^https?:\/\//.test(url)) return realFetch(input, init);
     }
     /* P4 : /api/browser?flux=W,H = flux BINAIRE poussé — on ne l'intercepte
@@ -3114,8 +3398,9 @@
        600 o puis voyait le flux se terminer. */
     if (/^\/api\/browser\?/.test(url) && /[?&]flux=/.test(url)) return realFetch(input, init);
     /* v20260926d (kimi) : le préfixe doit être suivi de /, ? ou fin de
-       chaîne — '/chat-attachements' n'est pas une route. */
-    if (/^\/(api([\/\?]|$)|chat-attache([\/\?]|$))/.test(url)) return handleApi(url, input, init || {});
+       chaîne — '/api-chose' n'est pas une route. v20261007 : la route
+       '/chat-attache' a été retirée (morte côté client). */
+    if (/^\/api([\/\?]|$)/.test(url)) return handleApi(url, input, init || {});
     return realFetch(input, init);
   };
 })();

@@ -31,8 +31,14 @@ window.ATHENA_KEYS = {
                    // proxy Cloudflare Worker (déployé) — contourne le 403
                    // navigateur de api.tokenrouter.com. Vide = modèles
                    // tokenrouter grisés "proxy non déployé".
-   nvidia: "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", // v20261001 : clé remise côté client (secret Worker absent -> 401 amont).
-                    // Modèles proposés via le proxy sans clé cliente (viaProxy).
+   nvidia: "",       // v20261007 (sécurité) : clé RETIRÉE du dépôt. Elle était
+                     // versionnée dans un fichier PUBLIC (visible en
+                     // view-source et sur GitHub) et lue par le navigateur
+                     // pour appeler integrate.api.nvidia.com : n'importe
+                     // qui pouvait s'en servir. À RÉÉMETTRE côté serveur :
+                     //   cd worker && npx wrangler secret put NVIDIA_KEY
+                     // Perso : localStorage athena_api_keys { nvidia: 'nvapi-…' }
+                     // (et pense à RÉVOQUER celle qui était publique).
   nvidia_proxy: "https://athena.amineelbekkai8.workers.dev/nvidia/v1",
                    // même Worker, monture /nvidia → integrate.api.nvidia.com
                    // (routage par préfixe : /v1 reste tokenrouter).

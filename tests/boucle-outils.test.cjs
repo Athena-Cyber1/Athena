@@ -243,7 +243,162 @@ async function main() {
     'F: miroir docs/design/athena-demo.css synchronise (prepare-assets avant check)',
     'present=' + /\.hud-plan\b/.test(cssDoc));
 
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 29/29 OK');
+  /* --- Scénario G (v20261007) : coupure de flux en PLEIN MILIEU — le texte
+     déjà affiché ne doit PAS disparaître. Avant le correctif, la rangée de
+     diffusion était supprimée puis remplacée par la seule phrase d'erreur :
+     des dizaines de kilo-caractères composaient à l'écran partaient au
+     premier hoquet réseau, sans être persistés. --- */
+  const G = charger(['FIN_PARTIEL_ET_PUIS_COUPURE_ABSENTE']);
+  const coG = pousser(G.w, 'raconte une longue histoire');
+  /* Le shim simulé renvoie final + une coupure : on force l'erreur de flux en
+     remplaçant le texte par un marqueur puis en simulant un flux sans final. */
+  G.cap.couper = true;
+  G.w.fetch = ((f) => function (input, opts) {
+    const url = typeof input === 'string' ? input : '';
+    const meth = (opts && opts.method) || 'GET';
+    if (url.indexOf('/api/chat') === 0 && meth === 'GET') return f(input, opts);
+    if (url.indexOf('/api/chat') === 0) {
+      G.cap.chat.push({ messages: [], markers: 1 });
+      /* NDJSON : 3 jetons puis une erreur, SANS final. */
+      const lignes = [
+        { type: 'jeton', canal: 'reponse', texte: 'DEBUT_' },
+        { type: 'jeton', canal: 'reponse', texte: 'MILIEU_' },
+        { type: 'jeton', canal: 'reponse', texte: 'FIN_' },
+        { type: 'erreur', erreur: 'coupure du flux' },
+      ].map((e) => JSON.stringify(e)).join('\n') + '\n';
+      /* Lecteur : un seul chunk contenant TOUT le corps, puis done — l'index
+         doit avancer, sinon la boucle `for(;;) { await read() }` du client
+         tourne à l'infini (piège du premier jet de ce scénario).
+         L'encodeur vient de NODE (global), pas de la fenêtre jsdom : dans
+         certaines fenêtres `window.TextEncoder` est absent et `new undefined`
+         faisait échouer le fetch DANS le mock (le client basculait alors sur
+         le chemin classique — faux positif de diagnostic). */
+      let lu = false;
+      const encodeur = new TextEncoder();
+      return Promise.resolve({
+        ok: true, status: 200,
+        headers: { get: (h) => (String(h).toLowerCase() === 'content-type' ? 'application/x-ndjson' : null) },
+        body: {
+          getReader() {
+            return {
+              read() {
+                if (lu) return Promise.resolve({ done: true, value: undefined });
+                lu = true;
+                return Promise.resolve({ done: false, value: encodeur.encode(lignes) });
+              },
+              cancel() { return Promise.resolve(); },
+            };
+          },
+        },
+        json: async () => ({}), text: async () => lignes,
+      });
+    }
+    return f(input, opts);
+  })(G.w.fetch);
+  try { await G.w.genererReponse(coG); } catch (e) { /* arret attendu */ }
+  await sleep(300);
+  const texteVisibleG = G.w.document.body.textContent || '';
+  const histG = msgModele(coG);
+  V(texteVisibleG.indexOf('DEBUT_') >= 0 || histG.indexOf('DEBUT_') >= 0,
+    'G: le texte deja diffuse SURVIT a la coupure de flux (affichage OU historique)',
+    'visible=' + (texteVisibleG.indexOf('DEBUT_') >= 0) + ' persiste=' + (histG.indexOf('DEBUT_') >= 0));
+  V(histG.indexOf('DEBUT_') >= 0 && histG.indexOf('FIN_') >= 0,
+    'G: le partiel est PERSISTE dans l historique (marque tronquee)',
+    histG.slice(-90));
+  V(histG.indexOf('coupure du flux') >= 0,
+    'G: la cause reste affichee (on ne masque pas l erreur)', histG.slice(-90));
+
+  /* --- Scénario H (v20261007) : un tour qui ne contient QU'un athena-read ne
+     doit pas être relancé comme « promesse » alors que la lecture est en
+     cours. Avant, autoExecBlocs exécutait `.read-bloc` mais le garde « il a
+     agi » ne testait que `.exec-bloc, .nav-bloc` → double génération. --- */
+  const H = charger([
+    'Je lis.\n\n```athena-read fichier="C:\\proj\\a.js" debut=1 fin=10\n```',
+    'Lu, rien a signaler.',
+    'LU ET TERMINE. FINALE.',
+  ]);
+  const coH = pousser(H.w, 'lis le fichier');
+  try { await H.w.genererReponse(coH); } catch (e) { V(false, 'H: genererReponse sans exception', String(e && e.message || e)); }
+  V(await attendre(() => H.cap.chat.length >= 2, 6000), 'H: la lecture enchaine le tour',
+    'chat=' + H.cap.chat.length + ' read=' + H.cap.read.length);
+  await sleep(400);
+  const stopsH = msgModele(coH).indexOf('STOP. Tu tournes en rond');
+  V(stopsH < 0 && H.cap.chat.length === 2,
+    'H: PAS de relance « tour en rond » apres un bloc de lecture (une seule chaine)',
+    'chat=' + H.cap.chat.length + ' stop=' + (stopsH >= 0));
+
+  /* --- Scénario I (v20261007) : l'agent qui ne répond pas doit produire une
+     erreur HONNÊTE et bornée, jamais une promesse pendante. Les 5 appels
+     agent passent désormais par appelAgent() (borne + AbortController
+     enregistré → annulable par ■). On teste les deux moitiés :
+     (1) le helper seul avec un agent muet (promesse jamais résolue) — il doit
+         rejeter avec « Délai dépassé » ;
+     (2) bout en bout, un /api/read qui échoue doit produire une observation
+         rendue au modèle (« lecture impossible »), donc une relance. --- */
+  const I = charger(['Je tente.\n\n```athena-read fichier="C:\\proj\\b.js" debut=1 fin=5\n```', 'Verdict : rien à signaler.']);
+  const agentMuet = (opts) => new Promise((_, rejeter) => {
+    /* « muet » : ne résout jamais ; seule une ABORTION la débloque, comme un
+       agent suspendu par le gestionnaire de fenêtres. */
+    const sig = opts && opts.signal;
+    if (!sig) { rejeter(new Error('pas de signal')); return; }
+    const t = setTimeout(() => { try { sig.abort(); } catch (_) {} }, 40);
+    sig.addEventListener('abort', () => {
+      clearTimeout(t);
+      rejeter(Object.assign(new Error('aborte'), { name: 'AbortError' }));
+    }, { once: true });
+  });
+  I.w.fetch = ((f) => function (input, opts) {
+    const url = typeof input === 'string' ? input : '';
+    if (url.indexOf('/api/read?micro') === 0) return agentMuet(opts);
+    if (url.indexOf('/api/read') === 0) return Promise.reject(new Error('agent local injoignable (simule)'));
+    return f(input, opts);
+  })(I.w.fetch);
+
+  /* (1) le helper : muet + borne courte → rejet honnête et rapide */
+  const departI1 = Date.now();
+  const issueI1 = await Promise.race([
+    I.w.appelAgent('/api/read?micro=1', {}, 300)
+      .then(() => 'RESOLU (inattendu)').catch((e) => String((e && e.message) || e).slice(0, 60)),
+    sleep(3000).then(() => 'PROMESSE PENDANTE (bug)'),
+  ]);
+  V(/^Délai dépassé/.test(issueI1) && Date.now() - departI1 < 2500,
+    'I1: agent muet -> appelAgent rejette avec « Délai dépassé » (pas de promesse pendante)',
+    issueI1 + ' en ' + (Date.now() - departI1) + ' ms');
+
+  /* (2) bout en bout : erreur agent -> observation rendue -> relance */
+  const coI = pousser(I.w, 'lis b.js');
+  const departI2 = Date.now();
+  try { await I.w.genererReponse(coI); } catch (e) { /* attendu */ }
+  V(await attendre(() => msgModele(coI).indexOf('lecture impossible') >= 0, 6000),
+    'I2: erreur agent -> observation rendue au modele (« lecture impossible »)',
+    msgModele(coI).slice(-140));
+  V(I.cap.chat.length >= 2 && Date.now() - departI2 < 20000,
+    'I2: la chaine enchaine et le tour se termine vite (pas de blocage indefini)',
+    'chat=' + I.cap.chat.length + ' en ' + (Date.now() - departI2) + ' ms');
+
+  /* --- Scénario J (v20261007) : la frappe de repli (machine a ecrire) est
+     INTERRUPTIBLE, et le compteur de generations retombe a zero apres un
+     arret. Avant : controleurEnCours etait relache avant reveler(), donc le
+     bouton ■ ne pouvait rien arreter et `occupé` restait bloque. --- */
+  const J = charger(['LIGNE_' + 'x'.repeat(400)]);
+  const coJ = pousser(J.w, 'raconte');
+  const pJ = J.w.genererReponse(coJ);
+  await attendre(() => J.w.document.querySelector('.diffusion') !== null, 4000);
+  J.w.document.dispatchEvent(new J.w.Event('visibilitychange'));
+  pJ.catch(() => {});
+  await sleep(250);
+  /* l'etat doit etre revenu au calme : occupe false et generationsEnCours 0 */
+  const occupeJ = await J.w.eval('(function(){ return typeof occupe !== "undefined" ? occupe : null; })()');
+  const genJ = await J.w.eval('(function(){ return typeof generationsEnCours !== "undefined" ? generationsEnCours : null; })()');
+  V(genJ === null || genJ === 0, 'J: generationsEnCours retombe a 0 apres le tour',
+    'gen=' + genJ);
+  V(occupeJ === null || occupeJ === false, 'J: occupe relache (composer de nouveau actif)',
+    'occupe=' + occupeJ);
+  await sleep(400);
+  V(J.cap.chat.length === 1, 'J: un seul appel chat (pas de relance parasites)',
+    'chat=' + J.cap.chat.length);
+
+  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 38/38 OK');
   process.exit(echecs ? 1 : 0);
 }
 

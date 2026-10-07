@@ -51,7 +51,12 @@ const schemaMessageDemo = z.object({
   // Tolérance : un champ d'historique hors contrat (rôle inconnu, contenu
   // non texte) ne doit PAS tuer la requête entière — on normalise.
   role: z.enum(["user", "assistant", "system"]).catch("user"),
-  content: z.string().max(MAX_CONTENU).catch(""),
+  /* v20261007 (P0) : `.catch("")` EFFAÇAIT silencieusement un message trop
+     long (la borne client MAX_CONTENU_API vaut exactement MAX_CONTENU :
+     tout dépassement — journal d'outils, consigne de fin, pièce jointe —
+     transformait la question de l'utilisateur en chaîne VIDE). On garde la
+     queue : la fin d'un message contient sa conclusion et son code retour. */
+  content: z.string().max(MAX_CONTENU).catch((v) => String(v ?? "").slice(-MAX_CONTENU)),
 });
 
 const schemaPieceJointe = z.object({

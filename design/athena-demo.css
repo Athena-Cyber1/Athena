@@ -1210,6 +1210,31 @@ button.dot:focus-visible,
 }
 /* Repli : conservé pour tout appelant qui écrirait encore du texte brut
    dans .exec-sortie plutôt que d'utiliser details.trace-cmd ci-dessous. */
+/* v20261007 : détail de cascade affiché sous un échec — « #1 gemma → HTTP 429
+   en 2 s, #2 nemotron → timeout 300 s… ». Replié par défaut (ce n'est qu'un
+   diagnostic), lisible d'un coup d'œil sur la chronologie réelle. */
+.chain-detail {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.8rem;
+}
+.chain-detail summary {
+  cursor: pointer;
+  color: var(--texte-doux, #b9b9b9);
+}
+.chain-detail ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+.chain-detail li {
+  margin: 2px 0;
+  color: #d8d8d8;
+}
 .exec-sortie {
   margin-top: 8px;
   padding: 8px 10px;

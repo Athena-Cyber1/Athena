@@ -20,8 +20,34 @@ const V = (ok, txt, det) => {
   console.log((ok ? '  OK  ' : '  ECHEC  ') + txt + (det ? ' :: ' + det : ''));
   if (!ok) echecs++;
 };
+/* v20261007 : le rapport final n'est imprimé qu'une fois TOUS les scénarios
+   asynchrones terminés (3g puis H/I/J). Avant, un simple setTimeout pouvait
+   sortir le rapport avant le verdict le plus lent — le test passait au green
+   alors qu'un scénario n'avait pas encore judged. */
+const promesses = [];
+/* v20261007 : lecteur NDJSON de test. La réponse du shim en mode stream est
+   un Response dont le corps est un VRAI ReadableStream (polyfillé plus haut) :
+   `text()` ne rend pas le flux, il faut le consommer. */
+async function lireNdjson(r) {
+  if (!r) return { ct: '', corps: '', lignes: [] };
+  const ct = (r.headers && typeof r.headers.get === 'function') ? (r.headers.get('content-type') || '') : '';
+  if (!/ndjson/.test(ct)) {
+    const corps = typeof r.text === 'function' ? await r.text().catch(() => '') : '';
+    return { ct, corps, lignes: String(corps).split('\n').filter(Boolean) };
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+  }
+  buf += dec.decode();
+  return { ct, corps: buf, lignes: buf.split('\n').filter(Boolean) };
+}
 
-function chargerAvecPauses(pauses, traces) {
+function chargerAvecPauses(pauses, traces, fetchPerso, cles) {
   const html = fs.readFileSync(path.join(REPO, 'docs', 'index.html'), 'utf8');
   const dom = new JSDOM(html, {
     url: 'http://localhost:3000/',
@@ -29,13 +55,62 @@ function chargerAvecPauses(pauses, traces) {
     pretendToBeVisual: true,
   });
   const w = dom.window;
+  /* v20261007 : le chemin stream:true (NDJSON) n'était JAMAIS testé — et il
+     utilise `new ReadableStream`, absent de jsdom. Le scénario H l'a révélé
+     immédiatement (« ReadableStream is not defined »). Polyfill depuis les
+     globals Node : sans lui, on ne peut pas tester le chemin que le client
+     utilise 100 % du temps. */
+  if (typeof w.ReadableStream !== 'function' && typeof ReadableStream === 'function') {
+    w.ReadableStream = ReadableStream;
+  }
+  if (typeof w.TextEncoder !== 'function' && typeof TextEncoder === 'function') {
+    w.TextEncoder = TextEncoder;
+  }
+  if (typeof w.TextDecoder !== 'function' && typeof TextDecoder === 'function') {
+    w.TextDecoder = TextDecoder;
+  }
+  /* jsdom n'expose PAS Response (API fetch) — le shim en a besoin pour ses
+     json()/ndjson() : polyfill minimal (body/status/ok/headers/json/text). */
+  if (typeof w.Response !== 'function') {
+    w.Response = class FauxResponse {
+constructor(body, init) {
+        this._body = body;
+        /* v20261007 : `body` doit être exposé tel quel (le chemin NDJSON du
+           shim passe un ReadableStream que le client consomme via
+           getReader()) — sans cette propriété, le scénario H ne pouvait pas
+           lire le flux. */
+        this.body = body;
+        init = init || {};
+this.status = init.status || 200;
+        this.ok = this.status >= 200 && this.status < 300;
+        /* v20261007 : `Headers.get` est INSENSIBLE À LA CASSE (comme le
+           standard). Le shim écrit 'Content-Type: …' et le client lit
+           'content-type' → sans cette normalisation, le test voyait un
+           content-type vide et concluait à tort que la réponse n'était pas
+           du NDJSON. */
+        const entetes = init.headers || {};
+        this.headers = {
+          get: (h) => {
+            const cle = String(h).toLowerCase();
+            for (const k of Object.keys(entetes)) {
+              if (k.toLowerCase() === cle) return entetes[k];
+            }
+            return null;
+          },
+        };
+      }
+      json() { return Promise.resolve(typeof this._body === 'string' ? JSON.parse(this._body) : this._body); }
+      text() { return Promise.resolve(typeof this._body === 'string' ? this._body : String(this._body)); }
+    };
+  }
   if (pauses) w.localStorage.setItem(CLE, JSON.stringify(pauses));
   if (traces) w.localStorage.setItem('athena_traces', JSON.stringify(traces));
+  if (cles) w.localStorage.setItem('athena_api_keys', JSON.stringify(cles));
   const appels = [];
-  w.fetch = (input) => {
+  w.fetch = fetchPerso || ((input) => {
     appels.push(typeof input === 'string' ? input : (input && input.url) || '');
     return Promise.reject(new Error('reseau interdit dans ce test'));
-  };
+  });
   w.eval(fs.readFileSync(path.join(REPO, 'docs', 'api-shim.js'), 'utf8'));
   return { w, appels };
 }
@@ -135,15 +210,94 @@ V(appelsAcc.length === 1 && appelsAcc[0].name === 'exec' && appelsAcc[0].args ==
   'deltas tool_calls (nom+args decoupes) accumules par index',
   JSON.stringify(appelsAcc));
 
-/* 3f : drapeau fc PROPAGE par catalogue() (copie blistee explicitement). */
-const planFc = a.w.__athenaConstruireChaine('openrouter:qwen/qwen3.8-27b:free');
+/* 3f : drapeau fc PROPAGE par catalogue() (copie blistee explicitement).
+     v20261007 : fc a SUivi qwen (404 gratuit) vers gemma ; l'entrée qwen
+     est maintenant chat:false (sortie du HUD et de la cascade). */
+const planFc = a.w.__athenaConstruireChaine('openrouter:google/gemma-4-31b-it:free');
 V(planFc.chaine.length === 1 && planFc.chaine[0].fc === true,
-  'fc marque present sur l entree catalogue qwen (fc:true)',
+  'fc marque present sur l entree gemma (fc:true reporte de qwen)',
   JSON.stringify({ n: planFc.chaine.length, fc: (planFc.chaine[0] || {}).fc }));
-const planNoFc = a.w.__athenaConstruireChaine('openrouter:google/gemma-4-31b-it:free');
-V(planNoFc.chaine.length === 1 && !planNoFc.chaine[0].fc,
-  'entree sans fc -> fc=false (pas d outils natifs envoyes)',
-  JSON.stringify({ fc: (planNoFc.chaine[0] || {}).fc }));
+const planNoFc = a.w.__athenaConstruireChaine('openrouter:qwen/qwen3.8-27b:free');
+V(planNoFc.chaine.length === 1 && !planNoFc.chaine[0].fc && planNoFc.chaine[0].chat === false,
+  'qwen 404 -> chat:false sans fc (plus de repli ni d item HUD)',
+  JSON.stringify({ fc: (planNoFc.chaine[0] || {}).fc, chat: (planNoFc.chaine[0] || {}).chat }));
+
+/* Réponses HTTP factices réutilisées par les scénarios 3g et H/I/J (v20261007) :
+   le shim lit `ok`, `status`, `headers.get('content-type')`, `text()` et
+   `json()`. `repHttpSSE` ajoute `body.getReader()` (SSE → NDJSON). */
+const repHttp = (status, payload) => ({
+  ok: status === 200, status, body: null,
+  headers: { get: (h) => (String(h).toLowerCase() === 'content-type' ? 'application/json' : null) },
+  text: async () => JSON.stringify(payload),
+  json: async () => payload,
+});
+/* `repHttpSSE` : réponse d'un PROVIDER en streaming = text/event-stream.
+   Le shim la convertit ensuite en NDJSON pour le client — se tromper de
+   content-type ici faisait ignorer le flux par uneTentative (et le scénario H
+   ne voyait aucun jeton). */
+const repHttpSSE = (sse) => {
+  /* Le lecteur SSE du shim consomme `r.body.getReader()` : le mock doit donc
+     exposer un VRAI ReadableStream, pas seulement `text()`. */
+  const encodeur = new TextEncoder();
+  let lu = false;
+  return {
+    ok: true, status: 200,
+    headers: { get: (h) => (String(h).toLowerCase() === 'content-type' ? 'text/event-stream' : null) },
+    body: {
+      getReader() {
+        return {
+          read() {
+            if (lu) return Promise.resolve({ done: true, value: undefined });
+            lu = true;
+            return Promise.resolve({ done: false, value: encodeur.encode(sse) });
+          },
+          cancel() { return Promise.resolve(); },
+        };
+      },
+    },
+    text: async () => sse,
+    json: async () => ({}),
+  };
+};
+
+/* 3g (v20261007, pool partagé amont) : 429 upstream_provider_shared_pool →
+      1) avecRetry re-tente le MÊME tour (délaiBackoff ~2 s) et la 2e passe
+         répond ; 2) la pause courte (30 s) posée par le 1er essai est
+         RETIRÉE sur le succès → AUCUN fantôme gris. Verdict asynchrone
+      (~3 s) avant le rapport final des 35 s. */
+promesses.push((async () => {
+  let completions = 0;
+  const g = chargerAvecPauses(null, null, (input) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('/chat/completions') >= 0) {
+      completions += 1;
+      if (completions === 1) {
+        return Promise.resolve(repHttp(429, { error: { message: 'Provider returned error', code: 429, metadata: { raw: 'upstream rate-limited', provider_name: 'Google AI Studio', is_byok: false, provider_error_code: '429', limit_source: 'upstream_provider_shared_pool' } } }));
+      }
+      return Promise.resolve(repHttp(200, { id: 'x', choices: [{ message: { role: 'assistant', content: 'REPONSE-OK-POOL' }, finish_reason: 'stop' }], usage: { prompt_tokens: 3, completion_tokens: 3 } }));
+    }
+    if (url.indexOf('/models') >= 0) return Promise.resolve(repHttp(401, { error: { message: 'DYN hors test' } }));
+    return Promise.reject(new Error('reseau interdit dans ce test'));
+  }, { openrouter: 'cle-de-test' });
+  let corpsG = null;
+  let errG = null;
+  try {
+    const rG = await g.w.fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'salut' }], model_id: 'openrouter:google/gemma-4-31b-it:free' }),
+    });
+    corpsG = rG && typeof rG.json === 'function' ? await rG.json() : null;
+  } catch (eG) { corpsG = null; errG = String((eG && eG.message) || eG); }
+  V(!!corpsG && /REPONSE-OK-POOL/.test(String(corpsG.reponse || corpsG.erreur || '')),
+    '3g: 429 pool -> retry meme tour -> reponse rendue',
+    JSON.stringify(corpsG ? String(corpsG.reponse || corpsG.erreur).slice(0, 60) : 'ERR:' + errG));
+  V(completions === 2, '3g: exactement 2 appels (1 x 429 + 1 retry)', completions + (errG ? ' err=' + errG : ''));
+  const etatG = g.w.__athenaPauses.etat();
+  V(Object.keys(etatG).length === 0,
+    '3g: pause pool 30 s RETIRÉE au succes (aucun item gris fantome)',
+    JSON.stringify(etatG));
+})());
 
 /* 4. Traces PERSISTEES (§8.1 v20261007) : restauration au demarrage, puis
       ecriture apres un essai reel (fetch en echec) — « analyse ma derniere
@@ -207,7 +361,7 @@ w5.fetch('/api/chat', {
   }),
 }).catch(() => {});
 
-setTimeout(() => {
+setTimeout(async () => {
   let apres = [];
   try { apres = JSON.parse(d.w.localStorage.getItem('athena_traces')) || []; } catch (e) {}
   V(apres.length > tracesAvant.length && apres.some((x) => x.provider),
@@ -253,6 +407,121 @@ setTimeout(() => {
   const orAuto = w87.__athenaOrModelsBody({ model: 'google/gemma-4-31b-it:free' });
   V(Array.isArray(orAuto) && orAuto.length > 1,
     '8.7: auto garde le trio de relais', JSON.stringify(orAuto));
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 38/38 OK');
+
+  /* === H (v20261007) : le CHEMIN RÉEL DE PRODUCTION — stream:true (NDJSON)
+     n'était couvert par AUCUN test : tous les appels de ce fichier sont sans
+     `stream`, donc la boucle de cascade testée n'était pas celle que le
+     client utilise 100 % du temps. On vérifie le flux complet : jetons →
+     final avec raisonnement/compression/chain, et le nom du modèle dans le
+     progress (pour que l'utilisateur sache QUEL modèle est essayé). === */
+promesses.push((async () => {
+  const h = chargerAvecPauses(null, null, (input) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('/chat/completions') >= 0) {
+      const sse = [
+        'data: ' + JSON.stringify({ choices: [{ delta: { reasoning_content: 'je reflechis' } }] }),
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: 'BONJOUR ' } }] }),
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: 'DU FLUX' } }] }),
+        'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 11, completion_tokens: 7 } }),
+        'data: [DONE]',
+        '',
+      ].join('\n\n');
+      return Promise.resolve(repHttpSSE(sse));
+    }
+    if (url.indexOf('/models') >= 0) return Promise.resolve(repHttp(401, { error: { message: 'DYN hors test' } }));
+    return Promise.reject(new Error('reseau interdit dans ce test'));
+  }, { openrouter: 'cle-de-test' });
+  const rH = await h.w.fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: [{ role: 'user', content: 'salut' }], model_id: 'openrouter:google/gemma-4-31b-it:free', stream: true }),
+  });
+const luH = await lireNdjson(rH);
+  const nd = luH.ct;
+  const evts = luH.lignes.map((l) => {
+    try { return JSON.parse(l); } catch (e) { return null; }
+  }).filter(Boolean);
+  const jetonsH = evts.filter((e) => e.type === 'jeton').map((e) => e.texte).join('');
+  const finalH = evts.filter((e) => e.type === 'final')[0] || null;
+  const progressH = evts.filter((e) => e.type === 'progress').map((e) => e.message);
+  V(/ndjson/.test(nd), 'H: la reponse du chemin stream est bien du NDJSON', nd);
+  V(jetonsH.indexOf('BONJOUR DU FLUX') >= 0, 'H: les jetons NDJSON sont recus dans l ordre', jetonsH);
+  V(evts.some((e) => e.type === 'jeton' && e.canal === 'raisonnement'),
+    'H: le raisonnement arrive sur son propre canal', JSON.stringify(evts.filter((e) => e.type === 'jeton').map((e) => e.canal)));
+  V(!!finalH && finalH.reponse === 'BONJOUR DU FLUX',
+    'H: final porte la reponse complete', JSON.stringify(finalH && String(finalH.reponse).slice(0, 40)));
+  V(!!finalH && typeof finalH.ms === 'number' && Array.isArray(finalH.chain),
+    'H: final porte la duree et la chaine parcourue (diagnostic)',
+    JSON.stringify({ ms: finalH && finalH.ms, chain: finalH && finalH.chain && finalH.chain.length }));
+  V(!!finalH && finalH.chain && finalH.chain.length === 1 && finalH.chain[0].ok === true,
+    'H: la chaine indique le modele qui a repondu', JSON.stringify(finalH && finalH.chain));
+  V(progressH.some((m) => /Appel « /.test(String(m))),
+    'H: le progress nomme le modele essaye (plus « Appel au modele. » x7)',
+    JSON.stringify(progressH.slice(0, 3)));
+
+  /* === I (v20261007) : le PLAFOND DE POSTS par tour. Avant, un tour pouvait
+     partir en 50-60 requêtes provider (7 entrées × 2 × retries) : le quota
+     gratuit openrouter (50/j) partait en un seul tour. === */
+  let postsI = 0;
+  const i = chargerAvecPauses(null, null, (input) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('/chat/completions') >= 0) {
+      postsI += 1;
+      /* toujours 429 : le pire cas (chaque entrée est rejouée par avecRetry) */
+      return Promise.resolve(repHttp(429, { error: { message: 'Rate limited', metadata: { limit_source: 'upstream_provider_shared_pool' } } }));
+    }
+    if (url.indexOf('/models') >= 0) return Promise.resolve(repHttp(401, { error: { message: 'DYN hors test' } }));
+    return Promise.reject(new Error('reseau interdit dans ce test'));
+  }, { openrouter: 'cle-de-test' });
+  const rI = await i.w.fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: [{ role: 'user', content: 'salut' }], stream: true }),
+  }).catch(() => null);
+  const corpsI = (await lireNdjson(rI)).corps;
+V(postsI > 0 && postsI <= 12,
+    'I: le nombre de POSTs provider par tour est PLAFONNE (12)',
+    'posts=' + postsI);
+  V(/type":"erreur"/.test(corpsI) && corpsI.length > 40,
+    'I: l échec est rendu au client sous forme d\'événement erreur (jamais un silence muet)',
+    corpsI.slice(-140).replace(/\s+/g, ' '));
+
+/* === J (v20261007) : le rejeu de timeout ne peut PAS boucler (P0). Le
+     garde `i > 0` rendait le budget inactif sur la 1re entrée (donc pour tout
+     modèle choisi) et le marqueur vivait sur l'objet ERREUR, recréé à chaque
+     essai → rejeu sans fin, ~1 POST toutes les 45-90 s jusqu'à épuisement du
+     quota. On déclenche le chemin du rejeu SANS attendre un vrai timeout
+     (message « timeout N ms », celui que produit le watchdog d'en-têtes) :
+     sinon le test durerait des minutes pour le même verdict. === */
+  let postsJ = 0;
+  const j = chargerAvecPauses(null, null, (input) => {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('/chat/completions') >= 0) {
+      postsJ += 1;
+      /* 504 « timeout » : le watchdog produit exactement cette forme */
+      return Promise.resolve(repHttp(504, { error: { message: 'timeout 300000 ms (en-têtes jamais reçus)' } }));
+    }
+    if (url.indexOf('/models') >= 0) return Promise.resolve(repHttp(401, { error: { message: 'DYN hors test' } }));
+    return Promise.reject(new Error('reseau interdit dans ce test'));
+  }, { openrouter: 'cle-de-test' });
+  const departJ = Date.now();
+  const rJ = await j.w.fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: [{ role: 'user', content: 'salut' }], model_id: 'openrouter:google/gemma-4-31b-it:free', stream: true }),
+  }).catch(() => null);
+  const corpsJ = (await lireNdjson(rJ)).corps;
+  V(postsJ >= 1 && postsJ <= 3,
+    'J: un timeout sans jeton est rejoue AU PLUS UNE fois (pas de boucle infinie)',
+    'posts=' + postsJ + ' en ' + (Date.now() - departJ) + ' ms');
+  V(/timeout|erreur/i.test(corpsJ), 'J: l échec est rendu au client', corpsJ.slice(-120));
+})());
+
+  /* v20261007 : on ATTEND tous les scénarios asynchrones (3g + H/I/J) avant
+     d'imprimer le rapport — sinon process.exit coupait la vérification en vol
+     (le rapport annonçait un green avant même que le scénario le plus lent
+     ait été jugé). */
+  await Promise.all(promesses);
+  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 52/52 OK');
   process.exit(echecs ? 1 : 0);
-}, 35000);
+}, 8000);

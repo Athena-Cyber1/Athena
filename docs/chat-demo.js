@@ -125,7 +125,12 @@ function icoSvg(nom) {
   return svg;
 }
 
-let messages = [];   // référence vers les messages de la conversation OUVERTE
+/* v20261007 : la globale `messages` (référence « vers les messages de la
+   conversation OUVERTE ») est SUPPRIMÉE — elle était écrite à deux endroits
+   et jamais lue : les seules autres occurrences sont des `const messages`
+   locaux. Une variable d'état qui n'est jamais lue est pire qu'absente : on
+   croit que l'historique y passe, alors qu'il vit dans
+   `conversations[].messages`. */
 let occupe = false;
 /* §8.7 (arrêt après une suite) : compteur de générations vivantes (une suite
    peut démarrer pendant que l'appelant rend la main) + demande d'arrêt
@@ -175,6 +180,60 @@ const MAX_OCTETS_CLIENT = 52428800; // 50 Mio (affiché « 50,0 Mo »)
    vieux navigateurs -> repli sans signal (comportement historique). */
 const PEUT_TIMEOUT = typeof AbortSignal === 'function' && typeof AbortSignal.timeout === 'function';
 function delaiFetch(ms) { return PEUT_TIMEOUT ? AbortSignal.timeout(ms) : undefined; }
+/* v20261007 : signal COMBINÉ (arrêt utilisateur + délai maximal) pour les
+   appels LONGS. /api/chat n'avait AUCUNE borne : sur le stack réel, une
+   passerelle qui suspend la réponse sans la fermer figeait l'interface
+   jusqu'à 10-20 min (bornes shim : 600 s de cascade, 1 200 s par entrée en
+   effort max) et seul le bouton ■ pouvait sauver la situation. 660 s =
+   BUDGET_CASCADE shim (600 s) + 60 s de marge. Repli manuel si
+   AbortSignal.any manque (navigateurs anciens). */
+const DELAI_CHAT_MS = 660000;
+function signalCombine(ms, ...signaux) {
+  const utiles = signaux.filter(Boolean);
+  if (!PEUT_TIMEOUT) return utiles[0] || undefined;
+  if (typeof AbortSignal.any === 'function') {
+    try { return AbortSignal.any([...utiles, AbortSignal.timeout(ms)]); } catch (_) { /* repli */ }
+  }
+  if (!utiles.length) return AbortSignal.timeout(ms);
+  /* Repli : on ne coupe que le délai (l'arrêt utilisateur passe déjà par le
+     contrôleur du fetch appelant, qui reste prioritaire). */
+  return utiles[0];
+}
+/* v20261007 : TABLE DES BORNES de l'agent local, une seule fois. Avant, six
+   valeurs incohérentes circulaient sans documentation : exec-flux 90 s
+   (client), 70 s (proxy Next), 60 s (agent), write 30 s, browser 30 s,
+   read/grep 25 s (shim) — et le message d'erreur annonçait « 90 s » même quand
+   la cause réelle était la borne de 25 s du shim. Ces durées sont les MOYENNES
+   des trois couches (le client, plus long, ne coupe pas un agent lent) et le
+   diagnostic cite la borne réellement franchie. */
+const BORNES_AGENT = { exec: 95000, write: 40000, browser: 40000, lecture: 35000 };
+/* v20261007 : helper UNIQUE pour tous les appels à l'agent local. Cinq `fetch`
+   partaient sans `signal` ni timeout (/api/exec en mode probe, /api/write ×2,
+   /api/browser, /api/read, /api/read de relecture) : sur une connexion
+   acceptée mais muette (agent suspendu par le gestionnaire de fenêtres,
+   garde en attente), la promesse ne se résolvait JAMAIS — bouton figé,
+   occupe bloqué, aucun message d'erreur atteignable, et ■ sans effet (ces
+   appels n'enregistraient aucun AbortController). Ici : borne + contrôleur
+   enregistré dans __athenaCtrlsExec (donc annulable par ■) + retrait garanti. */
+function appelAgent(chemin, options, ms) {
+  const ctrl = new AbortController();
+  const jeu = (window.__athenaCtrlsExec = window.__athenaCtrlsExec || new Set());
+  jeu.add(ctrl);
+  const init = Object.assign({}, options || {}, { signal: ctrl.signal });
+  const borne = ms || BORNES_AGENT.lecture;
+  const minuterie = setTimeout(() => { try { ctrl.abort(); } catch (_) {} }, borne);
+  return fetch(chemin, init)
+    .catch((e) => {
+      if (e && e.name === 'AbortError') {
+        const err = new Error('Délai dépassé (' + Math.round(borne / 1000)
+          + ' s) — agent local lent ou bloqué.');
+        err.delai = true;
+        throw err;
+      }
+      throw e;
+    })
+    .finally(() => { clearTimeout(minuterie); jeu.delete(ctrl); });
+}
 function fichierVersBase64(fichier) {
   return new Promise((resoudre, rejeter) => {
     const lecteur = new FileReader();
@@ -274,10 +333,12 @@ function attachmentsEnvoyes() {
     });
 }
 /* v9.5 : /chat-attache était une passerelle vers un proxy dédié — ce chemin
-   n'existe plus côté Next (404) ni côté Pages (handler identique). /api/chat
-   accepte les pièces jointes (schéma + transmission au sidecar en FILE_DATA),
-   on l'utilise donc TOUJOURS. /chat-attache reste géré par le shim pour la
-   compatibilité des pages mises en cache. */
+   n'existe plus côté Next (404) ni côté Pages (route retirée du shim le
+   20261007, plus aucun client ne l'appelait). /api/chat accepte les pièces
+   jointes (schéma + transmission au sidecar), on l'utilise donc TOUJOURS.
+   v20261007 : la fonction ne prend plus d'argument — les deux appelants
+   passaient `attachments` à une fonction sans paramètre (illusion de
+   choix d'endpoint qui n'existait pas). */
 function endpointChat() {
   return '/api/chat';
 }
@@ -286,6 +347,12 @@ function endpointChat() {
    mention de troncature — jamais de « trop volumineux » sec pour un texte. */
 const MAX_CONTENU_JOINT = 1000000;
 const MAX_PIECES = 10;
+/* v20261007 (coût) : le shim ne garde que 60 000 caractères au total
+   (MAX_CONTENU_PIECES) et le schéma Next SUPPRIME le champ `contenu` : le
+   client envoyait jusqu'à 10 × 1 Mo (soit ~10 Mo de JSON par requête) pour
+   être tronqué à 60 ko. On plafonne donc au même budget que le shim. */
+const BUDGET_CONTENU_PIECES = 60000;
+const MAX_CONTENU_PIECE = 20000;
 /* Lecture texte : on ne garde que ce qui ressemble vraiment à du texte — un
    PNG/PDF/DOCX décodé en UTF-8 contient des octets de contrôle et est rejeté. */
 function lectureTexte(fichier) {
@@ -323,12 +390,24 @@ async function lireTexteSiPossible(fichier) {
    d'affichage sont stockés). */
 function enrichirPieces(pieces) {
   if (!pieces || !pieces.length) return [];
+  /* v20261007 (coût) : budget GLOBAL de contenu, aligné sur le shim — le
+     texte excédentaire était de toute façon tronqué côté moteur. */
+  let restant = BUDGET_CONTENU_PIECES;
   return pieces.slice(0, MAX_PIECES).map((p) => {
     const piece = p || {};
     const sortie = { file_id: piece.file_id };
     if (piece.name) sortie.name = piece.name;
     const contenu = piece.file_id ? contenusFichiers.get(piece.file_id) : null;
-    if (contenu) sortie.contenu = contenu;
+    if (contenu) {
+      if (restant <= 0) sortie.contenu_tronque = 'budget de pièces atteint';
+      else {
+        const part = contenu.length > MAX_CONTENU_PIECE
+          ? contenu.slice(0, MAX_CONTENU_PIECE) : contenu;
+        sortie.contenu = part;
+        restant -= part.length;
+        if (part.length < contenu.length) sortie.contenu_tronque = true;
+      }
+    }
     return sortie;
   });
 }
@@ -535,13 +614,41 @@ function conversationOuverte() {
   return conversations.find((c) => c.id === idConversation) || conversations[0];
 }
 let quotaAverti = false;
-function sauverConversations() {
-  /* Capacité maximale respectée en suivant l'ORDRE D'AFFICHAGE : les
+/* v20261007 (persistance) : la sauvegarde est SYNCHRONE par défaut (un message
+   perdu à cause d'un crash dans les 400 ms suivantes serait inacceptable).
+   Le chemin qui l'appelait 120 fois par tour — la trace de chaque commande —
+   passe en DIFFÉRÉ (400 ms d'inactivité) : c'est là que se concentrait le
+   coût (JSON.stringify de 50 conversations × 400 messages, à chaque commande).
+   Vidanges forcées : `visibilitychange` (verrouillage d'écran) et `pagehide`. */
+let sauvegardeDifferee = null;
+function sauverConversations(differe) {
+  if (!differe) return sauverConversations.main();
+  if (sauvegardeDifferee) return undefined;
+  const programmatic = typeof requestIdleCallback === 'function';
+  sauvegardeDifferee = (programmatic ? requestIdleCallback : setTimeout)(() => {
+    sauvegardeDifferee = null;
+    sauverConversations.main();
+  }, programmatic ? { timeout: 1200 } : 400);
+  return undefined;
+}
+sauverConversations.main = function () {
+  if (sauvegardeDifferee) {
+    if (typeof cancelIdleCallback === 'function') { try { cancelIdleCallback(sauvegardeDifferee); } catch (_) {} }
+    else clearTimeout(sauvegardeDifferee);
+    sauvegardeDifferee = null;
+  }
+  /* v20261007 : ÉCRITURE ATOMIQUE. Deux setItem successifs laissaient un
+     état incohérent si le second échouait (quota atteint entre les deux) :
+     l'historique était à jour mais `CLE_COURANTE` retombait sur l'ancienne
+     valeur → au F5 l'utilisateur rouvrait une AUTRE discussion. On écrit
+     d'abord la conversation courante, puis l'historique : si le quota échoue,
+     c'est l'historique qui manque, pas le pointeur. */
+  /* Capacit�� maximale respectée en suivant l'ORDRE D'AFFICHAGE : les
      conversations épinglées (tête de liste) ne sont jamais les premières
      sacrifiées si la limite est atteinte. */
   const ecrire = (convos) => {
-    localStorage.setItem(CLE_CONVOS, JSON.stringify(convos));
     localStorage.setItem(CLE_COURANTE, JSON.stringify(idConversation));
+    localStorage.setItem(CLE_CONVOS, JSON.stringify(convos));
   };
   let garde = trierPourAffichage().slice(0, MAX_CONVOS_UI);
   try {
@@ -583,6 +690,17 @@ function sauverConversations() {
         afficherBandeauStockage();
       } catch { /* toast pas encore prêt (sauvegarde très précoce) */ }
     }
+  }
+};
+/* Vidanges FORCÉES de la sauvegarde différée (sans elles, les 400 ms
+   d'inactivité perdraient le dernier tour sur un verrouillage d'écran ou une
+   fermeture d'onglet). */
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { try { sauverConversations('immediat'); } catch (_) {} }
+  });
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pagehide', () => { try { sauverConversations('immediat'); } catch (_) {} });
   }
 }
 
@@ -643,7 +761,6 @@ window.addEventListener('storage', (e) => {
   }
   if (!conversations.some((c) => c.id === idConversation)) idConversation = conversations[0].id;
   const c = conversationOuverte();
-  messages = c.messages;
   renduVueEnCours = true;             // re-rendu ≠ nouvelles réponses
   try {
     msgsEl.replaceChildren();
@@ -885,7 +1002,9 @@ function ouvrirConversation(id) {
      détruite/reaffichée. */
   try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch {}
   const c = conversationOuverte();
-  messages = c.messages;
+  /* v20261007 : plus de `messages = c.messages` — la globale était morte
+     (cf. déclaration supprimée). L'historique se lit via conversationOuverte()
+     et se modifie sur convo.messages. */
   /* §8.7-4 (plan) : le HUD affiche le plan de CETTE conversation — sans cela,
      le plan d'une autre discussion restait visible et repartait en réinjection
      à chaque tour (état croisé). Conversation sans plan → HUD masqué. */
@@ -3016,11 +3135,11 @@ async function lancerActionNavigateur(ligne, bouton, codeEl, opts) {
   hnavOccupe = true;
   majBadgeNavigateur();
 
-  const poster = (confirme) => fetch('/api/browser', {
+  const poster = (confirme) => appelAgent('/api/browser', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: p.action, arg: p.arg || undefined, confirme: confirme === true }),
-  });
+  }, BORNES_AGENT.browser);
 
   try {
     let r;
@@ -3166,11 +3285,11 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
     const BORNE_FLUX_MS = 90000;
   try {
     if (!auto) {
-      const probe = await fetch('/api/exec', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commande: brut, confirme: false }),
-      });
+const probe = await appelAgent('/api/exec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commande: brut, confirme: false }),
+  }, BORNES_AGENT.exec);
       const dj = await probe.json().catch(() => ({}));
       if (probe.status === 403 || (dj && dj.erreur && dj.motif)) {
         return echec('Bloqué : ' + (dj.motif || dj.erreur));
@@ -3207,7 +3326,10 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       });
       let rf = null;
       let dernierErr = null;
-      for (let essai = 0; essai < 3; essai += 1) {
+      /* v20261007 : réessais UNIQUEMENT pour les commandes SÛRES (lecture,
+         grep, tests…) — une commande à effet de bord part une seule fois. */
+      const essaisAutorises = commandeEffetDeBord(brut) ? 1 : 3;
+      for (let essai = 0; essai < essaisAutorises; essai += 1) {
         if (essai > 0) {
           try { await new Promise((res) => { setTimeout(res, 3000); }); } catch {}
           if (ctrlFlux && ctrlFlux.signal.aborted) break;
@@ -3225,6 +3347,13 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
              « agent injoignable » qui induirait en erreur le modèle. */
           return echec(chaineInterrompue ? '[arrêt demandé] commande annulée.'
             : 'Exécution interrompue (annulation client).');
+        }
+        if (essaisAutorises === 1) {
+          /* un seul POST : on ne sait pas si la commande est partie. On le dit
+             au modèle au lieu de risquer un second effet. */
+          return echec('Connexion perdue pendant l\'envoi : la commande peut '
+            + 'AVOIR été exécutée par l\'agent (on ne la rejoue pas, pour ne pas '
+            + 'la doubler). Vérifie l\'état réel avant de conclure.');
         }
         return echec('Agent local injoignable après 3 tentatives — '
           + String((dernierErr && dernierErr.message) || dernierErr || '').slice(0, 200));
@@ -3258,7 +3387,16 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
       return conclureExec(codeEl, brut, d, auto, convoId);
     } catch (e) {
       if (terminal && terminal.el) terminal.el.remove();
-      if (e && e.name === 'AbortError') return echec(chaineInterrompue ? '[arrêt demandé] commande annulée.' : 'Délai dépassé (90 s) — commande trop longue ou agent bloqué.');
+      if (e && e.name === 'AbortError') {
+        /* v20261007 : le message annonçait « 90 s » en dur alors que la borne
+           réelle est celle qui a sauté (shim 25-30 s, proxy 70 s, agent
+           60 s). On cite la borne du client et, si le délai vient de notre
+           TimeoutController, on le dis explicitement. */
+        if (chaineInterrompue) return echec('[arrêt demandé] commande annulée.');
+        return echec(e.delai
+          ? e.message
+          : 'Délai dépassé (' + Math.round(BORNE_FLUX_MS / 1000) + ' s côté client) — commande trop longue ou agent bloqué.');
+      }
       return echec(String((e && e.message) || e).slice(0, 400));
     }
   } catch (e) {
@@ -3269,6 +3407,22 @@ async function lancerCommandeLocale(commande, bouton, codeEl, opts) {
     bouton.disabled = false;
     bouton.textContent = 'Exécuter';
   }
+}
+
+/* v20261007 : une commande à EFFET DE BORD n'est JAMAIS ré-postée. Un
+   `fetch` peut échouer APRÈS que l'agent a reçu et lancé la commande (coupure
+   TCP, onglet suspendu, ERR_FAILED après requête émise) : le réessai
+   exécutait donc la commande 2 à 3 fois (le commentaire du fichier affirmait
+   pourtant que c'était impossible). Conséquence possible et irréversible sur
+   le poste : Remove-Item, git commit, npm install, déploiement…
+   Pour ces commandes, un seul POST : en cas d'échec réseau on rend un
+   diagnostic HONNÊTE au modèle (« peut-être exécutée, vérifie l'état »)
+   au lieu de risquer un double effet. */
+function commandeEffetDeBord(brut) {
+  const c = String(brut || '');
+  /* même famille que le garde déjà utilisé pour l'anti-répétition (ligne
+     ~3600) : suppression/déplacement/écriture/installation/push. */
+  return /(set-content|add-content|out-file|>>|tee |cp |mv |copy |move |remove-item|del |rmdir|rm |mkdir|new-item|npm (i|install)|pip install|git (commit|push|reset|checkout|clean)|invoke-webrequest|curl |wget )/i.test(c);
 }
 
 /* §8.7-2 : exécution d'un bloc de LECTURE — pas de shell, pas de flux : un
@@ -3319,7 +3473,12 @@ async function lancerLectureLocale(texte, bouton, codeEl, opts) {
   })();
   const debut = Date.now();
   const finir = (d) => {
-    try { zone.textContent = String((d.ok ? d.stdout : d.stderr) || '(vide)').slice(0, 4000); } catch (_) {}
+    /* v20261007 : coupe tête+queue — un `slice(0, 4000)` cachait la FIN d'une
+     lecture (c'est là que sont les dernières lignes significatives, et pour
+     un grep les occurrences trouvées plus bas), alors que le modèle, lui,
+     recevait la totalité via formaterLecture. L'utilisateur voyait un résultat
+     « vide » que le modèle avait, lui, complet. */
+  try { zone.textContent = couperTeteQueue(String((d.ok ? d.stdout : d.stderr) || '(vide)'), 4000); } catch (_) {}
     try { zone.className = 'exec-sortie' + (d.ok ? '' : ' err'); } catch (_) {}
     try { ajouterTraceActivite(codeEl, d); } catch (_) {}
     try { memoriserTraceActivite(commande, d, convoId); } catch (_) {}
@@ -3362,7 +3521,9 @@ async function lancerLectureLocale(texte, bouton, codeEl, opts) {
     } else {
       return finir({ commande, lecture: true, type, ok: false, code: null, stdout: '', stderr: 'outil de lecture inconnu : ' + typeBloc, duree_ms: Date.now() - debut, meta: {} });
     }
-    const rL = await fetch(urlL, optionsL);
+    /* v20261007 : borné + annulable par ■ (cf. appelAgent) — un agent muet ne
+     figeait plus l'UI indéfiniment. */
+    const rL = await appelAgent(urlL, optionsL, BORNES_AGENT.lecture);
     let data = {};
     try { data = await rL.json(); } catch (_) { data = {}; }
     const ok = Boolean(rL.ok && data && data.ok !== false);
@@ -3420,8 +3581,8 @@ window.__athenaPlanLire = planActif;
    observée côté outil — « claims VERIFIED jamais le LLM »). */
 async function lirePourVerification(chemin) {
   try {
-    const rV = await fetch('/api/read?chemin=' + encodeURIComponent(String(chemin || ''))
-      + '&debut=1&fin=60&max=4000');
+const rV = await appelAgent('/api/read?chemin=' + encodeURIComponent(String(chemin || ''))
+    + '&debut=1&fin=60&max=4000', {}, BORNES_AGENT.lecture);
     let dV = {};
     try { dV = await rV.json(); } catch (_) { dV = {}; }
     if (!rV.ok || !dV || dV.ok === false) {
@@ -3456,12 +3617,26 @@ function autoExecBlocs(bulleEl) {
      (le modèle ne l'a jamais lu). Le tableau alimente enchainerApresExec. */
   return (async () => {
     const resultats = [];
+    /* v20261007 : plafond de blocs PAR TOUR — au-delà, on n'exécute pas et on
+       le dit (les blocs ignorés gardent leur bouton, donc l'utilisateur peut
+       les lancer à la main). */
+    let lances = 0;
     for (const pre of blocs) {
       /* §8.7 (arrêt obligatoire) : plus rien ne se lance après l'arrêt. */
       if (chaineInterrompue) break;
       const codeEl = pre.querySelector('code');
       const bouton = pre.querySelector('.code-exec');
       if (!codeEl || !bouton || pre.dataset.execAuto === '1') continue;
+      if (lances >= MAX_BLOCS_TOUR) {
+        const suite = blocs.length - lances;
+        bouton.title = 'Non exécuté (plafond de ' + MAX_BLOCS_TOUR + ' blocs par tour) — clique pour lancer';
+        if (suite > 1) {
+          notifier(suite + ' bloc(s) non exécutés : plafond de ' + MAX_BLOCS_TOUR
+            + ' par tour. Lance-les à la main si tu en as besoin.');
+        }
+        continue;
+      }
+      lances += 1;
       const estNav = pre.classList.contains('nav-bloc');
       const estLecture = pre.classList.contains('read-bloc');
       /* eslint-disable-next-line no-await-in-loop — séquentiel volontaire */
@@ -3488,14 +3663,24 @@ function autoExecBlocs(bulleEl) {
    sans bloc de commande). Ces deux constantes ne servent plus à couper une
    tâche : FENETRE_EXEC borne la MÉMOIRE du journal d'exécution, et
    ABSOLU_TOURS_EXEC est un simple filet qui force le verdict final. */
-const FENETRE_EXEC = 4;
+const FENETRE_EXEC = 2;
 const ABSOLU_TOURS_EXEC = 120;
-/* v1.2 (pleine puissance) : 8000 car. par sortie de commande, c'était trop
-   court pour un fichier (46 Ko = six pages tronquées) et le modèle en
-   concluait « résultat inexploitable ». On monte à 40 000 : une page de code
-   tient largement, la troncature est annoncée explicitement, et le journal
-   reste borné par FENETRE_EXEC + la compression du shim. */
-const MAX_SORTIE_EXEC_MODELE = 40000;
+/* v20261007 (coût) : 40 000 → 12 000 car. par sortie. La fenêtre était
+   réinjectée à CHAQUE tour de la chaîne : 4 × 40 000 = 160 000 car.
+   (~45 k jetons) d'historique d'outils, alors que le shim rogne chaque message
+   à 24 000 (TAILLE_MAX_MESSAGE) — le modèle ne voyait donc jamais plus de
+   ~24 ko, et la coupe tombait au milieu des « RÉSULTATS PRÉCÉDENTS » que la
+   fenêtre est censée garder. 2 × 12 000 = 24 ko sous le plafond shim : −70 %
+   de tokens d'outils, et la queue (code de retour, verdict) reste visible.
+   Une page de code tient ; au-delà, l'agent offre /read debut/fin. */
+const MAX_SORTIE_EXEC_MODELE = 12000;
+/* v20261007 (sécurité/coût) : un modèle qui écrit 20 blocs athena-exec dans
+   une seule réponse en lançait 20 commandes d'affilée (jusqu'à 30 min sans
+   contre-indication). On plafonne et on rend le reste jouable à la main. */
+const MAX_BLOCS_TOUR = 6;
+/* v20261007 : plafond de traces d'outils persistées PAR MESSAGE (voir
+   memoriserTraceActivite) — le journal complet reste dans l'agent. */
+const MAX_TRACES_PAR_MESSAGE = 30;
 
 /* §8.7-1 (queue rognée) : coupe tête+queue bornée, signalée. L'ancien
    slice(0, N) rognait la FIN du texte — stacktrace, « ERR » final, note de
@@ -3637,12 +3822,28 @@ function tournerEnRond(t) {
   return n >= 1;
 }
 
+/* v20261007 : le sélecteur des blocs qui PRODUISENT un effet doit être UN
+   SEUL. autoExecBlocs exécutait '.exec-bloc, .nav-bloc, .read-bloc' alors que
+   le garde « il a agi » ne testait que '.exec-bloc, .nav-bloc' : un tour ne
+   contenant qu'un athena-read (ou qu'un athena-file) passait pour « le modèle
+   n'a rien fait » et déclenchait une relance alors que la lecture/l'écriture
+   était en cours d'exécution. */
+const SELECTEUR_BLOCS_OUTIL = '.exec-bloc, .nav-bloc, .read-bloc';
+/* v20261007 : une relance à la fois (cf. garde d'entrée de
+   relancerSiPromesse) — relâché dans le finally de la génération créée. */
+let relanceEnCours = false;
+
 function relancerSiPromesse(convo, bulleEl) {
   try {
+    /* v20261007 : unicité de la relance — deux relances ne peuvent pas
+       cohabiter (elles se déclenchaient chacune depuis un tour différent et
+       s'écrivaient dans le même historique). Le drapeau est levé au moment du
+       lancement et retombe dans le finally de la génération qu'il a créée. */
+    if (relanceEnCours) return;
     if (!convo || convo._relanceFaite || convo._budgetEpuise) return;
     if (!Number(convo._toursExec)) return;          // aucune tâche en cours
     const b = bulleEl || null;
-    if (b && b.querySelector('.exec-bloc, .nav-bloc')) return; // il a agit : rien à relancer
+    if (b && b.querySelector(SELECTEUR_BLOCS_OUTIL)) return; // il a agit : rien à relancer
     const reponse = b ? texteRepre(b) : '';
     /* v1.2 (anti-bouclecognitive) : le cas le plus destructeur n'est pas la
        promesse, c'est la RÉTRO-ANALYSE. Run réel mesuré : le modèle a
@@ -3670,35 +3871,38 @@ function relancerSiPromesse(convo, bulleEl) {
       convo.maj = Date.now();
       try { sauverConversations(); } catch (_) {}
       notifier('Le modèle tournait en rond — relance pour qu\'il tranche.');
-      /* v1.2 (suite) : la relance continue DANS LA MÊME bulle. */
+      /* v1.2 (suite) : la relance continue DANS LA MÊME bulle.
+         v20261007 : garde d'unicité — sans lui, relancerSiPromesse pouvait
+         partir en parallèle de la chaîne d'outils déjà démarrée par
+         autoExecBlocs (relancerSiPromesse est synchrone et appelé juste
+         après), donnant deux générations concurrentes, deux bulles
+         entrelacées, un controleurEnCours écrasé (■ n'arrêtait plus que la
+         dernière) et convo._msgExec réécrit par les deux chaînes. */
       const partagee = b && b.closest ? (b.closest('.bubble') || null) : null;
+      relanceEnCours = true;
       genererReponse(convo, partagee ? { suiteDe: partagee } : undefined).catch(() => {});
       return;
     }
-    /* (code conservé ci-dessous pour référence — jamais exécuté : la branche
-       if(false) remplace l'ancien `return;` qui, lui, déclenchait chez Firefox
-       « unreachable code after return statement » — avertissement console
-       compté comme erreur dans relevés et tests.) */
-    if (false) {
-    convo.messages.push({
-      role: 'user',
-      _exec: true,
-      content: 'Tu as ANNONCÉ une action mais tu ne l\'as pas faite. Deux sorties '
-        + 'possibles, et une seule réponse :\n'
-        + '1) Si le travail reste à faire, FAIS-LE MAINTENANT : écris le bloc '
-        + '```athena-exec avec la commande qui l\'exécute. Elle part dès que tu '
-        + 'écris le bloc — annoncer ne fait rien.\n'
-        + '2) Si tu as vraiment fini, donne ton VERDICT COMPLET et terminal : '
-        + 'les bugs trouvés (symptôme + cause + correction), les modifications '
-        + 'réellement appliquées, et les tests passés. Pas un plan, pas un '
-        + '« je vais… ».',
-    });
-    convo.maj = Date.now();
-    try { sauverConversations(); } catch (_) {}
-    notifier('Le modèle s\'est arrêté sur une promesse — relance pour qu\'agisse.');
-    genererReponse(convo).catch(() => {});
-    }
   } catch (_) { /* relance = confort, jamais bloquant */ }
+}
+
+/* v20261007 : la remise à zéro de la mémoire de chaîne est FACTORISÉE.
+   Bug : `envoyer()` ne remitait à zéro que 4 champs (_toursExec,
+   _cmdExecutees, _fenetreExec, _msgExec) et laissait `_budgetEpuise` et
+   `_relanceFaite`. Conséquences : une conversation ayant atteint 120
+   commandes devenait INCAPABLE d'exécuter quoi que ce soit pour tous les
+   messages suivants (les boutons annonçaient « budget épuisé »), et la garde
+   anti-tour-en-rond ne pouvait se déclencher qu'UNE fois par conversation, à
+   vie. « Régénérer », lui, remettait bien les 6 → deux comportements
+   incohérents pour le même état. */
+function reinitialiserChaine(convo) {
+  if (!convo) return;
+  convo._toursExec = 0;
+  convo._cmdExecutees = [];
+  convo._fenetreExec = [];
+  convo._msgExec = null;
+  convo._budgetEpuise = false;
+  convo._relanceFaite = false;
 }
 
 function enchainerApresExec(convo, resultats, bulleSuite) {
@@ -3833,13 +4037,13 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
     let existe = false;
     let cheminAbs = brutChemin;
     if (!auto) {
-      const probe = await fetch('/api/write', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        /* v20260926e : dossier de travail choisi dans les réglages. */
-        body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: false,
-          ...(preferences.dossierTravail ? { dossier: preferences.dossierTravail } : {}) }),
-      });
+const probe = await appelAgent('/api/write', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    /* v20260926e : dossier de travail choisi dans les réglages. */
+    body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: false,
+      ...(preferences.dossierTravail ? { dossier: preferences.dossierTravail } : {}) }),
+  }, BORNES_AGENT.write);
       const dj = await probe.json().catch(() => ({}));
       if (!probe.ok && probe.status !== 428) {
         statut('échec', (dj && dj.erreur) || ('HTTP ' + probe.status));
@@ -3863,12 +4067,12 @@ async function enregistrerFichierLocal(chemin, contenu, bouton, carte, opts) {
         return null;
       }
     }
-    const r = await fetch('/api/write', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: true, ecraser: true,
-        ...(preferences.dossierTravail ? { dossier: preferences.dossierTravail } : {}) }),
-    });
+const r = await appelAgent('/api/write', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chemin: brutChemin, contenu: texte, confirme: true, ecraser: true,
+      ...(preferences.dossierTravail ? { dossier: preferences.dossierTravail } : {}) }),
+  }, BORNES_AGENT.write);
     const d = await r.json().catch(() => ({}));
     if (!r.ok || !d.ok) {
       statut('échec', (d && d.erreur) || ('HTTP ' + r.status));
@@ -3972,14 +4176,28 @@ function memoriserTraceActivite(commande, donnees, convoId = idConversation) {
     commande: String(commande || '').slice(0, 4000),
     ok: donnees.ok !== false,
     code: typeof donnees.code === 'number' ? donnees.code : null,
-    stdout: String(donnees.stdout || '').slice(0, 8000),
-    stderr: String(donnees.stderr || '').slice(0, 8000),
+    /* v20261007 : coupe TÊTE+QUEUE (la règle du projet : « jamais la queue »).
+       `.slice(0, 8000)` rognait la fin — donc le code de retour, l'erreur et
+       le verdict, c'est-à-dire la moitié utile du diagnostic. */
+    stdout: couperTeteQueue(String(donnees.stdout || ''), 8000),
+    stderr: couperTeteQueue(String(donnees.stderr || ''), 8000),
     duree_ms: typeof donnees.duree_ms === 'number' ? donnees.duree_ms : null,
   });
+  /* v20261007 : PLAFOND par message. Le « ring de 50 » du shim ne concerne
+     que les traces d'API (athena_traces) : rien ne bornait celles-ci. Sur un
+     tour à 120 commandes, un seul message assistant portait ~2 Mo (8 ko + 8 ko
+     par trace), réécrit dans localStorage à chaque commande ET re-rendu
+     intégralement au rejeu. On garde les 30 plus récentes ; le journal complet
+     reste consultable côté agent (/journal). */
+  if (dernier.traces.length > MAX_TRACES_PAR_MESSAGE) {
+    dernier.traces = dernier.traces.slice(-MAX_TRACES_PAR_MESSAGE);
+  }
   c.maj = Date.now();
-  sauverConversations();
+  /* v20261007 : différé — c'est CE chemin (une fois par commande exécutée,
+     jusqu'à 120 fois par tour de chaîne) qui coûtait cher. Le vidange est
+     forcé à la fermeture/lock de l'onglet. */
+  sauverConversations(true);
 }
-
 /* v20260926d : tableau pipe minimal (| a | b | + séparateur |---|---|).
    Cellules en textContent (pas de HTML injecté) ; alignements :---: gérés. */
 function estLigneSeparateurTableau(ligne) {
@@ -4557,6 +4775,9 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   let reponse = '';
   let pensee = '';
   let recu = false;
+  /* v20261007 : drapeau d'arrêt de la machine à écrire (relé par le bouton ■
+     via diffusionActive.arreter() — cf. le handler du bouton d'arrêt). */
+  let arreteFrappe = false;
   /* v banc 20261006 (§8.2) : combien de blocs <thinking> complets déjà routés
      vers le panneau (compteur de blocs, pas de jetons). */
   let nbCoT = 0;
@@ -4640,7 +4861,12 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   }
   async function reveler(texteFinal) {
     const cible = String(texteFinal || '');
-    if (!cible || recu) return;
+    /* v20261007 : INTERRUPTIBLE. Le ■ ne pouvait pas arrêter la frappe de
+       repli (~48 car./image, jusqu'à ~7 s pour 20 000 caractères) parce que
+       le contrôleur était déjà relâché et que rien ne testait l'arrêt ici :
+       le bouton affichait « Arrêter » sans effet, occupe restait bloqué et le
+       texte n'était pas persisté si F5 pendant la frappe. */
+    if (!cible || recu || arreteFrappe) return;
     recu = true;
     /* v20260926d (kimi) : un flush différé pouvait écraser la frappe
        progressive avec l'ancien acumulé. */
@@ -4659,6 +4885,8 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
     });
     let i = 0;
     while (i < cible.length) {
+      /* v20261007 : sortie sur arrêt utilisateur (idempotent). */
+      if (arreteFrappe) break;
       if ((gardeVue && !gardeVue()) || !zone.isConnected) return;
       i = Math.min(cible.length, i + 48);
       reponse = cible.slice(0, i);
@@ -4678,7 +4906,7 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       await pasImage();
     }
   }
-  return { ingerer, reveler, aRecu: () => recu, texte: () => reponse, pensee: () => pensee };
+  return { ingerer, reveler, arreter: () => { arreteFrappe = true; }, aRecu: () => recu, texte: () => reponse, pensee: () => pensee };
 }
 
 /* ---------- v7.4.1 : fenêtre d'historique envoyée à l'API ---------- */
@@ -4692,7 +4920,7 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
    à 95 % de la fenêtre réelle) : on lui laisse le travail et on ne multiplie
    plus les seuils arbitraires. Fenêtre large + compression par le shim. */
 const FENETRE_API = 400;
-const MAX_CONTENU_API = 400000;
+const MAX_CONTENU_API = 380000;
 const MARQUEUR_COUPURE = '\n\n[… tronqué …]';
 
 function preparerHistorique(messages) {
@@ -4790,6 +5018,12 @@ function humaniserErreur(detail, statut) {
     504: 'La génération a dépassé le délai disponible. Essayez une question plus courte.',
   };
   const repli = base[statut] || ('Erreur du service (' + (statut || 'réseau') + '). Réessayez dans un instant.');
+  /* v20261007 : statut 200 = le flux NDJSON est arrivé, c'est le PIPELINE qui a
+     rendu une erreur (cascade épuisée, quota, réflexion seule). Sans cette
+     entrée, un détail technique de plus de 300 caractères était remplacé par
+     « Erreur du service (réseau) » — un diagnostic faux dans le cas le plus
+     fréquent. */
+  if (Number(statut) === 200) return lisible ? brut : 'Le pipeline a échoué : ' + repli;
   if (Number(statut) >= 500) return repli;
   return lisible ? brut : repli;
 }
@@ -4799,11 +5033,58 @@ function humaniserErreur(detail, statut) {
    Sous charge (génération + vérification > délai de la passerelle), chaque
    repli relançait un pipeline entier : le modèle s'empilait les demandes et
    l'utilisateur voyait « service indisponible » alors que le modèle
-   travaillait. DÉSORMAIS : 3 essais max, ESPACÉS (8 s), avec sonde de santé
-   entre chaque, et un message final honnête selon la cause réelle. */
+   travaillait. DÉSORMAIS : 3 essais max, ESPACÉS de 3 s (le commentaire
+   « 8 s » était faux), avec sonde de santé entre chaque, et un message final
+   honnête selon la cause réelle.
+   v20261007 : (a) la sonde n'écrase plus une cause établie ; (b) le délai
+   maximal (DELAI_CHAT_MS) n'est PAS rejoué — 3 × 11 min de silence
+   n reimbursent pas ; (c) le second POST n'a lieu que si le premier n'a rien
+   consumé côté moteur. */
+/* v20261007 : CORPS DE REQUÊTE factorisé. Les deux fonctions d'appel
+   (appelerApiClassique → sans flux, appelerApi → stream) dupliquaient 19 lignes
+   de construction de corps, et elles avaient DÉJÀ divergé (conversation_id,
+   plan, effort). Toute évolution devait être faite deux fois — c'est
+   exactement le mécanisme par lequel un champ a été oublié d'un côté.
+   `stream` est le SEUL paramètre qui les distingue. */
+function corpsChat(historique, attachments, stream) {
+  /* Champs optionnels envoyés seulement si VALIDES : la route Next valide au
+     stricte (fil nul / modèle inconnu / joint vide = 400 « corps invalide » dès
+     qu'un skill forçait l'envoi au moteur). */
+  const plan = planActif();
+  const t = Number(temperatureChoisie());
+  return {
+    messages: historique,
+    outils: preferences.outilsWeb !== false,
+    ...(stream ? { stream: true } : {}),
+    /* v20260922m (F2/F13) : conversation_id stable par conversation UI → le
+       fil côté moteur devient réutilisable (compteur honnête, corrélation logs,
+       format canonique « fil-xxxxxxxx »). */
+    ...(typeof idConversation === 'string' && idConversation ? { conversation_id: idConversation } : {}),
+    /* §8.7-4 (plan réinjecté) : le plan visible du HUD repart à CHAQUE tour. */
+    ...(plan.length ? { plan } : {}),
+    /* v1.2 (anti-bâclage, item 12) : température préférée → route.ts → moteur. */
+    temperature: (Number.isFinite(t) ? Math.min(2, Math.max(0, t)) : 0.6),
+    /* P0 (audit fainéant) : effort du HUD → route.ts → sidecar → moteur →
+       pont (reasoning_effort). */
+    effort: effortChoisi,
+    /* v10.9.4 (HUD) : modèle choisi (sinon cascade par défaut). */
+    ...(modeleChoisi && typeof modeleChoisi.id === 'string' && modeleChoisi.id ? { model_id: modeleChoisi.id } : {}),
+    /* Menu « / » : skill forcé (le sidecar le priorise sur type/motifs). */
+    ...(skillForce ? { skill: skillForce } : {}),
+    ...(attachments && attachments.length
+      /* même filtre qu'avant la factorisation : les pièces arrivent DÉJÀ
+         enrichies (contenu + nom) depuis genererReponse → ne pas rappeler
+         enrichirPieces ici (double lecture du Map, double troncature). */
+      ? { attachments: attachments.filter((a) => a && typeof a.file_id === 'string' && a.file_id) }
+      : {}),
+  };
+}
+
 async function appelerApiClassique(historique, signal = null, attachments = []) {
   let cause = 'inconnue';
   for (let essai = 0; essai < 3; essai++) {
+    /* v20261007 : un délai dépassé n'est pas rejoué (cf. (b)). */
+    if (cause === 'delai') break;
     if (essai > 0) {
       /* v20260926d : attente interruptible (Stop) ; v20260926f (lags) : 3 s
          au lieu de 8 — un bilan de santé suit juste après, et l'échec
@@ -4815,38 +5096,26 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
         if (signal) signal.addEventListener('abort', annuler, { once: true });
       });
       if (signal && signal.aborted) throw new DOMException('Abandon', 'AbortError');
+      /* v20261007 : la sonde ne doit PLUS écraser une cause déjà établie.
+         Bug : sur GitHub Pages le shim répond {modele_charge:true} à
+         GET /api/chat, donc `up` et `pret` étaient TOUJOURS vrais → cause
+         écrasée par 'occupe' à chaque réessai → toute coupure réseau ou tout
+         corps illisible était rapporté à l'utilisateur comme « le modèle
+         termine une génération précédente », avec la mauvaise action conseillée
+         (attendre au lieu de Régénérer). */
       const sante = await etatService();
-      if (!sante.up) cause = 'injoignable';
-      else if (!sante.pret) cause = 'chargement';
-      else cause = 'occupe';
+      if (!cause || cause === 'inconnue') {
+        if (!sante.up) cause = 'injoignable';
+        else if (!sante.pret) cause = 'chargement';
+      }
     }
     try {
-      const r = await fetch(endpointChat(attachments), {
+      const r = await fetch(endpointChat(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        /* v20260922m (F2/F13) : conversation_id stable par conversation UI →
-           le fil côté moteur devient réutilisable (compteur honnête,
-           corrélation logs, format canonique « fil-xxxxxxxx »). */
-        body: JSON.stringify({ messages: historique, outils: preferences.outilsWeb !== false,
-          /* Champs optionnels envoyes seulement si VALIDES : la route Next
-             valide au stricte (fil nul / modele inconnu / joint vide = 400
-             "corps invalide" des qu un skill forcait l envoi au moteur). */
-          ...(typeof idConversation === 'string' && idConversation ? { conversation_id: idConversation } : {}),
-          /* §8.7-4 (plan réinjecté) : le plan visible du HUD repart à CHAQUE
-             tour — décision multi-étapes, état partagé côté système. */
-          ...(planActif().length ? { plan: planActif() } : {}),
-          /* v1.2 (anti-bâclage, item 12) : température préférée → route.ts → moteur. */
-          temperature: (Number.isFinite(Number(temperatureChoisie())) ? Math.min(2, Math.max(0, Number(temperatureChoisie()))) : 0.6),
-          /* P0 (audit fainéant) : effort du HUD → route.ts → sidecar → moteur →
-             pont (reasoning_effort). AVANT, la voie skill/livrable IGNORAIT le
-             bouton d'effort (seul le shim non-skill le lisait). */
-          effort: effortChoisi,
-          /* v10.9.4 (HUD) : modèle choisi (sinon cascade par défaut) */
-          ...(modeleChoisi && typeof modeleChoisi.id === 'string' && modeleChoisi.id ? { model_id: modeleChoisi.id } : {}),
-          /* Menu « / » : skill forcé (le sidecar le priorise sur type/motifs) */
-          ...(skillForce ? { skill: skillForce } : {}),
-          ...(attachments.length ? { attachments: attachments.filter((a) => a && typeof a.file_id === 'string' && a.file_id) } : {}) }),
-        signal,
+        body: JSON.stringify(corpsChat(historique, attachments, false)),
+        /* v20261007 : borné comme le chemin flux (DELAI_CHAT_MS). */
+        signal: signalCombine(DELAI_CHAT_MS, signal),
       });
       const texte = await r.text();
       try {
@@ -4857,7 +5126,11 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
       } catch { cause = 'reponse'; /* corps non JSON -> réessai */ }
     } catch (err) {
       if (err && err.name === 'AbortError') throw err;  // stop demandé : ne pas réessayer
-      cause = 'reseau';
+      /* v20261007 : un délai dépassé n'est PAS une coupure réseau — ne pas
+         parler de « connexion interrompue » quand le budget du tour est
+         atteint, et ne pas le rejouer. */
+      if (err && err.name === 'TimeoutError') { if (!cause || cause === 'inconnue') cause = 'delai'; }
+      else if (!cause || cause === 'inconnue' || cause === 'reponse') cause = 'reseau';
     }
   }
   const finales = {
@@ -4866,6 +5139,7 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
     occupe: 'Le modèle termine encore une génération précédente. Patientez quelques secondes, puis utilisez « Régénérer ».',
     reseau: 'Connexion interrompue pendant l’appel. Utilisez « Régénérer » pour relancer la réponse.',
     reponse: 'Le service a renvoyé une réponse invalide (redémarrage en cours ?). Réessayez dans un instant.',
+    delai: 'Le tour a dépassé ' + Math.round(DELAI_CHAT_MS / 60000) + ' min sans réponse (budget de la cascade atteint). Utilisez « Régénérer » ou choisissez un modèle précis.',
     inconnue: 'Le service n’a pas abouti après plusieurs tentatives. Réessayez dans un instant.',
   };
   return { ok: false, erreur: finales[cause] || finales.inconnue, cause };
@@ -4877,25 +5151,23 @@ async function appelerApiClassique(historique, signal = null, attachments = []) 
 async function appelerApi(historique, signal = null, surProgression = null, attachments = [], surJeton = null) {
   let aRecuEvenement = false;
   let jetonsRecus = 0;
+  /* v20261007 : chaîne de cascade reçue sur l'événement d'erreur (affichée
+     sous le bandeau d'échec) + métadonnées du tour (raisonnement agrégé,
+     compression, durée) portées par le `final`. */
+  let cadenaEchec = null;
+  let metaTour = null;
   try {
-    const r = await fetch(endpointChat(attachments), {
+    const r = await fetch(endpointChat(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: historique, outils: preferences.outilsWeb !== false, stream: true,
-        /* Champs optionnels envoyes seulement si VALIDES (route Next stricte). */
-        ...(typeof idConversation === 'string' && idConversation ? { conversation_id: idConversation } : {}),
-        /* §8.7-4 (plan réinjecté) : idem voie classique. */
-        ...(planActif().length ? { plan: planActif() } : {}),
-        /* v1.2 (anti-bâclage, item 12) : température préférée → route.ts → moteur. */
-        temperature: (Number.isFinite(Number(temperatureChoisie())) ? Math.min(2, Math.max(0, Number(temperatureChoisie()))) : 0.6),
-        /* P0 (audit fainéant) : effort du HUD → route.ts → sidecar → moteur. */
-        effort: effortChoisi,
-        /* v10.9.4 (HUD) : modèle choisi (sinon cascade par défaut) */
-        ...(modeleChoisi && typeof modeleChoisi.id === 'string' && modeleChoisi.id ? { model_id: modeleChoisi.id } : {}),
-        /* Menu « / » : skill forcé (le sidecar le priorise sur type/motifs) */
-        ...(skillForce ? { skill: skillForce } : {}),
-        ...(attachments.length ? { attachments: attachments.filter((a) => a && typeof a.file_id === 'string' && a.file_id) } : {}) }),
-      signal,
+      /* v20261007 : corps factorisé (corpsChat) — identique à la voie classique
+         sauf `stream`, ce qui garantit qu'un champ ne peut plus être oublié
+         d'un côté (conversation_id, plan, effort, skill, pièces). */
+      body: JSON.stringify(corpsChat(historique, attachments, true)),
+      /* v20261007 : borné (DELAI_CHAT_MS = budget shim + marge) ET annulable
+         par le ■ du tour — les deux signaux sont combinés, l'arrêt restant
+         prioritaire. */
+      signal: signalCombine(DELAI_CHAT_MS, signal),
     });
     const ctype = r.headers.get('content-type') || '';
     if (r.ok && ctype.includes('ndjson') && r.body) {
@@ -4936,15 +5208,60 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
               majBadgeJournal();
             }
           }
-          else if (ev.type === 'final') final = ev;
+          else if (ev.type === 'final') {
+            final = ev;
+            /* v20261007 : le shim envoie maintenant le raisonnement agrégé, la
+               note de compression, la durée du tour et la chaîne parcourue.
+               On les conserve au lieu de les laisser dans le flux : le
+               raisonnement était perdu (ou tronqué à 4 000 car.) alors que le
+               moteur l'avait calculé. */
+            try {
+              metaTour = {
+                ms: typeof ev.ms === 'number' ? ev.ms : null,
+                compression: ev.compression || null,
+                chain: Array.isArray(ev.chain) ? ev.chain : null,
+                requetes: Array.isArray(ev.chain) ? ev.chain.length : null,
+              };
+              if (Array.isArray(ev.chain)) {
+                ev.chain.forEach((m) => {
+                  window.__athenaDebug.journal.push(
+                    '#' + (m.rang || '?') + ' ' + (m.nom || m.id || '?')
+                    + ' → ' + (m.ok ? 'OK ' + (m.ms || 0) + ' ms'
+                      : (m.statut ? 'HTTP ' + m.statut : 'échec') + ' en ' + (m.ms || 0) + ' ms'
+                        + (m.essais > 1 ? ' (' + m.essais + ' essais)' : '')));
+                });
+                if (window.__athenaDebug.journal.length > 100) window.__athenaDebug.journal.splice(0, window.__athenaDebug.journal.length - 100);
+                majBadgeJournal();
+              }
+            } catch (_) {}
+          }
           else if (ev.type === 'erreur') {
-            erreurFlux = humaniserErreur(ev.erreur) || 'Erreur du pipeline.';
+            erreurFlux = humaniserErreur(ev.erreur, 200);
             /* v banc 20261006 (§3) : journal de cascade (quoi a échoué,
                dans quel ordre) — rangé, affiché dans le HUD journal. */
             if (ev.debug && Array.isArray(ev.debug)) {
               try {
                 ev.debug.forEach((l) => window.__athenaDebug.journal.push(String(l)));
                 if (window.__athenaDebug.journal.length > 100) window.__athenaDebug.journal.splice(0, window.__athenaDebug.journal.length - 100);
+              } catch (_) {}
+              majBadgeJournal();
+            }
+            /* v20261007 : CHAÎNE DE CASCADE structurée (rang, statut, durée,
+               raison par modèle). On la range dans le journal ET on en garde un
+               résumé lisible : c'est la réponse à « qu'est-ce qui a échoué,
+               dans quel ordre, et pourquoi ». */
+            if (Array.isArray(ev.chain)) {
+              try {
+                ev.chain.forEach((m) => {
+                  window.__athenaDebug.journal.push(
+                    (m.rang ? '#' + m.rang + ' ' : '') + (m.nom || m.id || '?')
+                    + ' → ' + (m.ok ? 'OK ' + (m.ms || 0) + ' ms'
+                      : (m.statut ? 'HTTP ' + m.statut : 'échec') + ' en ' + (m.ms || 0) + ' ms'
+                        + (m.essais > 1 ? ' (' + m.essais + ' essais)' : '')
+                        + (m.raison ? ' — ' + m.raison : '')));
+                });
+                if (window.__athenaDebug.journal.length > 100) window.__athenaDebug.journal.splice(0, window.__athenaDebug.journal.length - 100);
+                cadenaEchec = ev.chain;
               } catch (_) {}
               majBadgeJournal();
             }
@@ -4964,13 +5281,16 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
       /* fin de flux : flush du décodeur + reliquat (dernière ligne sans \n) */
       tampon += dec.decode();
       traiterLigne(tampon);
-      if (erreurFlux) return { ok: false, erreur: erreurFlux };
+      /* v20261007 : la chaîne de cascade est renvoyée avec l'erreur → l'UI peut
+     afficher « 4 modèles ont échoué (HTTP 429, 404, timeout ×2) » au lieu
+     d'une phrase qui n'expliquait rien. */
+  if (erreurFlux) return { ok: false, erreur: erreurFlux, chain: cadenaEchec, meta: metaTour };
       if (final) {
         /* v10.9.4 (HUD) : repli discret si le modèle choisi n'a pas répondu */
         if (final.modele_repli) notifier('Le modèle choisi ne répond pas — repli sur le modèle auto.');
         /* v20260926d : final PARTIEL (reponse null) — pas de '(réponse vide)'
            ici, genererReponse reprend la frappe déjà diffusée. */
-        return { ok: true, reponse: final.reponse || (final.partiel ? '' : '(réponse vide)'), outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus, partiel: Boolean(final.partiel), tronquee: Boolean(final.tronquee), provider: typeof final.provider === 'string' ? final.provider : null, model: typeof final.model === 'string' ? final.model : null, modele_repli: Boolean(final.modele_repli) };
+        return { ok: true, reponse: final.reponse || (final.partiel ? '' : '(réponse vide)'), outil: final.outil || null, correction: Boolean(final.correction), verification: final.verification || null, rag: final.rag || null, tache: final.tache || null, conversation_id: final.conversation_id || null, raisonnement: final.raisonnement || null, jetonsRecus, partiel: Boolean(final.partiel), tronquee: Boolean(final.tronquee), provider: typeof final.provider === 'string' ? final.provider : null, model: typeof final.model === 'string' ? final.model : null, modele_repli: Boolean(final.modele_repli), meta: metaTour };
       }
       return { ok: false, erreur: 'Le flux de raisonnement a été interrompu avant la réponse — renvoyez votre message.' };
     }
@@ -5325,6 +5645,11 @@ function exemplesInitiaux() {
 
 /* ---------- Envoi, arrêt, historique de saisie ---------- */
 let controleurEnCours = null;
+const ctrlsGenerations = new Set();
+/* v20261007 : la zone de diffusion du tour EN COURS, pour que le bouton ■
+   puisse interrompre la machine à écrire de repli (avant : le contrôleur était
+   déjà relâché à ce stade, donc ■ n'avait plus rien à annuler). */
+let diffusionActive = null;
 /* v20260926c (affichage) : le STOP fait rejeter en chaîne des promesses
    (fetch, lecteurs de flux) dont certaines n'ont plus de consommateur au
    moment de l'abort — AbortError bénin (l'interruption elle-même est gérée
@@ -5472,11 +5797,8 @@ async function envoyer(texte) {
   }
   /* v1.2 (anti-bâclage) : budget d'enchaînement neuf pour chaque demande —
      sans cette remise à zéro, une conversation déjà à 6 commandes ne
-     pourrait plus jamais enchaîner. */
-  convo._toursExec = 0;
-  convo._cmdExecutees = [];
-  convo._fenetreExec = [];
-  convo._msgExec = null;
+     pourrait plus jamais enchaîner. v20261007 : les 6 champs (et non 4). */
+  reinitialiserChaine(convo);
   try {
     await genererReponse(convo);
   } finally {
@@ -5563,8 +5885,16 @@ async function genererReponse(convo, opts) {
   if (!panneau) think.replaceChildren();
   /* v20260926b (direct) : la frappe et la réflexion s'affichent EN DIRECT. */
   const diffusion = creerZoneDiffusion(think, panneau, vueOuverte);
+  diffusionActive = diffusion;
   if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
   controleurEnCours = new AbortController();
+  /* v20261007 : le ■ doit arrêter TOUTES les générations, pas seulement la
+     dernière. Un slot unique était écrasé par chaque nouvelle génération
+     (relance + enchaînement d'outils + « Continuer » peuvent se chevaucher) :
+     ■ n'abortait alors que la seconde, la première continuait d'écrire dans
+     la même bulle. */
+  ctrlsGenerations.add(controleurEnCours);
+  const ctrlGenLocal = controleurEnCours;
   let r = null;
   /* v1.2 (anti-bâclage) : les pièces de TOUS les messages utilisateur
      accompagnent l'appel (dédoublonnées par file_id, 10 au plus) — avant,
@@ -5605,18 +5935,32 @@ async function genererReponse(convo, opts) {
           suiteBox.appendChild(note);
         } else {
           const rangeePensee = think.closest ? think.closest('.row') : null;
+          /* v20261007 : on NE DÉTRUIT PLUS le texte déjà composé. Il était
+             supprimé avec la rangée puis remplacé par la seule phrase
+             « Génération interrompue. » : des dizaines de kilo-caractères
+             disparaissaient du■. On le conserve, on le marque tronqué, et on
+             le persiste pour qu'un F5 ne le fasse pas disparaître non plus. */
+          const dejaAfficheStop = (diffusion && typeof diffusion.texte === 'function')
+            ? diffusion.texte() : '';
           if (rangeePensee) rangeePensee.remove();
-          bulle('assistant', 'Génération interrompue.');
+          const msgStop = dejaAfficheStop.trim()
+            ? dejaAfficheStop + '\n\n[…génération interrompue — ' + dejaAfficheStop.length
+              + ' caractères conservés…]'
+            : 'Génération interrompue.';
+          if (dejaAfficheStop.trim()) {
+            convo.messages.push({ role: 'assistant', content: msgStop, tronquee: true });
+            convo.maj = Date.now();
+            sauverConversations();
+          }
+          bulle('assistant', msgStop);
         }
       }
-      controleurEnCours = null;
       /* §8.7 : dé-verrouillage géré par le finally (compteur) — ne pas
          forcer occupe=false ici : une suite peut déjà avoir repris la main. */
       return;
     }
     r = { ok: false, erreur: 'Erreur inattendue.' };
   }
-  controleurEnCours = null;
   /* v20260926d (kimi) : final PARTIEL (cascade stoppée côté shim pour ne pas
      doublonner) — la frappe déjà affichée devient la réponse, marquée. */
   if (r && r.ok && r.partiel) {
@@ -5638,8 +5982,18 @@ async function genererReponse(convo, opts) {
   /* v7.1.1 : si le panneau vivant n'a reçu AUCUN événement (repli JSON,
      flux coupé avant la 1re étape) mais que la réponse finale porte des
      étapes, on les utilise quand même */
-  const etapesRaisonnement = (panneau && panneau.etapes.length) ? panneau.etapes.slice()
-    : (r && r.raisonnement) || [];
+  /* v20261007 : le `final` porte désormais le raisonnement AGRÉGÉ envoyé par le
+     shim (texte, pas tableau d'étapes). On le convertit en une étape 'texte'
+     pour que le panneau dépliable l'affiche et qu'il soit PERSISTÉ — sinon il
+     était perdu (il n'était persisté que via la frappe, tronquée à 4 000
+     caractères, et totalement absent en repli JSON). */
+  let etapesRaisonnement = (panneau && panneau.etapes.length) ? panneau.etapes.slice() : [];
+  if (!etapesRaisonnement.length && r && typeof r.raisonnement === 'string' && r.raisonnement.trim()) {
+    etapesRaisonnement = [{ etape: 'texte', message: r.raisonnement.slice(0, 8000) }];
+  }
+  if (!etapesRaisonnement.length && Array.isArray(r && r.raisononnement)) {
+    etapesRaisonnement = r.raisonnement.slice();
+  }
   /* v20260926g : le texte CONTINU (jetons) est persisté tel quel sous
      etape:'texte' — jamais de tranches. */
   const penseeVive = diffusion && diffusion.pensee ? diffusion.pensee() : '';
@@ -5789,7 +6143,11 @@ async function genererReponse(convo, opts) {
           conteneurTour.appendChild(voie);
         }
         /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
-           (préférence executionAuto, ON par défaut) — la commande part
+           (préférence executionAuto — OFF PAR DÉFAUT, cf.
+           preferencesParDefaut : ce commentaire affirmait « ON par défaut »
+           alors que le code et le libellé du réglage disent l'inverse. C'est
+           l'utilisateur qui clique « Exécuter », choix sûr pour un shell local)
+           — la commande part
            seule sur l'agent local 127.0.0.1:3020, sans modale : c'est le
            modèle qui « appuie ». Chemin emprunté UNIQUEMENT sur une
            réponse fraîche : rejeu, rechargement et réouverture d'une
@@ -5808,25 +6166,99 @@ async function genererReponse(convo, opts) {
           /* v1.2 (audit 14:27) : UNE SEULE chaîne avec commandes + fichiers.
              Avant, les fichiers partaient en fire-and-forget : le modèle ne
              savait jamais où son fichier avait atterri, devinait un chemin,
-             et l'exec suivante échouait dessus. */
-          Promise.all([autoExecBlocs(conteneurTour), autoFileBlocs(conteneurTour)])
-            .then(([resExec, resFich]) => enchainerApresExec(convo, [...resExec, ...resFich], bAssist))
-            .catch(() => deverrouillerChaine());
+             et l'exec suivante échouait dessus.
+             v20261007 (2 défauts corrigés) :
+             a) SÉQUENCE, pas parallèle — un tour qui écrit `a.txt` puis lance
+                une commande lisant `a.txt` voyait la commande partir AVANT
+                l'écriture, et `[...resExec, ...resFich]` mentait sur
+                l'ordre chronologique des résultats ;
+             b) relancerSiPromesse() attend désormais la fin de cette chaîne
+                (il était appelé juste après, sans await → deux générations
+                concurrentes possibles, controleurEnCours écrasé, ■ inopérant
+                sur la première). */
+          autoExecBlocs(conteneurTour)
+            .then((resExec) => autoFileBlocs(conteneurTour).then((resFich) => [resExec, resFich]))
+            .then(([resExec, resFich]) => {
+              enchainerApresExec(convo, [...resExec, ...resFich], bAssist);
+              /* v1.2 (suite) : on passe le CONTENEUR DU TOUR, pas la bulle
+                 partagée — sinon le .exec-bloc d'un tour précédent fait croire
+                 que CE tour a agi, et la relance ne part jamais. */
+              relancerSiPromesse(convo, conteneurTour);
+            })
+            .catch((eCh) => {
+              /* v20261007 : un échec de la chaîne ne doit pas être SILENCIEUX
+                 (avant : `.catch(() => deverrouillerChaine())` — une exception
+                 dans un bloc d'outil disparaissait, l'utilisateur ne voyait
+                 ni résultat ni message). */
+              if (window.console && console.warn) console.warn('chaine d\'outils interrompue', eCh);
+              deverrouillerChaine();
+            });
+        } else {
+          /* v20261007 : en mode MANUEL rien ne s'exécute en arrière-plan :
+             la garde anti-promesse / anti-tour-en-rond peut donc tourner
+             immédiatement sans risque de course avec une chaîne d'outils. */
+          relancerSiPromesse(convo, conteneurTour);
         }
-        /* v1.2 (suite) : on passe le CONTENEUR DU TOUR, pas la bulle
-           partagée — sinon le .exec-bloc d'un tour précédent fait croire
-           que CE tour a agi, et la relance ne part jamais. */
-        relancerSiPromesse(convo, conteneurTour);
       } else {
         notifier('Réponse prête dans « ' + convo.titre + ' »', { label: 'Ouvrir', action: () => ouvrirConversation(convo.id) });
       }
     } else {
+      /* v20261007 : NE PAS perdre la frappe affichée. La rangée de diffusion
+         vient d'être retirée (rangeePensee.remove() ci-dessus) — sans ce
+         rattrapage, tout ce que l'utilisateur avait lu à l'écran disparaissait
+         au premier hoquet réseau, remplacé par une phrase d'erreur. On rend
+         le partiel (marqué) et on le PERSISTE dans l'historique. */
+      const dejaAfficheErr = (diffusion && typeof diffusion.texte === 'function')
+        ? diffusion.texte() : '';
+      if (dejaAfficheErr.trim()) {
+        /* la CAUSE est conservée avec le partiel : après un F5, l'historique
+           doit expliquer pourquoi la réponse s'arrête là (sinon on ne le sait
+           qu'en regardant l'écran, et l'écran a disparu). */
+        r.reponse = dejaAfficheErr + '\n\n[…réponse interrompue après '
+          + dejaAfficheErr.length + ' caractères — '
+          + String(r.erreur || 'suite non reçue').slice(0, 160) + '…]';
+        convo.messages.push({ role: 'assistant', content: r.reponse, tronquee: true });
+        convo.maj = Date.now();
+        sauverConversations();
+      }
       if (vueOuverte()) {
         const bErr = bulle('assistant', r ? r.erreur : 'Erreur inattendue.');
+        if (dejaAfficheErr.trim()) {
+          const mdPartiel = document.createElement('div');
+          mdPartiel.className = 'md';
+          mdPartiel.appendChild(formater(r.reponse));
+          bErr.appendChild(mdPartiel);
+        }
         /* v7.1 : même en échec, les étapes observées restent consultables
            (v7.1.1 : dans la bulle, pas en frère flexbox) */
         if (panneau && panneau.etapes.length) {
           bErr.insertBefore(panneau.el, bErr.firstChild);
+        }
+        /* v20261007 : la CHAÎNE DE CASCADE sous l'erreur — « #1 gemma → HTTP 429
+           en 2 s · #2 nemotron → timeout 300 s · #3 pollinations → OK » est la
+           seule chose qui explique un échec. Elle est repliée pour ne pas
+           encombrer, mais elle est là. */
+        if (r && Array.isArray(r.chain) && r.chain.length > 1) {
+          try {
+            const det = document.createElement('details');
+            det.className = 'chain-detail';
+            const sum = document.createElement('summary');
+            sum.textContent = 'Détail de la cascade (' + r.chain.length + ' modèles)';
+            det.appendChild(sum);
+            const ul = document.createElement('ul');
+            r.chain.forEach((m) => {
+              const li = document.createElement('li');
+              li.textContent = '#' + (m.rang || '?') + ' ' + (m.nom || m.id || '?') + ' — '
+                + (m.ok ? 'réponse en ' + Math.round((m.ms || 0) / 100) / 10 + ' s'
+                  : (m.statut ? 'HTTP ' + m.statut : 'échec') + ' après '
+                    + Math.round((m.ms || 0) / 100) / 10 + ' s'
+                    + (m.essais > 1 ? ' (' + m.essais + ' tentatives)' : '')
+                    + (m.raison ? ' — ' + m.raison : ''));
+              ul.appendChild(li);
+            });
+            det.appendChild(ul);
+            bErr.appendChild(det);
+          } catch (_) {}
         }
       } else {
         notifier('Échec de la génération — « ' + convo.titre + ' »', { label: 'Ouvrir', action: () => ouvrirConversation(convo.id) });
@@ -5837,6 +6269,21 @@ async function genererReponse(convo, opts) {
        « occupée » — l'état est rétabli ci-dessous quoi qu'il arrive. */
     if (console && console.warn) console.warn('rendu de la réponse : erreur non fatale', e);
   } finally {
+    /* v20261007 : panneau.finaliser() était appelé DANS le try (ligne ~5692)
+       → sur le chemin AbortError (avant le try, et sur une exception de
+       rendu) il n'était jamais appelé : le setInterval du compteur tournait
+       à 1 Hz sur un panneau mort (« Réflexion en cours… 214 s »), et en mode
+       SUITE le panneau reste connecté dans la bulle partagée donc rien ne
+       l'auto-nettoyait. Idempotent (finaliser efface l'interval). */
+    try { if (panneau && panneau.finaliser) panneau.finaliser(); } catch (eFin) {}
+    diffusionActive = null;
+    relanceEnCours = false;
+    /* v20261007 : le contrôleur n'est relâché qu'ici. Avant il était remis à
+       null AVANT la machine à écrire de repli (revealer), donc le bouton ■
+       affichait « Arrêter » et ne pouvait rien annuler : jusqu'à ~7 s de
+       frappe non interruptible, occupe bloqué, texte non persisté si F5. */
+controleurEnCours = null;
+    if (ctrlGenLocal) ctrlsGenerations.delete(ctrlGenLocal);
     if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
     /* §8.7 : le dé-verrouillage est COMPTEUR-driven (une suite en cours
        garde ■) et subordonné au verrou de chaîne (le finally précède le
@@ -5926,7 +6373,16 @@ $('form').addEventListener('submit', (e) => {
     chaineInterrompue = true;
     arreterFluxExecs();
     tuerExecsAgent();
-    if (controleurEnCours) {
+    /* v20261007 : la frappe de repli (machine à écrire) devient interruptible
+       — sinon le bouton affiche « Arrêter » pendant ~7 s sans rien faire. */
+    if (diffusionActive && typeof diffusionActive.arreter === 'function') diffusionActive.arreter();
+    /* v20261007 : on aborte TOUTES les générations en vol (et pas seulement la
+       dernière enregistrée). */
+    const nbGen = ctrlsGenerations.size;
+    ctrlsGenerations.forEach((c) => { try { c.abort(); } catch (_) {} });
+    if (nbGen > 0) {
+      notifier(nbGen > 1 ? (nbGen + ' générations arrêtées.') : 'Arrêt demandé.');
+    } else if (controleurEnCours) {
       controleurEnCours.abort();
     } else {
       notifier('Arrêt demandé — la suite s\'arrête.');
@@ -6589,23 +7045,27 @@ async function regenererDerniereReponse() {
     rangeesReponse.unshift(rangees[i]);
   }
   /* Réponse persistée -> retirée de l'historique (on repart de la question).
-     Sinon (erreur / interruption, bulle non persistée) -> simple relance. */
-  if (convo.messages.length && convo.messages[convo.messages.length - 1].role === 'assistant') {
+     Sinon (erreur / interruption, bulle non persistée) -> simple relance.
+     v20261007 : après une CHAÎNE (exec/suites), l'historique se termine par un
+     message _exec (role user) et le DOM par une bulle assistant contenant N
+     tours. On ne popping qu'UN message laissait 3 réponses assistant + le
+     journal _exec dans l'historique alors que les rangées étaient supprimées :
+     la régénération repartait d'un contexte invisible, et le F5 faisait
+     réapparaître les tours retirés. On remonte donc jusqu'au dernier message
+     user RÉEL (hors _exec) et on purge tout ce qui suit. */
+  let idxUser = -1;
+  for (let i = convo.messages.length - 1; i >= 0; i--) {
+    const mm = convo.messages[i];
+    if (mm && mm.role === 'user' && !mm._exec) { idxUser = i; break; }
+  }
+  if (idxUser >= 0) {
+    convo.messages.length = idxUser + 1;
+  } else if (convo.messages.length && convo.messages[convo.messages.length - 1].role === 'assistant') {
     convo.messages.pop();
   }
   /* v1.2 (audit) : Régénérer repart de la question — donc le budget et la
-     mémoire de la chaîne repartent aussi. Avant, rien n'était réinitialisé :
-     _toursExec gardait l'ancien compteur (budget fantôme), _budgetEpuise
-     resté à true BLOQUAIT toute commande sans explication, _msgExec pointait
-     après le pop() vers un autre message (le rewrite du journal écrasait le
-     MAUVAIS message → historique corrompu envoyé au modèle), et
-     _relanceFaite interdisait toute relance. */
-  convo._toursExec = 0;
-  convo._cmdExecutees = [];
-  convo._fenetreExec = [];
-  convo._msgExec = null;
-  convo._budgetEpuise = false;
-  convo._relanceFaite = false;
+     mémoire de la chaîne repartent aussi (factorisé v20261007). */
+  reinitialiserChaine(convo);
   convo.maj = Date.now();
   sauverConversations();
   rangeesReponse.forEach((rangee) => rangee.remove());
