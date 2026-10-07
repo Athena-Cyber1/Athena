@@ -125,7 +125,7 @@ function icoSvg(nom) {
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('class', 'ico');
   svg.setAttribute('aria-hidden', 'true');
-  svg.innerHTML = SVG_ICOS[nom] || SVG_ICOS.x;
+  htmlInterne(svg, SVG_ICOS[nom] || SVG_ICOS.x);
   return svg;
 }
 
@@ -260,6 +260,38 @@ function appelAgent(chemin, options, ms) {
     })
     .finally(() => { clearTimeout(minuterie); jeu.delete(ctrl); });
 }
+/* v20261007 (di) — MINUTERIES DE FOND : UN SEUL POINT D'ARRÊT.
+   Audit : 5 setInterval pour 3 clearInterval. Vérification une par une :
+   - `minuteurEntrainement` est apparié (clearInterval + remise à null) ;
+   - le minuteur de L4727 s'arrête tout seul quand son nœud quitte le DOM
+     (`if (!det.isConnected) clearInterval(...)`) ;
+   - les deux derniers (sonder 25 s, majBadgeContexte 5 s) étaient créés une
+     fois au chargement et vivaient jusqu'à la fermeture de l'onglet. Ils ne
+     s'accumulent pas — l'application n'a pas de démontage de vue, les IIFE ne
+     tournent qu'une fois — mais ils continuaient de tourner sur un onglet en
+     arrière-plan, et `majBadgeContexte` recalcule les compteurs de jetons
+     toutes les 5 secondes pour rien quand le panneau est fermé.
+   On les déclare dans un registre unique, mis en pause quand l'onglet devient
+   invisible et détruit au `pagehide`. */
+const tachesFond = new Set();
+function tacheFond(fn, ms) {
+  const t = { id: setInterval(fn, ms), fn, ms };
+  tachesFond.add(t);
+  return t;
+}
+function arreterTachesFond() {
+  for (const t of tachesFond) { if (t.id) { clearInterval(t.id); t.id = 0; } }
+}
+function demarrerTachesFond() {
+  for (const t of tachesFond) { if (!t.id) t.id = setInterval(t.fn, t.ms); }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) arreterTachesFond();
+  else demarrerTachesFond();
+});
+window.addEventListener('pagehide', () => { arreterTachesFond(); tachesFond.clear(); });
+window.addEventListener('pageshow', () => { demarrerTachesFond(); });
+
 function fichierVersBase64(fichier) {
   return new Promise((resoudre, rejeter) => {
     const lecteur = new FileReader();
@@ -2031,7 +2063,7 @@ function afficherCompte() {
   details.className = 'setting-row';
   const copy = document.createElement('span');
   copy.className = 'setting-copy';
-  copy.innerHTML = '<span>Neyzoxx</span><small>Plan gratuit · compte local</small>';
+  htmlInterne(copy, '<span>Neyzoxx</span><small>Plan gratuit · compte local</small>');
   const action = document.createElement('button');
   action.type = 'button';
   action.className = 'settings-tab';
@@ -2299,6 +2331,20 @@ function echapperHtml(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+/* v20261007 (di) — FRONTIÈRE D'INJECTION, UN SEUL POINT.
+   Audit : cinq `innerHTML` dispersés, dont deux portaient du texte du modèle.
+   Ils passaient tous deux par `markdownInline`, mais rien n'empêchait un
+   nouveau chemin d'écrire une chaîne brute dans le DOM — l'audit le signale à
+   juste titre, c'est le piège classique du « ici c'est sûr ».
+   On ferme la frontière en nommant les deux origines possibles :
+   - `htmlInterne` : littéraux de l'application (jeu fermé, relu à l'œil).
+   - `htmlDuModele` : SEUL point autorisé pour du texte du modèle. Il passe
+     par `markdownInline`, dont l'échappement est la DERNIÈRE opération.
+   Règle : tout ce qui vient du modèle passe par `htmlDuModele`. Le
+   comportement est verrouillé par tests/xss-markdown.test.cjs (21 cas). */
+function htmlInterne(cible, html) { cible.innerHTML = html; }
+function htmlDuModele(cible, texte) { cible.innerHTML = markdownInline(texte); }
 
 /* Décodage des entités HTML les plus fréquentes (une seule passe, non
    superposable : &amp;lt; ne donne qu'&lt; — pas de décodage en cascade).
@@ -4332,7 +4378,7 @@ function markdownVersFragment(texte) {
   const viderParagraphe = () => {
     if (!paragraphe.length) return;
     const p = document.createElement('p');
-    p.innerHTML = markdownInline(paragraphe.join('\n'));
+    htmlDuModele(p, paragraphe.join('\n'));
     fragment.appendChild(p);
     paragraphe = [];
   };
@@ -4417,7 +4463,7 @@ function markdownVersFragment(texte) {
     if (titre) {
       viderParagraphe();
       const h = document.createElement('h' + Math.min(titre[1].length, 3));
-      h.innerHTML = markdownInline(titre[2]);
+      htmlDuModele(h, titre[2]);
       fragment.appendChild(h);
       i++;
       continue;
@@ -5445,7 +5491,7 @@ async function sonder() {
      affirmait que ces ids « EXISTENT dans le HTML » était faux. La sonde
      périodique est conservée (elle détecte toujours les pannes). */
   sonder();
-  setInterval(sonder, 25000);
+  tacheFond(sonder, 25000);
 
 /* ---------- v9.4 — Pastille « ↓ nouvelle réponse » ----------
    Défilement auto désactivé (ou remontée manuelle pendant la génération) :
@@ -5456,7 +5502,7 @@ async function sonder() {
 const pastilleReponseEl = document.createElement('button');
 pastilleReponseEl.type = 'button';
 pastilleReponseEl.className = 'pastille-reponse';
-pastilleReponseEl.innerHTML = '<span class="pastille-fleche"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" transform="rotate(180 12 12)"/></svg></span><span>Nouvelle réponse</span><span class="pastille-nouveau" hidden>0</span>';
+htmlInterne(pastilleReponseEl, '<span class="pastille-fleche"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" transform="rotate(180 12 12)"/></svg></span><span>Nouvelle réponse</span><span class="pastille-nouveau" hidden>0</span>');
 pastilleReponseEl.setAttribute('aria-label', 'Aller à la nouvelle réponse');
 let nbHorsVue = 0;
 function presDuBas() {
@@ -7772,7 +7818,7 @@ function rendreHudContexte() {
     bouton.setAttribute('aria-expanded', 'true');
   });
   panneau.addEventListener('click', (e) => e.stopPropagation());
-  setInterval(() => { try { majBadgeContexte(); } catch (_) {} }, 5000);
+  tacheFond(() => { try { majBadgeContexte(); } catch (_) {} }, 5000);
 })();
 
 /* ---------- v banc 20261006 — HUD journal debug (§3) ----------

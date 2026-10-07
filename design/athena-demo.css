@@ -2269,30 +2269,42 @@ span.think:not(details .think) {
 .modale-actions button:hover {
   border-color: var(--primaire);
 }
-.modale-principal {
-  background: var(--primaire) !important;
-  color: var(--sur-primaire) !important;
-  border-color: var(--primaire-fort) !important;
+/* v20261007 (di) — FIN DE LA GUERRE DE SPÉCIFICITÉ.
+   `.modale-actions button` est (0,1,1) : une classe + un type. Les variantes
+   `.modale-principal` / `.modale-danger` n'étaient que (0,1,0) — donc battues
+   sur background, color et border — et il fallu dix `!important` pour
+   forcer. On scope les variantes à leur conteneur réel
+   (`.modale-actions button.modale-principal` = 0,2,1) : le conflit
+   disparaît par la structure du sélecteur, pas par la force.
+   chat-demo.js construit ces boutons en `actions.appendChild(ok)`, le parent
+   `.modale-actions` est donc garanti ; et même sans lui, l'ordre de la cascade
+   ne joue plus.
+   Styles INCHANGÉS : vérifié par mesure des styles calculés avant/après
+   (fond, texte, bordure, graisse, corps, interlettrage, casse, rayon). */
+.modale-actions button.modale-principal {
+  background: var(--primaire);
+  color: var(--sur-primaire);
+  border-color: var(--primaire-fort);
   font-weight: 600;
 }
-.modale-principal:hover {
-  background: var(--primaire-fort) !important;
+.modale-actions button.modale-principal:hover {
+  background: var(--primaire-fort);
 }
 /* Danger : contour DOUBLE + fond contrasté — forme distincte du bouton
    principal (le monochrome interdit de jouer sur la teinte rouge). */
-.modale-danger {
-  background: var(--fond) !important;
-  color: var(--texte) !important;
-  border: 2px double var(--texte) !important;
+.modale-actions button.modale-danger {
+  background: var(--fond);
+  color: var(--texte);
+  border: 2px double var(--texte);
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   font-size: 0.78rem;
 }
-.modale-danger:hover {
-  background: var(--danger-fond) !important;
-  border-color: var(--danger-texte) !important;
-  color: var(--danger-texte) !important;
+.modale-actions button.modale-danger:hover {
+  background: var(--danger-fond);
+  border-color: var(--danger-texte);
+  color: var(--danger-texte);
 }
 /* Bandeau persistant (stockage saturé, etc.) — role=alert, pas un toast. */
 .bandeau-persistant {
