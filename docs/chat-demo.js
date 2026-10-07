@@ -155,6 +155,12 @@ let verrouChaine = false;
    le tenir encore — une commande peut durer plusieurs minutes, aucun delai
    raisonable ne pourrait servir de borne. */
 let chaineOutilsEnCours = false;
+/* v20261007 (dl) : quand l'utilisateur a demande l'arret, et a partir de quand. Sert
+   au delai de securite : si le debaillement n'a pas eu lieu, on libere quand meme. */
+let arretDemandeDepuis = 0;
+/* 5 s : le debaillement normal d'un abort est mesure a ~1,2 s sur machine
+   chargee ; au-dela, on considere que l abort ne reviendra pas. */
+const ARRET_GRACE_MS = 5000;
 let fichiersJoints = [];
 /* v20260926a (pièces jointes) : contenu TEXTUEL lu côté navigateur à l'ajout
    du fichier, indexé par file_id. Non persisté (les conversations gardent
@@ -5829,6 +5835,18 @@ function majBoutonArret() {
     btnEl.title = 'Arrêter la génération';
     btnEl.setAttribute('aria-label', 'Arrêter la génération');
     btnEl.classList.add('en-cours');
+    /* v20261007 (dl) — LE BOUTON « ARRÊTER » DOIT TOUJOURS ÊTRE ACTIONNABLE.
+       C'est le bug exact du symptôme « le bouton reste figé sur l'arrêt ».
+       `disabled` n'est géré que par `majBouton()` (`occupé ? false : ...`),
+       or plusieurs chemins posent le verrou en n'appelant QUE `majBoutonArret()` :
+       « Régénérer » (Alt+R) le fait, « Continuer » aussi, et `verrouiller()`
+       dans le flux d'envoi. Résultat : après Alt+R sur un champ vide, le
+       bouton PORTAIT le libellé « Arrêter la génération » et l'icône d'arrêt,
+       mais restait `disabled` — hérité de l'état au repos. L'arrêt devenait
+       donc IMPOSSIBLE, et le bouton restait figé sur « Arrêter » jusqu'au
+       rechargement de la page. On rend l'invariant au lieu de faire confiance
+       à chaque appelant. */
+    btnEl.disabled = false;
   } else {
     btnEl.replaceChildren(icoSvg('send'));
     btnEl.title = 'Envoyer';
@@ -5860,9 +5878,22 @@ function reconcilierVerrou() {
      plus mettre occupe a true : le verrou est mort, on le retire. Aucun
      delai, donc aucune liberation prematuree pendant une longue commande. */
   const vivant = generationsEnCours > 0 || relanceEnCours === true || chaineOutilsEnCours === true;
-  if (occupe && !vivant) {
+  /* v20261007 (dl) : DELAI DE SECURITE APRES UN ARRET.
+     L'arret demande est un ABORT : le finally de la generation doit deballer et
+     liberer. Mais si l'appel sous-jacent ne se resout JAMAIS - un provider
+     qui ignore le signal, une promesse restee en suspens - le compteur reste a
+     1, la reconciliation le croit vivant, et le bouton reste sur « Arreter »
+     POUR LE RESTE DE LA SESSION. C'est exactement le symptome « il reste
+     bloque, un rechargement suffit » : l'etat ne vit qu'en memoire.
+     Apres un arret demande, l'utilisateur n'attend plus rien : attendre
+     indefiniment un abort qui ne revient pas n'est pas une garantie, c'est un
+     blocage. Delai de grace pour le debaillement normal, puis on libere quoi
+     qu'il arrive - l'abort a deja ete envoye partout. */
+  const arretForce = arretDemandeDepuis > 0 && (Date.now() - arretDemandeDepuis) > ARRET_GRACE_MS;
+  if (occupe && (!vivant || arretForce)) {
     verrouChaine = false;
     occupe = false;
+    arretDemandeDepuis = 0;
   }
   /* repeint dans tous les cas : le bouton doit refléter l'état réel, pas
      l'état au moment du dernier appel. */
@@ -6033,6 +6064,7 @@ async function genererReponse(convo, opts) {
      par-dessus. Un compteur rend le dé-verrouillage sûr même quand deux tours
      se chevauchent (relance synchrone avant le finally de l'appelant). */
   generationsEnCours += 1;
+  arretDemandeDepuis = 0;   /* v20261007 (dl) : nouvel essai, le delai de grace repart de zero */
   occupe = true;
   majBoutonArret();
   /* verrouChaine : la réponse porte de quoi enchaîner (exec/fichiers) → le
@@ -6600,7 +6632,12 @@ $('form').addEventListener('submit', (e) => {
       notifier('Arrêt demandé — la suite s\'arrête.');
     }
 dernierStop = Date.now();
-      /* v20261007 (dj) : l'arrêt doit aussi LIBÉRER le bouton. On tombe le
+  /* v20261007 (dl) : on note l'arrêt pour que la réconciliation puisse libérer
+     même si le débaillement ne revient JAMAIS — un appel sous-jacent qui ne se
+     résout pas laisse le compteur à 1 et le bouton figé sur « Arrêter » pour
+     toute la session (cf. ARRET_GRACE_MS). */
+  arretDemandeDepuis = Date.now();
+  /* v20261007 (dj) : l'arrêt doit aussi LIBÉRER le bouton. On tombe le
          verrou de chaîne : sans ça, le `finally` de la génération — qui
          déverrouille sur `!generationsEnCours && !verrouChaine` — ne pouvait
          pas rendre le bouton, qui restait affiché « Arrêter ». Et si rien
