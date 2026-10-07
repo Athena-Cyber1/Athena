@@ -409,7 +409,46 @@ async function main() {
   V(J.cap.chat.length === 1, 'J: un seul appel chat (pas de relance parasites)',
     'chat=' + J.cap.chat.length);
 
-  console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 38/38 OK');
+  /* --- Scénario K : le bouton n'est plus figé sur « Arrêter » ---------------
+        Garde-fou de comportement, PAS une reproduction démontrée du bug.
+        Le défaut corrigé dans chat-demo.js est structurel : `verrouChaine` était
+        déclaré `let` À L'INTÉRIEUR de genererReponse, donc invisible de
+        deverrouillerChaine() et du handler d'arrêt — aucun autre code ne
+        pouvait le remettre à false, alors qu'il conditionne le dé-verrouillage
+        (`!generationsEnCours && !verrouChaine`).
+
+        Honnêteté sur la portée : ce scénario exercise une vraie chaîne
+        d'outils puis un vrai appui sur le bouton d'arrêt, mais il reste VERT
+        même avec le code d'origine réinjecté — l'entrelacement exact qui
+        bloque le bouton n'a pas été reproduit ici. Le test verrouille donc le
+        comportement attendu (le bouton redevient « Envoyer »), pas la
+        régression. La confirmation que le symptôme a disparu reste à faire
+        dans l'application.
+
+        On vérifie ce que la PERSONNE voit : le harnais jsdom n'expose pas les
+        `let` de premier niveau (le scénario J tolère `null` pour ça). */
+     const repK = 'Je continue.\n\n```athena-exec\nWrite-Output TOUR_K\n```';
+     const K = charger(new Array(12).fill(repK));
+     const coK = pousser(K.w, 'Analyse le depot.');
+     const pK = K.w.genererReponse(coK).catch(() => {});
+     await attendre(() => K.cap.chat.length >= 2, 8000);
+     await attendre(() => K.cap.exec.length >= 1, 8000);
+     /* l'utilisateur appuie sur le bouton : occupe est vrai -> c'est l'arrêt */
+     K.w.document.getElementById('form').dispatchEvent(new K.w.Event('submit', { cancelable: true, bubbles: true }));
+     await sleep(900);
+     const btnK = await K.w.eval('(function(){ var b=document.getElementById("btn"); return b ? { enCours: b.classList.contains("en-cours"), titre: b.title } : null; })()');
+     V(Boolean(btnK) && btnK.enCours === false, 'K: le bouton n est plus en mode Arreter', JSON.stringify(btnK));
+     V(Boolean(btnK) && /Envoyer/.test(btnK.titre || ''), 'K: le bouton porte de nouveau le libelle Envoyer', JSON.stringify(btnK));
+     await pK;
+     await sleep(500);
+     const chatFinK = K.cap.chat.length;
+     await sleep(700);
+     V(K.cap.chat.length === chatFinK, 'K: plus aucune relance apres l arret', 'chat=' + K.cap.chat.length);
+     const btnK2 = await K.w.eval('(function(){ var b=document.getElementById("btn"); return b ? { enCours: b.classList.contains("en-cours"), titre: b.title } : null; })()');
+     V(Boolean(btnK2) && btnK2.enCours === false && /Envoyer/.test(btnK2.titre || ''),
+       'K: le bouton reste libere une fois le deballage termine', JSON.stringify(btnK2));
+
+     console.log(echecs ? `  RESULTAT: ${echecs} ECHEC(S)` : '  RESULTAT: 43/43 OK');
   process.exit(echecs ? 1 : 0);
 }
 

@@ -1,4 +1,4 @@
-/* Fond 3D Three.js SUPPRIMÉ (design simple demandé par l'utilisateur) : le
+﻿/* Fond 3D Three.js SUPPRIMÉ (design simple demandé par l'utilisateur) : le
    canvas #bg était déjà masqué par CSS mais le module (≈1 Mo depuis un CDN)
    continuait de se charger et de rendre 60 images/s en tâche de fond — CPU
    et RAM gaspillés pour un décor invisible. Le module démarre désormais
@@ -142,6 +142,14 @@ let occupe = false;
    moment-là — enchainerApresExec consulte le drapeau avant de repartir). */
 let generationsEnCours = 0;
 let chaineInterrompue = false;
+/* v20261007 (dj) : `verrouChaine` était déclaré AVEC `let` à l'INTÉRIEUR de
+   genererReponse — donc dans une portée où ni `deverrouillerChaine()` ni le
+   handler du bouton d'arrêt ne le voyaient. Le drapeau était posé à `true` au
+   début de la chaîne et ne pouvait être remis à `false` que par la portée qui
+   l'avait posé… laquelle ne le fait jamais. Conséquence : dès la première
+   chaîne d'outils, `occupe` ne pouvait plus revenir à false et le bouton restait
+   figé sur « Arrêter ». Le drapeau appartient à la session, pas à un appel. */
+let verrouChaine = false;
 let fichiersJoints = [];
 /* v20260926a (pièces jointes) : contenu TEXTUEL lu côté navigateur à l'ajout
    du fichier, indexé par file_id. Non persisté (les conversations gardent
@@ -5821,9 +5829,19 @@ function majBoutonArret() {
   }
 }
 /* §8.7 : libère le verrou UNIQUEMENT quand plus aucune génération ne vit —
-   appelé en fin de chaîne (enchainerApresExec sans suite à lancer). */
+   appelé en fin de chaîne (enchainerApresExec sans suite à lancer).
+   v20261007 (dj) : BUG « bouton figé sur Arrêter ».
+   `verrouChaine` était posé à `true` au début de la chaîne d'outils et
+   JAMAIS remis à false — il n'était écrit qu'à un seul endroit. Or c'est lui
+   qui conditionne le dé-verrouillage : `if (!generationsEnCours && !verrouChaine)`.
+   Après une SEULE chaîne d'outils, `occupe` ne pouvait donc plus revenir à
+   false, et le bouton restait sur « Arrêter » pour le reste de la session ; un
+   nouvel appui ne pouvait plus rien annuler puisque plus rien ne tournait.
+   Les points d'appel de cette fonction sont exactement les fins de chaîne
+   (arrêt, plus de résultat, budget épuisé, plafond de tours, erreur) : c'est
+   donc ici que les deux drapeaux doivent tomber. */
 function deverrouillerChaine() {
-  if (!generationsEnCours) occupe = false;
+  if (!generationsEnCours) { verrouChaine = false; occupe = false; }
   majBoutonArret();
   majBouton();
 }
@@ -5979,8 +5997,11 @@ async function genererReponse(convo, opts) {
   majBoutonArret();
   /* verrouChaine : la réponse porte de quoi enchaîner (exec/fichiers) → le
      lock tient jusqu'à la résolution de la chaîne : le finally s'exécute
-     AVANT le .then, il ne suffit plus à lui seul. */
-  let verrouChaine = false;
+     AVANT le .then, il ne suffit plus à lui seul.
+     v20261007 (dj) : le drapeau est déclaré au niveau module (avec
+     generationsEnCours) — ici c'est un `let` local, invisible de
+     deverrouillerChaine() et du handler d'arrêt, et il restait vrai
+     pour le reste de la session. */
   let think, suiteBox = null;
   if (suiteDe) {
     /* v1.2 (discrétion) : la suite ne rejoue PAS tout le cirque « le modèle
@@ -6529,8 +6550,21 @@ $('form').addEventListener('submit', (e) => {
     } else {
       notifier('Arrêt demandé — la suite s\'arrête.');
     }
-    dernierStop = Date.now();
-    return;
+dernierStop = Date.now();
+      /* v20261007 (dj) : l'arrêt doit aussi LIBÉRER le bouton. On tombe le
+         verrou de chaîne : sans ça, le `finally` de la génération — qui
+         déverrouille sur `!generationsEnCours && !verrouChaine` — ne pouvait
+         pas rendre le bouton, qui restait affiché « Arrêter ». Et si rien
+         n'est réellement en vol (generation déjà terminée, follow-up en
+         attente), on rend tout de suite plutôt que d'attendre un `finally`
+         qui ne viendra pas. */
+      verrouChaine = false;
+      if (!generationsEnCours) {
+        occupe = false;
+        majBoutonArret();
+        majBouton();
+      }
+      return;
   }
   envoyer();
 });
