@@ -91,6 +91,27 @@ for (const s of css) {
   const ok = fs.existsSync(f);
   console.log('  css ' + s + ' exists=' + ok);
   if (!ok) signaler('feuille de style absente : ' + s);
+  /* v20261007 (dh) : EQUILIBRE DES ACCOLADES.
+     check.js ne lisait pas le CSS. Une édition qui tronque une règle (fermeture
+     ou sélecteur suivant mangé) laissait des déclarations orphelines et le
+     site perdait des styles — sans qu'aucun contrôle ne bronche, puisque le
+     fichier existe et que le HTML reste valide. On compte la profondeur. */
+  if (ok) {
+    const texte = fs.readFileSync(f, 'utf8');
+    let profondeur = 0, premierNégatif = 0, ligne = 1;
+    for (let i = 0; i < texte.length; i++) {
+      const c = texte[i];
+      if (c === '\n') ligne++;
+      else if (c === '{') profondeur++;
+      else if (c === '}') {
+        profondeur--;
+        if (profondeur < 0 && !premierNégatif) { premierNégatif = ligne; profondeur = 0; }
+      }
+    }
+    const equilibre = profondeur === 0 && !premierNégatif;
+    console.log('  css ' + s + ' accolades=' + (equilibre ? 'equilibrees' : 'DESEQUILIBREES (profondeur ' + profondeur + ', fermeture orpheline L' + premierNégatif + ')'));
+    if (!equilibre) signaler('CSS desequilibre : ' + s + ' (accolades)');
+  }
 }
 console.log(bloquants.length ? 'ECHEC : ' + bloquants.length + ' anomalie(s) bloquante(s)' : 'OK : aucune anomalie bloquante');
 if (bloquants.length) process.exitCode = 1;
