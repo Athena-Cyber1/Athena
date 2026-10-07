@@ -1,4 +1,4 @@
-﻿/* Fond 3D Three.js SUPPRIMÉ (design simple demandé par l'utilisateur) : le
+/* Fond 3D Three.js SUPPRIMÉ (design simple demandé par l'utilisateur) : le
    canvas #bg était déjà masqué par CSS mais le module (≈1 Mo depuis un CDN)
    continuait de se charger et de rendre 60 images/s en tâche de fond — CPU
    et RAM gaspillés pour un décor invisible. Le module démarre désormais
@@ -150,6 +150,11 @@ let chaineInterrompue = false;
    chaîne d'outils, `occupe` ne pouvait plus revenir à false et le bouton restait
    figé sur « Arrêter ». Le drapeau appartient à la session, pas à un appel. */
 let verrouChaine = false;
+/* v20261007 (dk) : une chaine d'outils est-elle en train de s'executer ?
+   C'est le signal deterministe qui dit a la reconciliation du verrou qu'il faut
+   le tenir encore — une commande peut durer plusieurs minutes, aucun delai
+   raisonable ne pourrait servir de borne. */
+let chaineOutilsEnCours = false;
 let fichiersJoints = [];
 /* v20260926a (pièces jointes) : contenu TEXTUEL lu côté navigateur à l'ajout
    du fichier, indexé par file_id. Non persisté (les conversations gardent
@@ -5500,6 +5505,9 @@ async function sonder() {
      périodique est conservée (elle détecte toujours les pannes). */
   sonder();
   tacheFond(sonder, 25000);
+  /* v20261007 (dk) : reconciliation du verrou toutes les 2 s — garantit que le
+     bouton finit toujours par refléter l'etat reel (cf. reconcilierVerrou). */
+  tacheFond(reconcilierVerrou, 2000);
 
 /* ---------- v9.4 — Pastille « ↓ nouvelle réponse » ----------
    Défilement auto désactivé (ou remontée manuelle pendant la génération) :
@@ -5827,6 +5835,38 @@ function majBoutonArret() {
     btnEl.setAttribute('aria-label', 'Envoyer');
     btnEl.classList.remove('en-cours');
   }
+}
+/* v20261007 (dk) — RÉCONCILIATION DU VERROU.
+   Symptôme rapporté : après un arrêt, le bouton restait sur « Arrêter » — de
+   façon PERSISTANTE, jusqu'au rechargement de la page. Un état qui ne survit
+   qu'en mémoire et que seul un rechargement efface : c'est un drapeau resté
+   vrai, ou un bouton repeint à partir d'un état qui ne l'était plus.
+   Les écritures d'`occupe` sont réparties dans six endroits (verrouiller,
+   deverrouiller, deverrouillerChaine, début et finally de genererReponse,
+   « Continuer », « Régénérer ») et les chaînes d'outils ajoutent un verrou de
+   temps. Il suffit d'en manquer un pour que l'interface parte pour de bon.
+   On fait donc converger l'état depuis la RÉALITÉ, plutôt que d'espérer que
+   chaque chemin libère :
+     - rien ne tourne      -> `generationsEnCours === 0`
+     - aucune suite en vol -> `relanceEnCours === false`
+     le verrou de chaîne ne peut être honoré que s'il est récent :
+       entre le finally d'un tour et le lancement du suivant, il est le SEUL
+       signal, d'où le délai maximal. Passé ce délai, une chaîne qui ne
+       relance personne est morte. */
+function poserVerrouChaine() { verrouChaine = true; }
+function reconcilierVerrou() {
+  /* Deterministe : si aucune generation ne tourne, qu'aucune relance n'est en
+     vol et qu'aucune chaine d'outils ne s'execute, alors plus rien ne peut
+     plus mettre occupe a true : le verrou est mort, on le retire. Aucun
+     delai, donc aucune liberation prematuree pendant une longue commande. */
+  const vivant = generationsEnCours > 0 || relanceEnCours === true || chaineOutilsEnCours === true;
+  if (occupe && !vivant) {
+    verrouChaine = false;
+    occupe = false;
+  }
+  /* repeint dans tous les cas : le bouton doit refléter l'état réel, pas
+     l'état au moment du dernier appel. */
+  majBoutonArret();
 }
 /* §8.7 : libère le verrou UNIQUEMENT quand plus aucune génération ne vit —
    appelé en fin de chaîne (enchainerApresExec sans suite à lancer).
@@ -6325,7 +6365,11 @@ btnCont.addEventListener('click', () => {
              cours + suite suivante) — sinon le bouton repassait en
              « Envoyer » entre les tours et la conversation n'était plus
              arrêtable après une suite. */
-          verrouChaine = true;
+          poserVerrouChaine();
+          /* v20261007 (dk) : la chaîne s'exécute — le verrou doit être tenu
+             même si aucune génération ne tourne entre deux tours, et une
+             commande peut durer des minutes. */
+          chaineOutilsEnCours = true;
           /* v1.2 (audit 14:27) : UNE SEULE chaîne avec commandes + fichiers.
              Avant, les fichiers partaient en fire-and-forget : le modèle ne
              savait jamais où son fichier avait atterri, devinait un chemin,
@@ -6355,7 +6399,12 @@ btnCont.addEventListener('click', () => {
                  ni résultat ni message). */
               if (window.console && console.warn) console.warn('chaine d\'outils interrompue', eCh);
               deverrouillerChaine();
-            });
+            })
+            /* v20261007 (dk) : tant que cette chaîne s'exécute, le verrou doit
+               être tenu — une commande peut durer des minutes. C'est ce drapeau,
+               et non un délai, qui dit à la réconciliation « ça travaille
+               encore ». */
+            .finally(() => { chaineOutilsEnCours = false; });
         } else {
           /* v20261007 : en mode MANUEL rien ne s'exécute en arrière-plan :
              la garde anti-promesse / anti-tour-en-rond peut donc tourner
