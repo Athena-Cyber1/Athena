@@ -3712,21 +3712,9 @@ details.raisonnement li.doute {
   max-width: 920px;
   margin: 8px auto 0;
   padding: 0 4px;
-  /* v20261007 : couleur de thème — #8f8f8f sur blanc ne descendait qu'à ~3,5:1,
-     sous le seuil AA pour du texte de 0,7 rem. */
-  color: var(--texte-doux, #8f8f8f);
+  color: #8f8f8f;
   font-size: 0.7rem;
   line-height: 1.35;
-}
-/* v20261007 (U1) : emplacement de l'indicateur d'état (#dot / #statut). */
-.composeur-etat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-}
-.composeur-etat .dot {
-  cursor: pointer;
 }
 
 .composeur-niveau {

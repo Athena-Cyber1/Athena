@@ -69,7 +69,8 @@ const interpreteurBordEl = $('interpreteur-bord');
 const saisieMirrorEl = $('saisie-mirror');
 const navProjetsEl = $('nav-projets'), navArtefactsEl = $('nav-artefacts');
 const navCodeEl = $('nav-code'), navPersonnaliserEl = $('nav-personnaliser');
-const statutEl = $('statut'), dotEl = $('dot');
+/* v20261007 : plus de #statut / #dot (le pied du composeur a retrouvé son
+   état d'origine) — voir la suppression de majStatut plus bas. */
 const fichiersEl = $('fichiers'), attacherEl = $('attacher'), apercuFichiersEl = $('file-preview');
 const compteurSaisieEl = $('compteur-saisie');
 const nouvelleDiscussionEl = $('nouvelle-discussion');
@@ -5428,35 +5429,23 @@ async function appelerApi(historique, signal = null, surProgression = null, atta
 
 /* ---------- Sonde d'état ---------- */
 async function sonder() {
-  try {
-    /* v20260922l (20) : sonde bornée à 5 s — un /api/chat suspendu ne laisse
-       plus un fetch fantôme pendant indéfiniment. */
-    const r = await fetch('/api/chat', { cache: 'no-store', signal: delaiFetch(5000) });
-    const d = await r.json();
-    majStatut(d.modele_charge ? 'pret' : 'indisponible');
-  } catch { majStatut('indisponible'); }
-}
-function majStatut(s) {
-  if (!statutEl || !dotEl) return;
-  statutEl.textContent = s === 'pret' ? 'prêt' : s === 'indisponible' ? 'redémarre…' : '…';
-  /* v9.4 : les ids statut/dot EXISTENT désormais dans le HTML (indicateur
-     « redémarre… » enfin visible au-dessus du composeur) ; couleurs par
-     classes CSS (l'inline hérité est neutralisé). */
-  dotEl.className = 'dot' + (s === 'pret' ? ' pret' : s === 'indisponible' ? ' indisponible' : '');
-  dotEl.style.background = '';
-  dotEl.style.boxShadow = '';
-  /* Actionnable : clic = relance immédiate de la sonde (porte de sortie
-     sur l'alerte pulsée, au lieu d'un signal sans action). */
-  dotEl.setAttribute('data-actionnable', '1');
-  dotEl.title = s === 'indisponible'
-    ? 'Moteur indisponible — cliquer pour relancer la vérification'
-    : 'État du moteur — cliquer pour revérifier';
-}
-if (dotEl) {
-  dotEl.addEventListener('click', () => { sonder(); });
-}
-sonder();
-setInterval(sonder, 25000);
+    try {
+      /* v20260922l (20) : sonde bornée à 5 s — un /api/chat suspendu ne laisse
+         plus un fetch fantôme pendant indéfiniment. */
+      await fetch('/api/chat', { cache: 'no-store', signal: delaiFetch(5000) }).then((r) => r.json());
+    } catch (_) {
+      /* la sonde ne sert plus qu'à détecter une panne réseau : sans point
+         d'affichage dans l'interface, son résultat n'a rien à montrer */
+    }
+  }
+  /* v20261007 : le pied du composeur a été restauré à son état d'origine, donc
+     les éléments #statut / #dot n'existent plus. Tout ce bloc n'était déjà
+     qu'un no-op (`if (!statutEl || !dotEl) return`) : on le supprime plutôt que
+     de laisser une garde qui masque l'absence — et le commentaire qui
+     affirmait que ces ids « EXISTENT dans le HTML » était faux. La sonde
+     périodique est conservée (elle détecte toujours les pannes). */
+  sonder();
+  setInterval(sonder, 25000);
 
 /* ---------- v9.4 — Pastille « ↓ nouvelle réponse » ----------
    Défilement auto désactivé (ou remontée manuelle pendant la génération) :
