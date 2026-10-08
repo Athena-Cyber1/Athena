@@ -2174,6 +2174,13 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
       /* v20260926d (kimi) : sans [DONE] ni finish_reason, une fin de flux
          propre reste une COUPURE — le partiel ne passe pas pour du complet. */
       var vuFin = false;
+    /* v20261007 (dn) : le flux se termine-t-il par le serveur (connexion fermée
+       proprement) ou par une coupure ? Les deux cas sortaient de la boucle sans
+       `finish_reason`, et le second était marqué `partiel` — d'où un modèle
+       qui « s'arrête tout seul » alors que sa réponse était entière. Beaucoup
+       de fournisseurs gratuits ferment simplement le flux sans marqueur de
+       fin : ce n'est PAS une coupure. */
+    var finPropre = false;
       /* v20260926b (direct) : curseurs des JETONS (texte nouveau depuis le
          dernier envoi) — l'UI affiche la réponse et le raisonnement AU FUR
          ET À MESURE au lieu d'attendre le bloc final. */
@@ -2233,7 +2240,7 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
              d'attendre la borne totale. */
           var lu = await appelBorne(reader.read(), premierOctet ? delaiInactivite : delaiPremier);
           premierOctet = true;
-          if (lu.done) break;
+          if (lu.done) { finPropre = true; break; }
           tampon += dec.decode(lu.value, { stream: true });
           var idx;
           while ((idx = tampon.indexOf('\n')) >= 0) {
@@ -2324,8 +2331,8 @@ if (pk === 'openrouter' && entry && !entry._effortIgnore && !effortsIgnores[entr
         if (pensee.length > emisJetonPensee) onDelta('jeton-raisonnement', pensee.slice(emisJetonPensee));
         if (contenu.length > emisJetonContenu) onDelta('jeton-reponse', contenu.slice(emisJetonContenu));
       }
-      if (!vuFin) {
-        var eCoup = new Error(entry.provider + ' : flux terminé sans marqueur de fin');
+      if (!vuFin && !finPropre) {
+        var eCoup = new Error(entry.provider + ' : flux coupe sans marqueur de fin');
         eCoup.partiel = true;
         throw eCoup;
       }

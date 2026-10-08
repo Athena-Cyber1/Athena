@@ -6723,6 +6723,48 @@ fichiersEl.addEventListener('change', () => {
   fichiersEl.value = ''; /* permet de resélectionner le même fichier */
   ajouterFichiers(fichiers);
 });
+/* v20261007 (do) — DÉPOSER DES FICHIERS SUR LE COMPOSEUR.
+   Le seul moyen d'attacher un fichier était le bouton « Attacher ». On accepte
+   désormais le glisser-déposer sur toute la zone de saisie, avec un retour
+   visuel (la zone s'illumine) et un compteur de fichiers déposés.
+   Volontairement limité aux FICHIERS : un glisser de texte ou d'URL depuis une
+   autre page écraserait le brouillon en cours — on n'accepte donc que
+   `dataTransfer.files`, et on laisse le behaviorspar défaut du navigateur
+   ailleurs. Pendant une génération on n'ajoute rien (le message est déjà parti,
+   la pièce jointe arriverait dans le tour suivant sans que ce soit voulu). */
+(function initDepotFichiers() {
+  const zone = document.querySelector('.saisie-zone') || saisieEl.parentElement;
+  if (!zone) return;
+  let profondeur = 0;
+  const porte = (e) => Array.from(e.dataTransfer && e.dataTransfer.types || []).includes('Files');
+  const marquer = (actif) => zone.classList.toggle('depot-fichiers', actif);
+  zone.addEventListener('dragenter', (e) => {
+    if (!porte(e)) return;
+    profondeur++;
+    marquer(true);
+  });
+  zone.addEventListener('dragover', (e) => {
+    if (!porte(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  zone.addEventListener('dragleave', () => {
+    profondeur = Math.max(0, profondeur - 1);
+    if (!profondeur) marquer(false);
+  });
+  zone.addEventListener('drop', (e) => {
+    if (!porte(e)) return;
+    e.preventDefault();
+    profondeur = 0;
+    marquer(false);
+    const fichiers = Array.from(e.dataTransfer.files || []);
+    if (!fichiers.length) return;
+    if (occupe) {
+      notifier('Réponse en cours — le fichier sera joint au prochain message.');
+    }
+    ajouterFichiers(fichiers);
+  });
+})();
 nouvelleDiscussionEl.addEventListener('click', () => nouvelleDiscussion());
 /* v20260926m : tuiles retirées du DOM — gardes nulles (pas de crash). */
 navProjetsEl?.addEventListener('click', () => afficherProjets());

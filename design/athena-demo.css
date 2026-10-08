@@ -5997,6 +5997,12 @@ html[data-theme="light"] .interpreteur-code {
 .plan-corps[hidden] {
   display: none;
 }
+/* v20261007 (do) : retour visuel du dépôt de fichiers sur le composeur. */
+.saisie-zone.depot-fichiers {
+  outline: 2px dashed var(--primaire);
+  outline-offset: 3px;
+  background: var(--carte-doux, rgba(255, 255, 255, 0.03));
+}
 .plan-liste {
   margin: 0;
   padding-left: 1.3em;
