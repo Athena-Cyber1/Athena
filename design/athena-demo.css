@@ -5157,6 +5157,20 @@ html {
 }
 html[data-theme="light"] {
   color-scheme: light;
+  /* BUG INTRODUIT EN e21ca90, CORRIGÉ ICI.
+     La consolidation des littéraux a remplacé `#171717` par `var(--texte)`
+     Y COMPRIS DANS LA DÉCLARATION DE `--texte` elle-même :
+         --texte: var(--texte);        ← circulaire
+     Une propriété custom qui se référence elle-même est INVALIDE en CSS. Le
+     jeton devenait vide, et tout ce qui en dépendait avec lui :
+     `--primaire: var(--texte)`, `--texte-doux: var(--texte-doux)`.
+     Mesure au navigateur, thème clair : `--texte` vide, texte rendu en
+     `rgb(0,0,0)` — noir pur au lieu de #171717. Le thème sombre était intact,
+     d'où un défaut invisible sauf en basculant le thème.
+     Ces deux déclarations restent donc des LITTERAUX : un jeton ne peut pas
+     être défini par lui-même. */
+  --texte: #171717;
+  --texte-doux: #616161;
   /* v20261007 (ea) : les surfaces de zone ont enfin un opposé en clair.
      Sans ces jetons, un littéral écrit dans `.msgs` ou `.side-pied` aurait
      affiché du sombre sur un thème clair — c'est exactement le symptôme que
@@ -5171,13 +5185,19 @@ html[data-theme="light"] {
   --fond-side-pied: #f2f1f0;
   --fond-share: #454242;
   --fond-share-survol: #555250;
-  --fond-partage-texte: #f2f2f2;
+--fond-partage-texte: #f2f2f2;
   --fond: #ffffff;
   --carte: #ffffff;
   --carte-doux: #f4f4f4;
   --sidebar: #ffffff;
-  --texte: var(--texte);
-  --texte-doux: var(--texte-doux);
+  /* v20261007 (eb) : ces deux-là étaient `var(--texte)` et `var(--texte-doux)`
+     — c'est-à-dire CIRCULAIRES, parce que le remplacement avait visé la
+     déclaration du jeton lui-même. Elles réapparaissaient 20 lignes plus bas,
+     après les valeurs littérales que je venais de poser en tête de bloc, et
+     ces dernières ne servaient donc à rien. Un jeton ne peut pas être défini
+     par lui-même : ici, il est défini par une valeur. */
+  --texte: #171717;
+  --texte-doux: #616161;
   --bord: #e4e4e4;
   --bord-fort: #c8c8c8;
   --primaire: var(--texte);
