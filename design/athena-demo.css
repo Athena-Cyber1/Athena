@@ -56,6 +56,21 @@ Règles collectives : bordures neutres = --bord/--bord-fort (jamais de
   --gris-texte: #606060;
   --code-fond: #0d0d0d;
   --ok: #111111;
+  /* v20261007 (dx) — SURFACES DE ZONE, en variables.
+     Elles manquaient, et c'est pourquoi les couleurs étaient écrites en dur
+     dans les règles : sans jeton, un littéral est le seul moyen d'exprimer une
+     surface de zone. Conséquence observée : changer la couleur d'une zone
+     imposait d aller chercher la valeur dans le CSS, et le thème clair ne
+     pouvait pas la suivre — il ne savait pas quoi surcharger.
+     Chaque surface a donc son jeton, avec son opposé en thème clair déclaré
+     dans le bloc `html[data-theme="light"]` plus bas. */
+  --fond-msgs: #1a1c1c;        /* le fil de discussion */
+  --fond-row: #191b1b;         /* une rangée, un cran au-dessus du fil */
+  --fond-side: #1b1b1b;        /* la barre latérale */
+  --fond-side-pied: #1c1a1a;   /* son pied, légèrement chaud */
+  --fond-share: #454242;       /* le bouton Partager */
+  --fond-share-survol: #555250;
+  --fond-partage-texte: #f2f2f2;
   --heros: linear-gradient(135deg, #fafafa 0%, #f1f1f1 55%, #ffffff 100%);
   --ombre: 0 1px 3px rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 0, 0, 0.07);
   /* Échelle de rayons partagée : S=petits contrôles, défaut=cartes, L=compositeur */
@@ -801,8 +816,12 @@ a:hover {
   align-items: center;
   gap: 12px;
   padding: 10px 18px;
-  border-bottom: 1px solid var(--bord);
-  /* v20260926i : fond transparent (demande UI). */
+  /* v20261007 (dx) : plus de trait de séparation. L'en-tête était déjà
+     transparent, mais une bordure basse dessinait un cadre de plus entre la
+     barre latérale et le fil — alors que le composeur, lui, gardait le sien.
+     Les deux ensemble donnaient une interface fragmentée en trois bandes
+     fermées. Ni l'un ni l'autre ne sépare rien : le fond du fil le fait. */
+  border-bottom: none;
   background: transparent;
   position: sticky;
   top: 0;
@@ -1632,6 +1651,80 @@ span.think:not(details .think) {
   font-size: 0.92rem;
 }
 
+/* ---------- v20261007 (dy) — HUD DES PARAMÈTRES ----------
+   Les paramètres étaient une VUE : ils remplaçaient le fil (msgsEl.replaceChildren).
+   Ils sont désormais superposés, conversation intacte derrière. Le voile n'est
+   pas un simple fond — sans lui, cliquer hors du panneau ne fermait rien et
+   la personne perdait le fil des ses propres réglages. */
+.hud-voile {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-voile);
+  background: color-mix(in srgb, #000 42%, transparent);
+  animation: fondu 0.15s ease;
+}
+.hud-parametres {
+  position: fixed;
+  inset: 6vh 50% auto auto;
+  right: 3vw;
+  left: auto;
+  transform: translateX(50%);
+  z-index: var(--z-modale);
+  width: min(880px, 94vw);
+  max-width: 880px;
+  max-height: 88vh;
+  overflow: auto;
+  padding: 18px 20px 22px;
+  background: var(--carte);
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-l);
+  box-shadow: var(--ombre);
+}
+/* La croix est en haut à droite de la carte : sur un panneau large, un bouton
+   « fermer » dans le flux se confond avec les onglets juste en dessous. */
+.hud-croix {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--rayon-s);
+  background: transparent;
+  color: var(--texte-doux);
+  cursor: pointer;
+}
+.hud-croix:hover {
+  background: color-mix(in srgb, var(--texte) 10%, transparent);
+  color: var(--texte);
+}
+.hud-croix .ico {
+  width: 15px;
+  height: 15px;
+}
+/* Clés API */
+.cles-apercu {
+  margin: 12px 0 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-s);
+  background: var(--carte-doux);
+  color: var(--texte);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.cles-actions {
+  margin-top: 10px;
+}
+.cles-message {
+  min-height: 1.2em;
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--texte-doux);
+}
 /* Journal et requêtes (vue) */
 .journal-view h3 {
   margin: 22px 0 8px;
@@ -2027,6 +2120,10 @@ span.think:not(details .think) {
   flex-wrap: wrap;
   gap: 8px;
   padding: 0 22px 8px;
+  /* v20261007 (dx) : transparent. La zone des pièces jointes se collait au
+     composeur — et le composeur venant de perdre son cadre, elle en gardait
+     un à sa place. */
+  background: transparent;
 }
 .file-preview:empty {
   display: none;
@@ -2034,13 +2131,16 @@ span.think:not(details .think) {
 .file-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: var(--carte);
-  border: 1px solid var(--bord-fort);
+  gap: 4px;
+  /* v20261007 (dx) : fond discret. Sur un composeur devenu transparent, une
+     puce posée sur --carte se dessinait une ombre pour rien et faisait
+     « bouton » à côté d'un retrait qui est, lui, un bouton. Le trait suffit à
+     délimiter ; l'ombre ne sert plus. */
+  background: color-mix(in srgb, var(--texte) 5%, transparent);
+  border: 1px solid var(--bord);
   border-radius: 10px;
-  padding: 7px 11px;
+  padding: 4px 5px 4px 10px;
   font-size: 0.8rem;
-  box-shadow: var(--ombre);
   animation: apparait 0.16s ease;
   /* v20261007 (ds) : la puce est bornée au composeur. Sans `max-width: 100%`,
      un nom de fichier très long avec badges faisait déborder la puce hors du
@@ -2068,14 +2168,17 @@ span.think:not(details .think) {
    nom prendre la largeur et les badges rester lisibles. */
 .file-chip-corps {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
+/* v20261007 (dx) : plus de méta-ligne (taille + segments). Ces chiffres
+   n'aidaient à rien dans une liste et repoussaient le nom vers la troncature ;
+   ils sont passés en infobulle. Quand une information compte vraiment — échec,
+   texte non lisible — elle a son propre badge. */
 .file-chip-meta {
-  font-size: 0.7rem;
-  color: var(--texte-doux);
+  display: none;
 }
 /* L'état est un badge, pas un glyphe collé dans le texte : il peut porter une
    couleur, être tronqué proprement, et être lu par un lecteur d'écran sans
@@ -3352,7 +3455,7 @@ span.think:not(details .think) {
 }
 
 .side-pied {
-  border-top-color: #3b3b3b;
+  border-top-color: var(--bord-fort);
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
 }
 
@@ -3378,8 +3481,13 @@ span.think:not(details .think) {
 .chat-tete {
   min-height: 68px;
   padding: 12px 24px;
-  border-bottom-color: #3b3b3b;
-  background: var(--carte);
+  /* v20261007 (dx) : cette règle remettait un fond opaque et une bordure basse,
+     plus bas dans le fichier que la règle qui les avait supprimées — donc
+     prioritaire, et annulant purement et simplement la demande. Deux règles
+     qui se contredisent sur le même sélecteur, à 2 600 lignes d'écart : c'est
+     le genre de衝突 que seul un relevé permet de voir. */
+  border-bottom: none;
+  background: transparent;
 }
 
 .chat-marque {
@@ -3436,10 +3544,10 @@ span.think:not(details .think) {
   gap: 7px;
   min-height: 34px;
   padding: 0 16px;
-  border: 1px solid #454242;
+  border: 1px solid var(--fond-share);
   border-radius: var(--rayon-s);
-  background: #454242;
-  color: #f2f2f2;
+  background: var(--fond-share);
+  color: var(--fond-partage-texte);
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
@@ -3447,8 +3555,8 @@ span.think:not(details .think) {
 }
 
 .btn-partager:hover {
-  border-color: #454242;
-  background: #555250;
+  border-color: var(--fond-share-survol);
+  background: var(--fond-share-survol);
 }
 
 .btn-partager .ico {
@@ -3525,15 +3633,23 @@ details.raisonnement summary {
   gap: 8px;
   min-height: 64px;
   padding: 9px 11px;
-  border-color: var(--bord-fort);
+  /* v20261007 (dx) : le composeur n'est plus cadré. C'est ICI que se
+     trouvait le vrai cadre — fond #2b2b2b, bordure et ombre — pas sur
+     .saisie-zone comme je l'avais d'abord cherché : .saisie-zone est le champ
+     à l'intérieur, .composeur-carte est la boîte qui l'englobe. Je n'avais
+     donc dégagé que l'intérieur du cadre, en laissant l'enveloppe.
+     Le fond devient transparent : sans lui, la zone de saisie — maintenant
+     transparente elle aussi — se retrouverait posée sur la surface du fil.
+     Les jetons remplacent au passage 3 littéraux (#2b2b2b, #777, rgba(255)). */
+  border-color: transparent;
   border-radius: 24px;
-  background: #2b2b2b;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+  background: transparent;
+  box-shadow: none;
 }
 
 .composeur-carte:focus-within {
-  border-color: #777;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08), 0 10px 30px rgba(0, 0, 0, 0.32);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .saisie {
@@ -4215,8 +4331,11 @@ details.trace-cmd.echec .trace-cmd-status {
   min-height: 64px;
   height: 64px;
   padding: 0 24px;
-  background: var(--fond);
-  border-bottom-color: #2b2b2b;
+  /* v20261007 (dx) : troisième règle .chat-tete du fichier, et encore une
+     bordure. Sans ce relevé, la suppression faite en amont n'aurait rien
+     changé à l'écran. */
+  background: transparent;
+  border-bottom: none;
 }
 
 .etat-moteur {
@@ -4284,8 +4403,13 @@ details.trace-cmd.echec .trace-cmd-status {
   max-height: 64px;
   padding: 4px 10px; /* Ajusté pour respecter les 30px au total */
   border-radius: 15px;
-  background: #181818;
-  border: 1px solid var(--bord);
+  /* v20261007 (dx) : le composeur n'est plus cadré. Le fond (#181818 en dur)
+     était le vrai cadre — plus visible que la bordure de 1px qu'il portait.
+     D'où le passage par un jeton : sans lui, « transparent » aurait laissé
+     remonter la couleur de la zone derrière, et le fond sombre du fil
+     aurait déborde visuellement dans le champ de saisie. */
+  background: transparent;
+  border: none;
   overflow-y: auto; /* Affiche un scroll si le texte dépasse max-height */
   display: flex;
   align-items: center;
@@ -4998,6 +5122,17 @@ html {
 }
 html[data-theme="light"] {
   color-scheme: light;
+  /* v20261007 (dx) : les surfaces de zone ont enfin un opposé en clair.
+     Sans ces jetons, un littéral écrit dans `.msgs` ou `.side-pied` aurait
+     affiché du sombre sur un thème clair — c'est exactement le symptôme que
+     donnaient les couleurs en dur. */
+  --fond-msgs: #fafafa;
+  --fond-row: #f4f4f4;
+  --fond-side: #f7f7f7;
+  --fond-side-pied: #f2f1f0;
+  --fond-share: #454242;
+  --fond-share-survol: #555250;
+  --fond-partage-texte: #f2f2f2;
   --fond: #ffffff;
   --carte: #ffffff;
   --carte-doux: #f4f4f4;
@@ -5047,8 +5182,9 @@ html[data-theme="light"] *::-webkit-scrollbar-corner {
 }
 /* Surfaces codées en dur restées sombres : */
 html[data-theme="light"] .composeur-carte {
-  background: #ffffff;
-  border-color: var(--bord-fort);
+  /* v20261007 (dx) : le composeur reste sans cadre en thème clair aussi. */
+  background: transparent;
+  border-color: transparent;
 }
 html[data-theme="light"] .sidebar {
   border-right-color: var(--bord-fort);
@@ -5086,17 +5222,18 @@ html[data-theme="light"] .side-utilitaires button:hover,
 html[data-theme="light"] .btn-partager:hover {
   color: #111111;
 }
-html[data-theme="light"] .btn-modele,
-html[data-theme="light"] .btn-partager {
-  color: #333333;
-}
+/* v20261007 (dx) : #partager sort de ces surcharges de thème clair.
+   Elles le forçaient à #171717 en fond et #333333 en texte : sur le cadre
+   #454242 demandé, ce texte sombre sur fond sombre était ILLISIBLE. Trois
+   règles pour un seul bouton, et chacune prenait le dessus sur la précédente.
+   Le fond et la couleur du texte viennent maintenant des jetons, identiques
+   dans les deux thèmes : le bouton garde son cadre dans les deux, et reste
+   lisible dans les deux. */
 html[data-theme="light"] .side-nav-item {
   color: #333333;
 }
-html[data-theme="light"] .btn-partager {
-  background: #171717;
-  color: #ffffff;
-  border-color: #171717;
+html[data-theme="light"] .btn-modele {
+  color: #333333;
 }
 /* v20260926m : audit survols — chaque hover à fond sombre impose aussi son
    texte clair, sinon blanc-sur-blanc en thème clair. */
@@ -5292,11 +5429,19 @@ html[data-theme="light"] .hud-fichier {
 }
 html[data-theme="light"] .btn-modele:hover,
 html[data-theme="light"] .btn-attacher:hover,
-html[data-theme="light"] .btn-partager:hover,
 html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
   background: #e4e4e4;
   color: #111111;
   border-color: transparent;
+}
+/* v20261007 (dx) : #partager garde son cadre #454242 au survol, dans les deux
+   thèmes. Il sortait de la règle ci-dessus et passait au gris clair : le
+   bouton changeait de couleur au survol alors qu'il n'a pas d'état autre que
+   survol — et le contraste du texte changeait avec lui. */
+html[data-theme="light"] .btn-partager:hover {
+  background: var(--fond-share-survol);
+  color: var(--fond-partage-texte);
+  border-color: var(--fond-share-survol);
 }
 html[data-theme="light"] .btn-envoyer {
   color: #666666;
@@ -5427,19 +5572,22 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 .compteur-saisie {
   top: -28px;
 }
-/* v20261007 (dw) — COULEURS DE SURFACE DU THÈME SOMBRE.
-   Le thème sombre est le thème PAR DÉFAUT de ce CSS : il n'existe qu'une
-   surcharge `html[data-theme="light"]`. Il faut donc écrire ces règles sans
-   sélecteur de thème, sinon `data-theme="dark"` — qui n'existe nulle part —
-   donnerait l'illusion d'une règle qui s'applique.
-   --row / --side-corps sont posés en littéral parce que ce sont des surfaces
-   décoratives propres à ces deux zones, pas des couleurs sémantiques ; ils ne
-   doivent donc pas être recyclés par --carte ni --gris-fond. */
-.row.bot {
-  background: #1a1c1c;
+/* v20261007 (dx) — le fond va sur .msgs et .side-pied, avec les jetons.
+   J'avais mis #1A1C1C sur .row.bot : c'était la mauvaise cible. Une rangée est
+   une bande de contenu qui se déplace, pas une zone ; la peindre donnait un
+   rectangle sombre en travers du fil à chaque message, et le fond du fil
+   lui-même restait celui du corps. */
+.msgs {
+  background: var(--fond-msgs);
 }
-.side-corps {
-  background: #1c1a1a;
+.row.bot {
+  background: var(--fond-row);
+}
+.side {
+  background: var(--fond-side);
+}
+.side-pied {
+  background: var(--fond-side-pied);
 }
 
 /* v20260926n : sidebar compacte et uniforme ============

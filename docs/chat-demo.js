@@ -525,19 +525,27 @@ function afficherFichiers() {
     nom.className = 'file-chip-name';
     nom.textContent = fichier.name;
     nom.title = fichier.name;
+    /* v20261007 (dx) : la puce ne montre plus que TROIS choses — le nom, l'état,
+       et le retrait. La taille et le nombre de segments passent en infobulle.
+       Raison : ces deux nombres ne servaient à rien dans une liste. « 24 Ko »
+       n'aide pas à décider quoi faire du fichier, et « 4 seg. » est un détail
+       d'implémentation du relieur. Ils occupaient une ligne entière sur chaque
+       puce et repoussaient le nom vers la troncature. Quand une information
+       est réellement utile — l'échec, le texte non lisible — elle a son badge,
+       elle ne se noie plus dans une méta-ligne. */
     const details = [tailleFichier(fichier.size || 0)];
     if (fichier.chunks) details.push(fichier.chunks + ' seg.');
-    const meta = document.createElement('span');
-    meta.className = 'file-chip-meta';
-    meta.textContent = details.join(' · ');
-    corps.append(nom, meta);
+    const resume = details.join(' · ');
+    chip.title = resume + (sansTexte ? ' · sans texte lisible' : '');
+    corps.appendChild(nom);
     const etat = document.createElement('span');
     etat.className = 'file-chip-etat';
     if (fichier.status === 'indexed') {
       etat.classList.add('ok');
       etat.append(icoSvg('check'), document.createTextNode('indexé'));
-      chip.title = 'Fichier indexé côté serveur — les segments pertinents seront fournis au modèle (FILE_DATA).'
-        + (sansTexte ? ' Sans texte lisible côté navigateur (binaire ou volumineux) : en mode Pages le modèle ne pourra pas le lire.' : '');
+      if (sansTexte) {
+        chip.title += '\nSans texte lisible côté navigateur (binaire ou volumineux) : en mode Pages le modèle ne pourra pas le lire.';
+      }
     } else if (fichier.status === 'failed') {
       etat.classList.add('ko');
       etat.append(icoSvg('alert'), document.createTextNode(fichier.erreur || 'échec'));
@@ -2032,10 +2040,45 @@ function creerLigneChamp(cle, titre, description, placeholder) {
   return creerLigneOption(titre, description, champ);
 }
 
+/* ---------- v20261007 (dy) — magasin des clés API ----------
+   Séparé de `preferences` pour une raison précise : `preferences` est
+   ré-affichée telle quelle dans les réglages et exportée. Un secret rangé là
+   finirait affiché en clair. Ici on ne montre que les 4 derniers caractères. */
+const CLE_CLES_API = 'cles-api';
+function chargerClesApi() {
+  try {
+    const brut = localStorage.getItem(CLE_CLES_API);
+    const lu = brut ? JSON.parse(brut) : [];
+    if (!Array.isArray(lu)) return [];
+    return lu.filter((c) => c && typeof c.cle === 'string' && c.cle)
+      .map((c) => ({ nom: String(c.nom || 'sans nom'), cle: c.cle }));
+  } catch {
+    return [];
+  }
+}
+function enregistrerClesApi(cles) {
+  try { localStorage.setItem(CLE_CLES_API, JSON.stringify(cles)); return true; }
+  catch { return false; }
+}
+
 function afficherParametres(ongletActif = 'Apparence') {
-  msgsEl.replaceChildren();
+  /* v20261007 (dy) : les paramètres deviennent un HUD SUPERPOSÉ.
+     Avant, `afficherParametres()` faisait `msgsEl.replaceChildren()` : les
+     réglages REMPLAÇAÎENT la conversation. Régler la densité ou lire une clé
+     faisait perdre sa place dans le fil, et il fallait tout fermer pour
+     retrouver où on en était — pour un panneau qu'on ouvre et referme en trois
+     secondes. Le fil reste donc derrière, intact.
+     Monté dans `.chat-shell`, au niveau du corps : un position:fixed enchâssé
+     dans l'en-tête serait prisonnier d'un ancêtre transformé. */
+  fermerHud();
+  const voile = document.createElement('div');
+  voile.className = 'hud-voile';
+  voile.setAttribute('role', 'presentation');
   const vue = document.createElement('section');
-  vue.className = 'workspace-view settings-view';
+  vue.className = 'workspace-view settings-view hud-parametres';
+  vue.setAttribute('role', 'dialog');
+  vue.setAttribute('aria-modal', 'true');
+  vue.setAttribute('aria-label', 'Paramètres');
   const entete = document.createElement('div');
   entete.className = 'settings-head';
   const titre = document.createElement('h2');
@@ -2050,7 +2093,7 @@ function afficherParametres(ongletActif = 'Apparence') {
   tabs.setAttribute('aria-label', 'Catégories de paramètres');
   const contenu = document.createElement('div');
   contenu.className = 'settings-content';
-  const categories = ['Apparence', 'Discussion', 'Confidentialité', 'Raccourcis', 'Entraînement'];
+  const categories = ['Apparence', 'Discussion', 'Confidentialité', 'Clés API', 'Raccourcis', 'Entraînement'];
 
   function afficherOnglet(nom) {
     arreterSondeEntrainement();
@@ -2067,6 +2110,79 @@ function afficherParametres(ongletActif = 'Apparence') {
         creerInterrupteur('animationsReduites', 'Réduire les animations', 'Désactive les mouvements décoratifs.'),
         creerInterrupteur('densiteCompacte', 'Affichage compact', 'Réduit l’espace vertical autour des messages.'),
       );
+    } else if (nom === 'Clés API') {
+      /* v20261007 (dy) : ajout de clés API. Il n'existait AUCUN réglage de clé :
+         la seule façon d'en ajouter était d'éditer le fichier à la main, ce
+         qui interdisait tout usage autre que celui de qui a écrit le code.
+         Les secrets sont dans `keys.js`, jamais dans `preferences` : ce dernier
+         est exporté et affiché tel quel dans les réglages, y做不到 un secret.
+         D'où le magasin séparé `cles-api`, en localStorage comme le reste.
+         On ne montre JAMAIS la clé en clair : champ mot de passe, et seule la
+         fin est lisible pour qu'on puisse distinguer deux saisies. */
+      description.textContent = 'Une clé par fournisseur. Elles restent sur cet appareil et ne sont jamais renvoyées ailleurs que vers le fournisseur concerné.';
+      const magasin = chargerClesApi();
+      const lister = () => {
+        const cles = chargerClesApi();
+        if (!cles.length) return 'Aucune clé enregistrée.';
+        return cles.map((c) => '• ' + c.nom + ' — ' + c.cle.slice(-4).padStart(4, '·')).join('\n');
+      };
+      const apercu = document.createElement('pre');
+      apercu.className = 'cles-apercu';
+      apercu.textContent = lister();
+      const nomChamp = document.createElement('input');
+      nomChamp.type = 'text';
+      nomChamp.className = 'setting-champ';
+      nomChamp.placeholder = 'Nom (OpenRouter, Ollama, NVIDIA…)';
+      nomChamp.setAttribute('aria-label', 'Nom du fournisseur');
+      const cleChamp = document.createElement('input');
+      /* type=password : une clé affichée en clair dans un panneau que l'on
+         ouvre devant quelqu'un est une fuite. */
+      cleChamp.type = 'password';
+      cleChamp.className = 'setting-champ';
+      cleChamp.placeholder = 'sk-…';
+      cleChamp.autocomplete = 'off';
+      cleChamp.setAttribute('aria-label', 'Clé API');
+      cleChamp.spellcheck = false;
+      const ajouter = document.createElement('button');
+      ajouter.type = 'button';
+      ajouter.className = 'settings-tab';
+      ajouter.textContent = 'Ajouter cette clé';
+      const message = document.createElement('p');
+      message.className = 'cles-message';
+      ajouter.addEventListener('click', () => {
+        const nom = nomChamp.value.trim();
+        const valeur = cleChamp.value.trim();
+        if (!valeur) { message.textContent = 'La clé est vide.'; return; }
+        const cles = chargerClesApi();
+        const deja = cles.findIndex((c) => (c.nom || '').toLowerCase() === nom.toLowerCase());
+        if (deja >= 0) cles[deja] = { nom: nom || 'sans nom', cle: valeur };
+        else cles.push({ nom: nom || 'sans nom', cle: valeur });
+        enregistrerClesApi(cles);
+        apercu.textContent = lister();
+        nomChamp.value = '';
+        cleChamp.value = '';
+        message.textContent = deja >= 0 ? 'Clé mise à jour.' : 'Clé enregistrée.';
+      });
+      contenu.append(
+        creerLigneOption('Fournisseur', 'Le nom sert seulement d\'étiquette.', nomChamp),
+        creerLigneOption('Clé API', 'Champ masqué : seule la fin est affichée dans la liste.', cleChamp),
+      );
+      const actions = document.createElement('div');
+      actions.className = 'cles-actions';
+      actions.append(ajouter);
+      contenu.append(actions, apercu, message);
+      if (magasin.length) {
+        const toutEffacer = document.createElement('button');
+        toutEffacer.type = 'button';
+        toutEffacer.className = 'settings-tab';
+        toutEffacer.textContent = 'Effacer toutes les clés';
+        toutEffacer.addEventListener('click', () => {
+          enregistrerClesApi([]);
+          apercu.textContent = lister();
+          message.textContent = 'Toutes les clés ont été effacées.';
+        });
+        contenu.append(toutEffacer);
+      }
     } else if (nom === 'Discussion') {
       description.textContent = 'Choisissez le comportement de vos échanges.';
       contenu.append(
@@ -2213,7 +2329,20 @@ function afficherParametres(ongletActif = 'Apparence') {
   });
   layout.append(tabs, contenu);
   vue.append(entete, layout);
-  msgsEl.appendChild(vue);
+  /* v20261007 (dy) : fermeture par la croix, le voile, ou Échap. */
+  const fermer = () => { vue.remove(); voile.remove(); document.removeEventListener('keydown', surTouche); };
+  const surTouche = (e) => { if (e.key === 'Escape') { e.stopPropagation(); fermer(); } };
+  const croix = document.createElement('button');
+  croix.type = 'button';
+  croix.className = 'hud-croix';
+  croix.setAttribute('aria-label', 'Fermer les paramètres');
+  croix.appendChild(icoSvg('x'));
+  croix.addEventListener('click', fermer);
+  entete.appendChild(croix);
+  voile.addEventListener('click', fermer);
+  document.addEventListener('keydown', surTouche);
+  const coquille = document.querySelector('.chat-shell');
+  if (coquille) { coquille.append(voile, vue); } else { document.body.append(voile, vue); }
   afficherOnglet(ongletActif);
 }
 
