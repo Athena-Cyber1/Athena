@@ -358,6 +358,57 @@ async function uploaderFichier(fichier) {
       : 'échec du traitement (' + r.status + ')')),
   };
 }
+/* ---------- v20261007 (dz) — aperçu des images jointes ----------
+   Trois règles, chacune pour une raison de sécurité concrète :
+
+   1. LISTE BLANCHE de types, et le type DÉCLARÉ prime sur l'extension.
+      Le refus porte d'abord sur SVG : un SVG est du XML qui peut porter du
+      <script>. Un fichier nommé « dessin.svg » reste donc SANS vignette, même
+      si le navigateur sait l'afficher. On ne se fie pas à un nom.
+   2. PAS DE data: URL, PAS D'URL DISTANTE. L'aperçu vient d'un object URL
+      fabriqué localement depuis le fichier déjà présent en mémoire. Rien
+      n'est téléchargé : un simple glisser-déposer ne déclenche aucune
+      requête sortante, donc ni pistage ni fuite d'adresse IP.
+   3. TAILLE BORNÉE. Décoder une image de 40 Mo dans un <img> pour une
+      vignette de 40 px est un déni de service que l'utilisateur s'inflige
+      lui-même ; au-delà, on garde le nom.
+
+   L'attribut alt porte le nom du fichier : une image sans alternative est
+   invisible pour un lecteur d'écran. */
+const TYPES_APERCU = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
+};
+const OCTETS_APERCU_MAX = 8 * 1024 * 1024;
+function tailleApercuAutorisee(octets) {
+  return Number.isFinite(octets) && octets > 0 && octets <= OCTETS_APERCU_MAX;
+}
+function apercuImageSur(fichier) {
+  if (!fichier || !fichier.apercu) return null;
+  const type = String(fichier.type || '').toLowerCase();
+  const cle = TYPES_APERCU[type];
+  /* SVG et tout type inconnu sont exclus même s'ils COMMENCENT par image/. */
+  if (!cle) return null;
+  if (!tailleApercuAutorisee(fichier.size)) return null;
+  return { url: fichier.apercu, extension: cle };
+}
+/* L'object URL tient laWhole image en mémoire tant qu'il n'est pas révoqué.
+   Retirer la puce doit le libérer — sinon 40 pièces jointes gardent 40 images
+   en mémoire jusqu'au rechargement de la page. */
+function libererApercu(fichier) {
+  if (fichier && fichier.apercu) {
+    try { URL.revokeObjectURL(fichier.apercu); } catch (_) {}
+    fichier.apercu = null;
+  }
+}
+function extensionFichier(nom) {
+  const m = /\.([a-z0-9]{1,6})$/i.exec(String(nom || ''));
+  return m ? m[1].toLowerCase() : '';
+}
+
 async function ajouterFichiers(liste) {
   for (const fichier of Array.from(liste || [])) {
     if (fichiersJoints.length >= MAX_FICHIERS) {
@@ -391,6 +442,17 @@ async function ajouterFichiers(liste) {
     if (attente.file_id) {
       const texte = await lireTexteSiPossible(fichier);
       if (texte) contenusFichiers.set(attente.file_id, texte);
+    }
+    /* v20261007 (dz) : URL d'APERÇU pour les images.
+       On fabrique un object URL depuis le File déjà en mémoire — jamais une
+       data: URL (elle gonfle le DOM et le localStorage), jamais une URL
+       distante (le navigateur irait chercher une ressource externe sur un
+       simple glisser-déposer : c'est une fuite, et un vecteur de pistage).
+       Liste blanche de types, et le type du FICHIER prime sur son extension :
+       un « photo.png » qui contient du SVG se verrait sinon rendu comme une
+       image alors que c'est du script. Voir apercuImageSur(). */
+    if (fichier.type && fichier.type.indexOf('image/') === 0 && tailleApercuAutorisee(fichier.size)) {
+      try { attente.apercu = URL.createObjectURL(fichier); } catch (_) { attente.apercu = null; }
     }
     /* v20260922j (bug 11) : retrait PENDANT l'upload -> le file_id n'est
        connu qu'ici : purge serveur différée ; la puce ne revient pas. */
@@ -509,58 +571,50 @@ function afficherFichiers() {
     if (fichier.status === 'failed') chip.classList.add('echec');
     /* v1.2 (anti-bâclage) : binaire indexé mais sans texte lisible côté
        navigateur (PDF/image) — sur Pages, sans sidecar, le modèle n'a rien
-       à lire et invente : on l'affiche dans la puce au lieu de le taire. */
+       à lire et invente. On le signale, mais plus dans la puce : ce texte y
+       prenait une place pour une information que l'infobulle porte déjà. */
     const sansTexte = fichier.status === 'indexed' && fichier.file_id
       && !contenusFichiers.get(fichier.file_id);
-    /* v20261007 (ds) : l'état passe du texte au BALISE.
-       Avant, tout était collé dans une chaîne — « ✓ indexé · 4 seg. · ⚠ texte
-       non lisible » — avec des glyphes en dur. Deux conséquences : on ne
-       pouvait ni colorer l'état selon sa gravité, ni le tronquer, et un
-       fichier en échec était visuellement identique à un fichier indexé
-       tant qu'on ne lisait pas la petite ligne. Ici l'état est un badge avec
-       sa propre tonalité, et l'avertissement en a un à lui. */
+    /* v20261007 (dz) : la puce est revenue à sa forme la plus simple — une
+       PASTILLE D'EXTENSION, le nom, et le retrait. Les libellés d'état
+       (« indexé », « texte non lisible ») et les icônes sont retirés : sur une
+       rangée de pièces jointes, ils répetaient la même information_state par
+       fichier et repoussaient le nom vers la troncature.
+       Ce qui reste n'est pas de la décoration : l'extension sert à identifier
+       le fichier d'un coup d'œil, et le retrait est le seul contrôle.
+       Une IMAGE affiche sa vignette à la place de la pastille — c'est le seul
+       élément de la puce qui porte une information impossible à écrire. */
     const corps = document.createElement('div');
     corps.className = 'file-chip-corps';
+    const image = apercuImageSur(fichier);
+    if (image) {
+      const vignette = document.createElement('img');
+      vignette.className = 'file-chip-image';
+      vignette.src = image.url;
+      vignette.alt = fichier.name;          /* accessibilité : l'image porte un nom */
+      vignette.loading = 'lazy';
+      vignette.decoding = 'async';
+      corps.appendChild(vignette);
+    } else {
+      const ext = extensionFichier(fichier.name);
+      if (ext) {
+        const pastille = document.createElement('span');
+        pastille.className = 'file-chip-extension';
+        pastille.textContent = ext.toUpperCase();
+        corps.appendChild(pastille);
+      }
+    }
     const nom = document.createElement('span');
     nom.className = 'file-chip-name';
     nom.textContent = fichier.name;
     nom.title = fichier.name;
-    /* v20261007 (dx) : la puce ne montre plus que TROIS choses — le nom, l'état,
-       et le retrait. La taille et le nombre de segments passent en infobulle.
-       Raison : ces deux nombres ne servaient à rien dans une liste. « 24 Ko »
-       n'aide pas à décider quoi faire du fichier, et « 4 seg. » est un détail
-       d'implémentation du relieur. Ils occupaient une ligne entière sur chaque
-       puce et repoussaient le nom vers la troncature. Quand une information
-       est réellement utile — l'échec, le texte non lisible — elle a son badge,
-       elle ne se noie plus dans une méta-ligne. */
     const details = [tailleFichier(fichier.size || 0)];
     if (fichier.chunks) details.push(fichier.chunks + ' seg.');
     const resume = details.join(' · ');
-    chip.title = resume + (sansTexte ? ' · sans texte lisible' : '');
+    chip.title = fichier.name + ' · ' + resume
+      + (sansTexte ? ' · sans texte lisible' : '')
+      + (fichier.status === 'failed' && fichier.erreur ? ' · ' + fichier.erreur : '');
     corps.appendChild(nom);
-    const etat = document.createElement('span');
-    etat.className = 'file-chip-etat';
-    if (fichier.status === 'indexed') {
-      etat.classList.add('ok');
-      etat.append(icoSvg('check'), document.createTextNode('indexé'));
-      if (sansTexte) {
-        chip.title += '\nSans texte lisible côté navigateur (binaire ou volumineux) : en mode Pages le modèle ne pourra pas le lire.';
-      }
-    } else if (fichier.status === 'failed') {
-      etat.classList.add('ko');
-      etat.append(icoSvg('alert'), document.createTextNode(fichier.erreur || 'échec'));
-      chip.title = (fichier.erreur || 'Extraction impossible') + ' — ce fichier ne sera pas transmis.';
-    } else {
-      etat.classList.add('attente');
-      etat.append(icoSvg('refresh'), document.createTextNode(fichier.status === 'uploading' ? 'envoi' : 'indexation'));
-    }
-    corps.appendChild(etat);
-    if (sansTexte) {
-      const alerte = document.createElement('span');
-      alerte.className = 'file-chip-alerte';
-      alerte.append(icoSvg('alert'), document.createTextNode('texte non lisible'));
-      corps.appendChild(alerte);
-    }
     const retirer = document.createElement('button');
     retirer.type = 'button';
     retirer.className = 'file-chip-remove';
@@ -574,6 +628,9 @@ function afficherFichiers() {
       fichier.abandonne = true;
       const idx = fichiersJoints.indexOf(fichier);
       if (idx >= 0) fichiersJoints.splice(idx, 1);
+      /* v20261007 (dz) : libérer l'object URL de la vignette. Sans ça, chaque
+         image retirée reste en mémoire jusqu'au rechargement. */
+      libererApercu(fichier);
       if (fichier.file_id) {
         fetch(API_FILES + '?id=' + fichier.file_id, { method: 'DELETE', signal: delaiFetch(5000) }).catch(() => {});
       }

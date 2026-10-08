@@ -55,6 +55,14 @@ Règles collectives : bordures neutres = --bord/--bord-fort (jamais de
   --gris-bord: #dcdcdc;
   --gris-texte: #606060;
   --code-fond: #0d0d0d;
+  /* v20261007 (dz) : fond de bloc de code, SOMBRE dans les deux thèmes.
+     `--code-fond` ne convient pas ici : il passe à #f4f4f4 en thème clair.
+     Or un bloc de code doit rester une surface sombre même sur fond clair —
+     c'est ce qui distingue du texte, et c'est ce que fait tout le monde. Ce
+     jeton n'est volontairement PAS redéfini dans le bloc clair : c'est le seul
+     moyen de garantir qu'il reste sombre. */
+  --fond-code-bloc: #0d0d0d;
+  --texte-code-bloc: #ea553c;
   --ok: #111111;
   /* v20261007 (dx) — SURFACES DE ZONE, en variables.
      Elles manquaient, et c'est pourquoi les couleurs étaient écrites en dur
@@ -64,10 +72,10 @@ Règles collectives : bordures neutres = --bord/--bord-fort (jamais de
      pouvait pas la suivre — il ne savait pas quoi surcharger.
      Chaque surface a donc son jeton, avec son opposé en thème clair déclaré
      dans le bloc `html[data-theme="light"]` plus bas. */
-  --fond-msgs: #1a1c1c;        /* le fil de discussion */
-  --fond-row: #191b1b;         /* une rangée, un cran au-dessus du fil */
-  --fond-side: #1b1b1b;        /* la barre latérale */
-  --fond-side-pied: #1c1a1a;   /* son pied, légèrement chaud */
+  --fond-msgs: #211f1f;       /* l'écran principal : le fil de discussion */
+  --fond-row: #1f1d1d;         /* une rangée, un cran au-dessus du fil */
+  --fond-side: #1c1a1a;        /* TOUTE la barre latérale */
+  --fond-side-pied: #1c1a1a;   /* son pied : même valeur, la zone est continue */
   --fond-share: #454242;       /* le bouton Partager */
   --fond-share-survol: #555250;
   --fond-partage-texte: #f2f2f2;
@@ -944,6 +952,18 @@ button.dot:focus-visible,
   border: 1px solid var(--bord);
   box-shadow: var(--ombre);
   overflow-wrap: break-word;
+  /* v20261007 (dz) — L'ENCADRAGE POUVAIT ÊTRE COUPÉ.
+     `.bubble` est un enfant flex de `.row`, et un enfant flex a par défaut
+     `min-width: auto` : il refuse de descendre sous la largeur intrinsèque de
+     son contenu. Un tableau large, une URL longue ou une ligne de code sans
+     espace le pushing donc au-delà de son `max-width`, et la bordure passait
+     hors du cadre visible — le « cadrage coupé ».
+     `min-width: 0` rend la réduction possible ; `overflow-x: auto` fait
+     défiler le débordement À L'INTÉRIEUR de la bulle au lieu de le laisser
+     déborder. Le second ne suffit pas seul : sans le premier, rien ne
+     rétrécit. */
+  min-width: 0;
+  overflow-x: auto;
   animation: apparait 0.18s ease;
 }
 .row.user .bubble {
@@ -1259,8 +1279,14 @@ button.dot:focus-visible,
 }
 .md pre {
   position: relative;
-  background: var(--code-fond);
-  color: #f2f2f2;
+  /* v20261007 (dz) : le BLOC de code passe au fond sombre lui aussi.
+     `--code-fond` vaut #f4f4f4 en thème clair : le code en bloc y était donc
+     CLAIR, alors que le code en ligne venait d'être rendu sombre. Deux
+     traitements pour la même chose dans une même bulle. Un bloc de code est
+     une surface sombre dans les deux thèmes — c'est ce qui le distingue du
+     texte. */
+  background: var(--fond-code-bloc);
+  color: var(--texte-code-bloc);
   border-radius: 11px;
   padding: 32px 14px 13px;
   margin: 0.65em 0;
@@ -1665,10 +1691,13 @@ span.think:not(details .think) {
 }
 .hud-parametres {
   position: fixed;
-  inset: 6vh 50% auto auto;
-  right: 3vw;
-  left: auto;
-  transform: translateX(50%);
+  /* v20261007 (dz) : centrage réel. J'avais écrit `inset: 6vh 50% auto auto`
+     combiné à un `translateX(50%)` et un `right: 3vw` — trois indications
+     contradictoires, dont deux se neutralisaient. Un seul repère : left:50% et
+     translateX(-50%). */
+  top: 6vh;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: var(--z-modale);
   width: min(880px, 94vw);
   max-width: 880px;
@@ -2173,76 +2202,40 @@ span.think:not(details .think) {
   gap: 8px;
   min-width: 0;
 }
-/* v20261007 (dx) : plus de méta-ligne (taille + segments). Ces chiffres
-   n'aidaient à rien dans une liste et repoussaient le nom vers la troncature ;
-   ils sont passés en infobulle. Quand une information compte vraiment — échec,
-   texte non lisible — elle a son propre badge. */
-.file-chip-meta {
-  display: none;
-}
-/* L'état est un badge, pas un glyphe collé dans le texte : il peut porter une
-   couleur, être tronqué proprement, et être lu par un lecteur d'écran sans
-   dépendre du caractère « ✓ ». */
-.file-chip-etat {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  margin-top: 2px;
-  padding: 1px 7px 1px 5px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1.6;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  background: color-mix(in srgb, currentColor 12%, transparent);
-  color: var(--texte-doux);
-}
-.file-chip-etat .ico {
-  width: 11px;
-  height: 11px;
+/* v20261007 (dz) — la pastille d'EXTENSION remplace les badges d'état.
+   `.file-chip-meta`, `.file-chip-etat` (et ses variantes ok / attente) et
+   `.file-chip-alerte` ont été SUPPRIMÉS : plus aucun élément ne porte ces
+   classes depuis que la puce ne montre ni libellé ni icône d'état. Les laisser
+   aurait été du code mort — 8 règles pour rien, et un risque de « réparation »
+   par quelqu'un qui croirait le badge encore utilisé. */
+.file-chip-extension {
   flex: 0 0 auto;
-}
-.file-chip-etat.ok {
+  min-width: 34px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  background: color-mix(in srgb, var(--texte) 14%, transparent);
   color: var(--texte);
 }
-/* Le thème est monochrome par choix (cf. les tokens en tête de fichier) :
-   pas de vert « succès » ni d'ambre « alerte ». On distingue donc les trois
-   états par la GRAINE (fond neutre / trait danger / astérisque d'attente) et
-   non par la teinte — c'est le seul codage qui reste juste en thème clair
-   comme en thème sombre. */
-.file-chip-etat.attente .ico {
-  animation: tourne 1.1s linear infinite;
-}
-.file-chip-etat.attente::after {
-  content: '…';
-  font-weight: 700;
+/* Vignette d'image : 34×34, `object-fit: cover` pour que toutes les images
+   aient la même taille quelle que soit leur format — sans quoi une photo
+   panoramique fait exploser la hauteur de la rangée. */
+.file-chip-image {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--texte) 10%, transparent);
 }
 /* « texte non lisible » est séparé de l'état : c'est un fichier SUCCÈS dont
    le contenu ne sera pas lu par le modèle. Le confondre avec « indexé »
    revenait à annoncer du vide comme du plein. Le liseré `--ambre-bord` le
    distingue du badge d'état sans introduire de couleur concurrente. */
-.file-chip-alerte {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 3px;
-  padding: 1px 7px 1px 5px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1.6;
-  background: var(--ambre-fond);
-  color: var(--ambre-texte);
-  box-shadow: inset 0 0 0 1px var(--ambre-bord);
-}
-.file-chip-alerte .ico {
-  width: 11px;
-  height: 11px;
-  flex: 0 0 auto;
-}
+
 .file-chip-remove {
   border: none;
   background: transparent;
@@ -3641,15 +3634,20 @@ details.raisonnement summary {
      Le fond devient transparent : sans lui, la zone de saisie — maintenant
      transparente elle aussi — se retrouverait posée sur la surface du fil.
      Les jetons remplacent au passage 3 littéraux (#2b2b2b, #777, rgba(255)). */
-  border-color: transparent;
+  border-color: var(--bord-fort);
   border-radius: 24px;
-  background: transparent;
-  box-shadow: none;
+  /* v20261007 (dz) : le cadre du COMPOSEUR revient (fond, bordure, ombre) —
+     c'est le seul repère de la zone de saisie, et sans lui le champ flottait
+     dans le vide. En revanche le CHAMP lui-même, .saisie-zone, reste
+     transparent : le fond est sur l'enveloppe, pas sur le texte. Deux plans
+     superposés, un seul visible. */
+  background: var(--carte);
+  box-shadow: var(--ombre);
 }
 
 .composeur-carte:focus-within {
-  border-color: transparent;
-  box-shadow: none;
+  border-color: var(--primaire);
+  box-shadow: 0 0 0 3px var(--primaire-doux), var(--ombre);
 }
 
 .saisie {
@@ -4019,9 +4017,16 @@ details.raisonnement summary {
 }
 
 .md code {
-  border-color: #65413d;
-  background: #3a2525;
-  color: #f0b0a5;
+  /* v20261007 (dz) : fond SOMBRE et non plus rouge, texte #ea553c.
+     Le fond et la bordure étaient #3a2525 / #65413d — un brun rouge, choisi
+     pour « faire code ». Conséquence : sur une bulle sombre, un bout de code
+     en clair était la zone la plus claire de la page et sautait aux yeux ; en
+     thème clair, le texte #f0b0a5 sur #3a2525 passait à 4.0:1, sous le seuil.
+     Fond sombre dans les deux thèmes, texte #ea553c : la teinte est conservée,
+     elle porte sur le TEXTE et non sur le fond. */
+  border-color: #2a2a2a;
+  background: var(--fond-code-bloc);
+  color: var(--texte-code-bloc);
 }
 
 .md pre a {
@@ -5079,6 +5084,17 @@ header.chat-tete {
   height: auto;
   max-height: none;
 }
+/* v20261007 (dz) : le FOND du composeur est réaffirmé ici, en DERNIER.
+   Trois règles `.composeur-carte` se suivent dans le fichier (dimensions,
+   puis celle-ci). La première portait le fond et l'ombre ; comme les suivantes
+   ne redéfinissaient pas `background`, la cascade devait les conserver — et la
+   mesure a montré l'inverse : fond transparent, ombre présente. On ne conclut
+   plus rien de la cascade sur ce fichier. Cette règle ferme la discussion. */
+.composeur-carte {
+  background: var(--carte);
+  border-color: var(--bord-fort);
+  box-shadow: var(--ombre);
+}
 /* v20260926i : la zone et le miroir suivent la croissance — le groupe
    .saisie-zone/.saisie-mirror/.saisie les figeait à 35-40 px (blocage
    constaté : textarea à 262 px dans une carte à 45 px). */
@@ -5182,9 +5198,9 @@ html[data-theme="light"] *::-webkit-scrollbar-corner {
 }
 /* Surfaces codées en dur restées sombres : */
 html[data-theme="light"] .composeur-carte {
-  /* v20261007 (dx) : le composeur reste sans cadre en thème clair aussi. */
-  background: transparent;
-  border-color: transparent;
+  /* v20261007 (dz) : le cadre du composeur est revenu en thème clair aussi. */
+  background: var(--carte);
+  border-color: var(--bord-fort);
 }
 html[data-theme="light"] .sidebar {
   border-right-color: var(--bord-fort);
@@ -5197,9 +5213,13 @@ html[data-theme="light"] .btn-nouvelle:hover {
   color: #111111;
   border-color: transparent;
 }
-html[data-theme="light"] .md pre {
-  color: #171717;
-}
+/* v20261007 (dz) : DEUX règles `html[data-theme="light"] .md pre`peaker
+   redéfinissaient `color: #171717` — le texte sombre du bloc. Le fond, lui,
+   venait d'être rendu sombre : il ne restait qu'un texte quasi noir SUR fond
+   quasi noir, mesuré à 1.08:1. Invisible.
+   Ce commentaire historique (« le bloc garde son fond neutre ») est caduc : le
+   fond n'est plus neutre, il est sombre, dans les deux thèmes. Il reste donc à
+   fixer la couleur du bloc et de ses liens. */
 html[data-theme="light"] .code-lang,
 html[data-theme="light"] .row.bot .copier,
 html[data-theme="light"] .side-nav-item .ico {
@@ -5321,18 +5341,19 @@ html[data-theme="light"] .side-brand {
 }
 /* v20260926l : le code en BLOC garde son fond neutre + texte hérité (sinon
    la règle inline ci-dessus, plus spécifique, le teintait en rouge). */
-html[data-theme="light"] .md pre {
-  color: #171717;
-}
 html[data-theme="light"] .md pre code {
   background: transparent;
   border-color: transparent;
   color: inherit;
 }
 html[data-theme="light"] .md code {
-  border-color: #e0b9ae;
-  background: #f6e9e4;
-  color: #9c2b1e;
+  /* v20261007 (dz) : fond sombre conservé en thème clair — c'est un bloc de
+     code, pas un texte courant. Seul le texte change, pour rester lisible.
+     L'ancien fond #f6e9e4 avec #9c2b1e faisait un aplat rouge très clair dans
+     une bulle claire : l'inverse du but recherché. */
+  border-color: #2a2a2a;
+  background: var(--fond-code-bloc);
+  color: var(--texte-code-bloc);
 }
 html[data-theme="light"] .md pre a {
   color: #0b5cad;
@@ -5583,7 +5604,12 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 .row.bot {
   background: var(--fond-row);
 }
-.side {
+/* v20261007 (dz) : la classe est `.sidebar` (l'élément est `<aside id="sidebar"
+   class="sidebar">`), pas `.side`. J'avais écrit `.side`, un sélecteur qui ne
+   désigne RIEN : la règle était inerte, et la mesure l'a montré — `.side`
+   renvoyait « ABSENT » alors que `--fond-side` était bien défini. Une règle
+   morte ne se voit pas au relecture ; elle se voit à la mesure. */
+.sidebar {
   background: var(--fond-side);
 }
 .side-pied {
