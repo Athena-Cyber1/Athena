@@ -545,7 +545,11 @@ a:hover {
    c'est le JS qui calcule un `left` borné aux bords de l'écran. */
 .convo-actions {
   position: fixed;
-  z-index: 400;
+  /* --z-toast-hud : même rang que les panneaux flottants du HUD fichier. Un
+     400 en dur — mon premier réflexe — était le SEUL z-index du CSS à
+     contourner l'échelle ; l'audit l'a montré net (18 usages par token,
+     1 nombre en dur). */
+  z-index: var(--z-toast-hud);
   display: flex;
   gap: 2px;
   padding: 3px;
