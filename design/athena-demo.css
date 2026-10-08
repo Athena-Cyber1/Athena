@@ -36,6 +36,15 @@
   /* v20261007 (ea) : l'ENCADRAGE du code en ligne est distinct du fond des BLOCS. Un `code` posé dans une phrase est une marque en ligne ; un `pre` est une surface. Leur donner le même noir aplati faisait disparaître la différence entre « un mot en code » et «… */
   --fond-code-inline: #1a1818;
   --texte-code-bloc: #ea553c;
+  /* v20261007 (ef) — LE CORAIL EST POUR LE MODÈLE, PAS POUR ATHENA.
+     Le corail marque le texte que le MODÈLE écrit. Il ne doit pas marquer ce
+     que l'ATHENA produit elle-même : le résultat d'une commande, une lecture de
+     fichier, le plan, un bloc d'exécution. Ces blocs sont de l'OUTIL, pas de
+     la prose du modèle — les peindre comme elle revenait à mettre sur le même
+     plan une réponse et une sortie de `dir`.
+
+     Ils gardent donc la couleur du texte courant, et leur fond reste le leur. */
+  --texte-outil: #b0b0b0;
   /* v20261007 (ea) : texte du plan en blanc, par jeton. Il était figé en dur,
      donc il ne suivait ni le thème ni le contraste calculé. */
   --texte-plan-bloc: #ffffff;
@@ -1189,6 +1198,25 @@ button.dot:focus-visible,
   overflow-x: auto;
   border: 1px solid var(--bord-fort);
 }
+/* v20261007 (ef) — LE CORAIL EST POUR LE MODÈLE, PAS POUR ATHENA.
+   Tout ce que produit l'application elle-même — sortie de commande, lecture de
+   fichier, plan, exécution — sort du corail. Ces blocs sont de l'OUTIL :
+   les peindre comme la prose du modèle mettait sur le même plan une réponse et
+   un `dir`. Ils gardent la couleur du texte courant et leur propre fond.
+   La cascade compte : `.md pre` porte le corail, ces règles en sortent. */
+.md pre.exec-bloc,
+.md pre.exec-bloc code,
+.exec-bloc,
+.exec-sortie,
+.exec-terminal,
+.exec-terminal-tete,
+details.trace-cmd pre,
+details.raisonnement pre {
+  color: var(--texte-outil);
+}
+.exec-bloc {
+  border-color: var(--bord-fort);
+}
 .md pre code {
   background: transparent;
   border: none;
@@ -2160,7 +2188,7 @@ span.think:not(details .think) {
 }
 .composeur-carte:focus-within {
   border-color: var(--primaire);
-  box-shadow: 0 0 0 3px var(--primaire-doux), var(--ombre);
+  box-shadow: 0 0 0 1px var(--primaire);
 }
 .saisie {
   flex: 1 1 auto;
@@ -3190,7 +3218,7 @@ span.think:not(details .think) {
   flex-basis: var(--pos-sidebar-largeur);
   width: var(--pos-sidebar-largeur);
   background: var(--sidebar);
-  border-right-color: #3b3b3b;
+  border-right-color: var(--bord-fort);
 }
 
 #app.sidebar-fermee .sidebar {
@@ -3480,7 +3508,7 @@ details.raisonnement summary {
 
 .composeur-carte:focus-within {
   border-color: var(--primaire);
-  box-shadow: 0 0 0 3px var(--primaire-doux), var(--ombre);
+  box-shadow: 0 0 0 1px var(--primaire);
 }
 
 .saisie {
@@ -5007,11 +5035,14 @@ html[data-theme="light"] {
   --texte: #171717;
   --texte-doux: #616161;
   /* v20261007 (ea) : les surfaces de zone ont enfin un opposé en clair. */
-  --fond-msgs: #fafafa;
-  --fond-row: #f4f4f4;
+  /* v20261007 (ef) : surfaces claires en blanc. Le gris tres clair qu il y avait
+     (\#fafafa / \#f4f4f4 / \#f7f7f7) introduisait trois valeurs pour trois zones
+     qu on veut lire comme UNE meme page. Blanc partout. */
+  --fond-msgs: #ffffff;
+  --fond-row: #ffffff;
   --fond-chat: #ffffff;
-  --fond-side: #f7f7f7;
-  --fond-side-pied: #f2f1f0;
+  --fond-side: #ffffff;
+  --fond-side-pied: #ffffff;
   --fond-share: #454242;
   --fond-share-survol: #555250;
 --fond-partage-texte: #f2f2f2;
@@ -5056,6 +5087,15 @@ html[data-theme="light"] {
      illisible. Un seul accent ne veut pas dire une seule valeur : veut dire
      une seule FAMILLE de teinte, déclinée par thème. */
   --marque: var(--lien-clair);
+  /* v20261007 (ef) : fond du code EN LIGNE a #ececec en theme clair, et
+     accent clair par-dessus. Mesure : #ea553c sur #ececec ne fait que 3,03:1, sous
+     le seuil ; la valeur claire de l accent (#c81e1e) fait 4,86:1. Le fond
+     demande est applique tel quel, avec un rouge lisible.
+     Ces deux declarations etaient d abord tombees dans le bloc SOMBRE, ou elles
+     auraient eclairci le code en theme sombre. */
+  --fond-code-inline: #ececec;
+  --texte-code-bloc: #c81e1e;
+  --texte-outil: #6b6b6b;
 }
 html[data-theme="light"] * {
   scrollbar-color: #b5b5b5 #e8e8e8;
