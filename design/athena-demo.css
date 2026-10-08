@@ -6,7 +6,7 @@
   --primaire-doux: #f1f1f1;
   --primaire-texte: #111111;
   --sur-primaire: #ffffff;   /* texte posé SUR --primaire (noir⅒blanc) */
-  --lien: #d81e05;           /* ROUGE : réservé aux liens */
+  /* v20261007 (ee) : --lien est désormais piloté par --lien-sombre / --lien-clair.`r`n     Les trois déclarations concurrentes ont disparu : c est la couleur qui`r`n     changeait de teinte selon le dernier bloc qui parlait, pas selon le thème. */
   --violet: #555555;
   --violet-doux: #f1f1f1;
   --violet-texte: #3a3a3a;
@@ -1168,7 +1168,7 @@ button.dot:focus-visible,
   text-underline-offset: 2px;
 }
 .md pre a {
-  color: #ff6a52; /* lien sur fond de code sombre (les deux modes) */
+  color: var(--lien-sombre);
 }
 .md code {
   background: var(--gris-fond);
@@ -3151,7 +3151,6 @@ span.think:not(details .think) {
   --primaire-doux: #3b3b3b;
   --primaire-texte: #f1f1f1;
   --sur-primaire: #202020;
-  --lien: #ff756a;
   --violet: #b8b8b8;
   --violet-doux: #303030;
   --violet-texte: #d0d0d0;
@@ -3688,10 +3687,73 @@ details.raisonnement summary {
 }
 
 :root {
-  --lien: #76a9ff;
-  --ok: #79d39b;
+  /* ============================================================================
+   IDENTITÉ — UN SEUL ACCENT, LE ROUGE
+   ============================================================================
+   Il y avait quatre `--lien` en concurrence dans ce fichier, et l'en-tête
+   annonçait « ROUGE réservé aux liens » pendant que le bleu `#76a9ff`, déclaré
+   plus bas, l'emportait. L'identité n'était pas une question de contraste :
+   c'est la couleur d'accent elle-même qui n'était pas décidée.
+
+   DÉCISION : l'accent est le ROUGE, et il n'y en a qu'un. Le bleu, l'orange et
+   le rouge-orangé du code ne sont plus des accidents de réglage : ils sont
+   supprimés ou ramenés dans la famille rouge.
+
+   La couleur ne peut pas être IDENTIQUE dans les deux thèmes — mesuré :
+
+     #ff756a sur #1f1d1d → 6,39:1   sur #ffffff → 2,62:1
+     #c81e1e sur #ffffff → 5,74:1   sur #1f1d1d → 2,92:1
+
+   Aucune valeur ne tient 4,5:1 des deux côtés. Garder `#ff756a` partout, comme
+   envisagé, laisserait les liens à 2,62:1 en thème clair : illisible, et
+   l'en-tête aurait menti sur l'accessibilité autant que sur la couleur.
+   On garde donc UNE identité de teinte — le rouge — avec deux valeurs :
+
+     --lien-sombre  #ff756a   6,39:1 sur la conversation, 7,02:1 sur la barre
+     --lien-clair   #c81e1e   5,74:1 sur le blanc,        5,36:1 sur la barre claire
+
+   C'est la seule solution qui tienne les deux contraintes à la fois : une
+   seule famille de couleur, et un contraste vérifié dans chaque thème. */
+
+  --lien-sombre: #ff756a;
+  --lien-clair: #c81e1e;
+  /* `--lien` est le jeton CONSOMMÉ par les règles ; il pointe sur la valeur du
+     thème courant. Les règles n'ont ainsi jamais à savoir quel thème est
+     actif — c'est le seul endroit du fichier qui le sait. */
+  /* v20261007 (ee) — COLORATION SYNTAXIQUE : LA SEULE EXCEPTION DOCUMENTÉE.
+     Le fichier annonce « monochrome » en tête ; il code pourtant deux jeux de
+     couleurs en dur — huit valeurs, vert, bleu, orange, brun — qui
+     contredisent cette annonce. C'était le mensonge le plus visible du CSS.
+
+     DÉCISION : gris + UN SEUL accent, celui du fichier. Une coloration
+     entièrement grise se lit (c'est ce que font plusieurs thèmes known), mais
+     ici le corail sert déjà à marquer le texte de code (`--texte-code-bloc`) :
+     le garder comme accent unique rend le code lisible ET cohérent avec le
+     reste, sans introduire de nouvelle couleur.
+
+     Ces quatre jetons sont donc l'exception documentée : du gris, plus
+     l'accent. Toute couleur supplémentaire doit passer par un jeton nommé,
+     jamais par un littéral. */
+  --code-commentaire-sombre: #8a8a8a;
+  --code-chaine-sombre: #b5b5b5;
+  --code-mot-sombre: #e8e8e8;
+  --code-nombre-sombre: var(--lien-sombre);
+  --code-commentaire-clair: #6f6f6f;
+  --code-chaine-clair: #8a8a8a;
+  --code-mot-clair: #171717;
+  --code-nombre-clair: var(--lien-clair);
+  --lien: var(--lien-sombre);
+
+  /* La marque n'est PAS une deuxième couleur : c'est l'accent lui-même. Un
+     orange à côté d'un rouge fait deux couleurs, et le choix de l'un plutôt
+     que l'autre devient arbitraire. */
+  --marque: #ff756a;
+  /* `--ok` était vert (#79d39b) : le seul accent non rouge du fichier, et le
+     seul vert. Les états se distinguent par la GRAINE (trait, fond,
+     apostrophe), jamais par la teinte — c'est ce qui tient dans les deux
+     thèmes et reste lisible aux daltonismes. */
+  --ok: #f1f1f1;
   --ambre-texte: #e1b45c;
-  --marque: #d97757;
 }
 
 .side-brand {
@@ -3754,9 +3816,9 @@ details.raisonnement summary {
 .nav-badge {
   margin-left: auto;
   padding: 2px 7px;
-  border: 1px solid #416b9f;
+  border: 1px solid color-mix(in srgb, var(--lien-sombre) 55%, transparent);
   border-radius: 999px;
-  color: #8fc1ff;
+  color: var(--lien-sombre);
   font-family: var(--mono);
   font-size: 0.6rem;
   line-height: 1.2;
@@ -3858,7 +3920,7 @@ details.raisonnement summary {
 }
 
 .md pre a {
-  color: #8fc1ff;
+  color: var(--lien-sombre);
 }
 
 .statut-ligne.ok .ico {
@@ -3992,7 +4054,7 @@ details.raisonnement li.doute {
 }
 
 .saisie-mirror .commande {
-  color: #76a9ff;
+  color: var(--lien-sombre);
 }
 
 .saisie {
@@ -4589,10 +4651,10 @@ html[data-theme="light"] .nav-capture {
   color: #d8d8d8;
 }
 /* v20260926h : coloration syntaxique façon VSCode (thème sombre). */
-.file-apercu .tok-com { color: #6a9955; }
-.file-apercu .tok-ch { color: #ce9178; }
-.file-apercu .tok-mot { color: #569cd6; }
-.file-apercu .tok-nb { color: #b5cea8; }
+.file-apercu .tok-com { color: var(--code-commentaire-sombre); }
+.file-apercu .tok-ch { color: var(--code-chaine-sombre); }
+.file-apercu .tok-mot { color: var(--code-mot-sombre); }
+.file-apercu .tok-nb { color: var(--code-nombre-sombre); }
 .file-actions {
   display: flex;
   gap: 8px;
@@ -4967,7 +5029,6 @@ html[data-theme="light"] {
   --primaire-doux: #e9e9e9;
   --primaire-texte: var(--texte);
   --sur-primaire: #ffffff;
-  --lien: #c81e1e;
   --violet: #555555;
   --violet-doux: #ececec;
   --violet-texte: #333333;
@@ -4986,7 +5047,15 @@ html[data-theme="light"] {
   --code-fond: #f4f4f4;
   --ok: #1c7a45;
   --heros: linear-gradient(135deg, #fafafa 0%, #f1f1f1 55%, #e9e9e9 100%);
-  --ombre: 0 2px 6px rgba(0, 0, 0, 0.08), 0 12px 30px rgba(0, 0, 0, 0.08);
+--ombre: 0 2px 6px rgba(0, 0, 0, 0.08), 0 12px 30px rgba(0, 0, 0, 0.08);
+  /* v20261007 (ee) : le lien suit le thème — rouge dans les deux, mais une
+     valeur par thème, seule façon de tenir 4,5:1 des deux côtés. */
+  --lien: var(--lien-clair);
+  /* v20261007 (ee) : la marque suit le thème, comme le lien. Elle gardait la
+     valeur sombre en thème clair — un corail sur fond blanc, à 2,62:1,
+     illisible. Un seul accent ne veut pas dire une seule valeur : veut dire
+     une seule FAMILLE de teinte, déclinée par thème. */
+  --marque: var(--lien-clair);
 }
 html[data-theme="light"] * {
   scrollbar-color: #b5b5b5 #e8e8e8;
@@ -5123,7 +5192,7 @@ html[data-theme="light"] .chat-marque h1 {
   color: var(--texte);
 }
 html[data-theme="light"] .nav-badge {
-  color: #0b5cad;
+  color: var(--lien-clair);
 }
 html[data-theme="light"] .statut-ligne.ok .ico {
   color: #1c7a45;
@@ -5152,7 +5221,7 @@ html[data-theme="light"] .md code {
   color: var(--texte-code-bloc);
 }
 html[data-theme="light"] .md pre a {
-  color: #0b5cad;
+  color: var(--lien-clair);
 }
 html[data-theme="light"] .activity-group .trace-cmd {
   background: transparent;
@@ -5184,10 +5253,10 @@ html[data-theme="light"] .file-apercu {
   background: #f5f5f5;
   color: var(--texte);
 }
-html[data-theme="light"] .file-apercu .tok-com { color: #2f7a33; }
-html[data-theme="light"] .file-apercu .tok-ch { color: #a3542f; }
-html[data-theme="light"] .file-apercu .tok-mot { color: #0b5cad; }
-html[data-theme="light"] .file-apercu .tok-nb { color: #4d7c4d; }
+html[data-theme="light"] .file-apercu .tok-com { color: var(--code-commentaire-clair); }
+html[data-theme="light"] .file-apercu .tok-ch { color: var(--code-chaine-clair); }
+html[data-theme="light"] .file-apercu .tok-mot { color: var(--code-mot-clair); }
+html[data-theme="light"] .file-apercu .tok-nb { color: var(--code-nombre-clair); }
 html[data-theme="light"] .file-telecharger,
 html[data-theme="light"] .hudf-editer {
   background: #ffffff;
@@ -5272,7 +5341,7 @@ html[data-theme="light"] .saisie-mirror {
   color: var(--texte);
 }
 html[data-theme="light"] .saisie-mirror .commande {
-  color: #0b5cad;
+  color: var(--lien-clair);
 }
 html[data-theme="light"] .saisie::placeholder {
   color: #757575;
