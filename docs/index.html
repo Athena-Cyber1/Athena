@@ -9,7 +9,7 @@
   <meta name="description" content="Athena" />
   <meta name="keywords" content="Athena" />
   <link rel="icon" type="image/svg+xml" href="./design/logo.svg" />
-  <link rel="stylesheet" href="./design/athena-demo.css?v=20261007di" />
+  <link rel="stylesheet" href="./design/athena-demo.css?v=20261007dm" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&amp;family=Geist+Mono:wght@400..600&amp;display=swap" rel="stylesheet" />
@@ -214,10 +214,23 @@
         <!-- §8.7-4 : plan de travail visible — alimenté par le bloc athena-plan
              (majPlan), persisté par conversation (_plan), réinjecté à chaque
              tour (body.plan → consigne système). Masqué quand il est vide. -->
-        <div id="hud-plan" class="hud-plan" hidden role="status" aria-label="Plan de travail en cours">
-          <div class="plan-tete">Plan de travail</div>
-          <ol class="plan-liste"></ol>
-        </div>
+<div id="hud-plan" class="hud-plan" hidden role="status" aria-label="Plan de travail en cours">
+             <!-- v20261007 (dm) : le plan est REPLABLE et compact. Il prenait
+                  jusqu'à 34vh et poussaient le fil de discussion hors de
+                  l'écran. Enfolded par defaut, avec le suivi "2/5" dans
+                  l'entete : l'information utile (ou le travail est-il encore
+                  en cours) reste visible sans occuper l'ecran.
+                  Le point anime de l'entete indique que le modele travaille. -->
+             <button id="plan-tete" class="plan-tete" type="button" aria-expanded="false" aria-controls="plan-corps">
+               <span class="plan-tete-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+               <span class="plan-tete-nom">Plan de travail</span>
+               <span id="plan-suivi" class="plan-suivi" aria-live="polite"></span>
+               <span id="plan-actif" class="plan-actif" aria-hidden="true"><i></i></span>
+             </button>
+             <div id="plan-corps" class="plan-corps" hidden>
+               <ol class="plan-liste"></ol>
+             </div>
+           </div>
         <div id="msgs" class="msgs" role="log" aria-live="polite" aria-label="Fil de discussion"></div>
 
         <div id="file-preview" class="file-preview" aria-live="polite"></div>
@@ -371,7 +384,7 @@
     <script src="./api-shim.js?v=20261007dj"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20261007dl"></script>
+    <script src="./chat-demo.js?v=20261007dm"></script>
   </div>
 </body>
 </html>

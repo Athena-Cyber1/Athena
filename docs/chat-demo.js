@@ -3652,20 +3652,48 @@ function majPlan(lignes) {
     if (hud) {
       hud.hidden = planEtapes.length === 0;
       const liste = hud.querySelector('.plan-liste');
+      let faites = 0;
       if (liste) {
         liste.replaceChildren();
         for (const etape of planEtapes) {
           const li = document.createElement('li');
           const t = etape.trim();
           const faite = /^\[(x|X|v|✓)\]/.test(t);
+          if (faite) faites++;
           li.textContent = t.replace(/^\[(x|X|v|✓| )\]\s*/, '');
           if (faite) li.className = 'fait';
           liste.appendChild(li);
         }
       }
+      /* v20261007 (dm) : suivi « 2/5 » dans l'en-tête. Le plan replié doit
+         rester informatif — c'est la seule chose visible au repos. */
+      const suivi = document.getElementById('plan-suivi');
+      if (suivi) suivi.textContent = faites + '/' + planEtapes.length;
     }
   } catch (_) {}
 }
+/* v20261007 (dm) : le point animé de l'en-tête du plan signale que le modèle
+   travaille encore. Il est piloté par l'état RÉEL (`occupe`), pas par une
+   minuterie : quand le modèle s'arrête, le point s'éteint avec le bouton. */
+function majPlanActivite() {
+  try {
+    const hud = document.getElementById('hud-plan');
+    if (hud) hud.classList.toggle('occupe', occupe === true);
+  } catch (_) {}
+}
+/* Repliage : l'utilisateur garde son choix pendant la session. */
+(function initPlanRepliable() {
+  const tete = document.getElementById('plan-tete');
+  const corps = document.getElementById('plan-corps');
+  if (!tete || !corps) return;
+  let deploye = false;
+  const appliquer = () => {
+    tete.setAttribute('aria-expanded', deploye ? 'true' : 'false');
+    corps.hidden = !deploye;
+  };
+  tete.addEventListener('click', () => { deploye = !deploye; appliquer(); });
+  appliquer();
+})();
 function planActif() { return planEtapes.slice(); }
 window.__athenaPlanLire = planActif;
 /* §8.7-5 : après une écriture, le harnais RELIT le fichier (preuve
@@ -5830,6 +5858,8 @@ function sauverSaisies() {
   try { localStorage.setItem(CLE_SAISIES, JSON.stringify(saisies)); } catch { /* optionnel */ }
 }
 function majBoutonArret() {
+  /* v20261007 (dm) : le point anime du plan suit l etat REEL du bouton, pas une minuterie. */
+  majPlanActivite();
   if (occupe) {
     btnEl.replaceChildren(icoSvg('stop'));
     btnEl.title = 'Arrêter la génération';

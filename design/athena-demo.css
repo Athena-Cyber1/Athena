@@ -5910,26 +5910,92 @@ html[data-theme="light"] .interpreteur-code {
 .hud-plan {
   flex: 0 0 auto;
   margin: 8px 14px 0;
-  padding: 8px 12px 10px;
+  padding: 4px 10px 5px;
   background: var(--carte);
   border: 1px solid var(--bord);
   border-left: 3px solid var(--primaire);
   border-radius: var(--rayon);
   box-shadow: var(--ombre);
-  max-height: 34vh;
+  /* v20261007 (dm) : 34vh poussait le fil de discussion hors de l'écran. Le
+     plan est replié par défaut ; déployé il plafonne à 22vh (défilement
+     interne), donc il ne mange jamais la place des réponses. */
+  max-height: 22vh;
   overflow: auto;
   animation: apparait 0.16s ease;
 }
 .hud-plan[hidden] {
   display: none;
 }
+/* En-tête : un vrai bouton (focus clavier, aria-expanded) — c'est lui qui
+   porte le repliage, pas un titre neutre. */
 .plan-tete {
-  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--texte-doux);
-  margin-bottom: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+.plan-tete:hover {
+  color: var(--texte);
+}
+.plan-tete-ico {
+  display: inline-flex;
+  flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+.plan-tete-ico svg {
+  width: 14px;
+  height: 14px;
+}
+.plan-tete[aria-expanded="true"] .plan-tete-ico {
+  transform: rotate(180deg);
+}
+.plan-tete-nom {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.plan-suivi {
+  flex: 0 0 auto;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.85;
+}
+/* Indicateur d'activité : visible seulement quand le modèle travaille. */
+.plan-actif {
+  display: none;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.hud-plan.occupe .plan-actif {
+  display: inline-flex;
+}
+.plan-actif i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primaire);
+  animation: plan-pulse 1.15s ease-in-out infinite;
+}
+@keyframes plan-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.75); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.plan-corps {
+  padding-top: 4px;
+}
+.plan-corps[hidden] {
+  display: none;
 }
 .plan-liste {
   margin: 0;
