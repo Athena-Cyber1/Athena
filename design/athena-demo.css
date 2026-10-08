@@ -1,27 +1,27 @@
 /* ==========================================================================
-   AthÃ©na â€” design MONOCHROME (demande explicite de l'utilisateur) :
+   Athéna — design MONOCHROME (demande explicite de l'utilisateur) :
    mode clair = blanc & noir, mode sombre = noir & blanc.
-   Le ROUGE est rÃ©servÃ© aux liens (--lien). ZÃ©ro Ã©moji : icÃ´nes SVG inline
+   Le ROUGE est réservé aux liens (--lien). Zéro émoji : icônes SVG inline
    (traits currentColor) + typographie sobre.
-   Les variables ci-dessous sont les tokens consommÃ©s par l'importeur de
-   design (/api/design + theme-loader.js) : un thÃ¨me importÃ© les redÃ©finit.
+   Les variables ci-dessous sont les tokens consommés par l'importeur de
+   design (/api/design + theme-loader.js) : un thème importé les redéfinit.
 
-   CARTE DES COUCHES (la source l'emporte Ã  spÃ©cificitÃ© Ã©gale) :
+   CARTE DES COUCHES (la source l'emporte à spécificité égale) :
    1. :root clair + @media prefers-color-scheme: dark (tokens)
-   2. base + composants (ordre : sidebar, en-tÃªte, fil, bulles, cartes,
-      composeur, modales, paramÃ¨tres)
+   2. base + composants (ordre : sidebar, en-tête, fil, bulles, cartes,
+      composeur, modales, paramètres)
    3. @media (max-width: 940px / 600px / 480px) (responsive)
-   4. patch sombre (surfaces codÃ©es pour le thÃ¨me par dÃ©faut)
-   5. @media (min-width: 721px) (cadrage 768 px â€” GAGNE TOUJOURS sur desktop)
+   4. patch sombre (surfaces codées pour le thème par défaut)
+   5. @media (min-width: 721px) (cadrage 768 px — GAGNE TOUJOURS sur desktop)
    6. html[data-theme="light"] (surcharges du mode clair)
-RÃ¨gles collectives : bordures neutres = --bord/--bord-fort (jamais de
+Règles collectives : bordures neutres = --bord/--bord-fort (jamais de
     hex en dur) ; rayons = --rayon-s/--rayon/--rayon-l ; ombres = --ombre ;
-    z-index : Ã‰CHELLE NOMMÃ‰E (plus de nombres en dur) â€”
-      --z-dans (saisie, en-tÃªte, pastille), --z-voile, --z-menu (menus),
+    z-index : ÈCHELLE NOMMÈE (plus de nombres en dur) —
+      --z-dans (saisie, en-tête, pastille), --z-voile, --z-menu (menus),
       --z-toast (toasts), --z-hud (panneaux HUD + voile modale), --z-modale
-      (modales et bandeau d'interprÃ©teur).
-   AccessibilitÃ© : :focus-visible global (anneau 2px, rayon prÃ©servÃ©),
-   cibles â‰¥ 24 px, contrastes texte â‰¥ 4.5:1 vÃ©rifiÃ©s (voir ARCHITECTURE Â§9).
+      (modales et bandeau d'interpréteur).
+   Accessibilité : :focus-visible global (anneau 2px, rayon préservé),
+   cibles ∥ 24 px, contrastes texte ∥ 4.5:1 vérifiés (voir ARCHITECTURE §9).
    ========================================================================== */
 
 :root {
@@ -29,8 +29,8 @@ RÃ¨gles collectives : bordures neutres = --bord/--bord-fort (jamais de
   --primaire-fort: #000000;
   --primaire-doux: #f1f1f1;
   --primaire-texte: #111111;
-  --sur-primaire: #ffffff;   /* texte posÃ© SUR --primaire (noirâ†’blanc) */
-  --lien: #d81e05;           /* ROUGE : rÃ©servÃ© aux liens */
+  --sur-primaire: #ffffff;   /* texte posé SUR --primaire (noir⅒blanc) */
+  --lien: #d81e05;           /* ROUGE : réservé aux liens */
   --violet: #555555;
   --violet-doux: #f1f1f1;
   --violet-texte: #3a3a3a;
@@ -47,7 +47,7 @@ RÃ¨gles collectives : bordures neutres = --bord/--bord-fort (jamais de
   --danger-fond: #f0f0f0;    /* danger : monochrome fort (noir sur gris) */
   --danger-bord: #c9c9c9;
   --danger-texte: #141414;
-  /* alias hÃ©ritÃ©s (thÃ¨mes importÃ©s existants) */
+  /* alias hérités (thèmes importés existants) */
   --rouge-fond: var(--danger-fond);
   --rouge-bord: var(--danger-bord);
   --rouge-texte: var(--danger-texte);
@@ -55,136 +55,101 @@ RÃ¨gles collectives : bordures neutres = --bord/--bord-fort (jamais de
   --gris-bord: #dcdcdc;
   --gris-texte: #606060;
   --code-fond: #0d0d0d;
-  /* v20261007 (dz) : fond de bloc de code, SOMBRE dans les deux thÃ¨mes.
-     `--code-fond` ne convient pas ici : il passe Ã  #f4f4f4 en thÃ¨me clair.
-     Or un bloc de code doit rester une surface sombre mÃªme sur fond clair â€”
+  /* v20261007 (dz) : fond de bloc de code, SOMBRE dans les deux thèmes.
+     `--code-fond` ne convient pas ici : il passe à #f4f4f4 en thème clair.
+     Or un bloc de code doit rester une surface sombre même sur fond clair —
      c'est ce qui distingue du texte, et c'est ce que fait tout le monde. Ce
-     jeton n'est volontairement PAS redÃ©fini dans le bloc clair : c'est le seul
+     jeton n'est volontairement PAS redéfini dans le bloc clair : c'est le seul
      moyen de garantir qu'il reste sombre. */
   --fond-code-bloc: #0d0d0d;
   /* v20261007 (ea) : l'ENCADRAGE du code en ligne est distinct du fond des
-     BLOCS. Un `code` posÃ© dans une phrase est une marque en ligne ; un `pre`
-     est une surface. Leur donner le mÃªme noir aplati faisait disparaÃ®tre la
-     diffÃ©rence entre Â« un mot en code Â» et Â« un bloc Â». Le fond de l'encadrement
+     BLOCS. Un `code` posé dans une phrase est une marque en ligne ; un `pre`
+     est une surface. Leur donner le même noir aplati faisait disparaître la
+     différence entre « un mot en code » et « un bloc ». Le fond de l'encadrement
      est ici plus doux que celui des blocs, et son texte reste #ea553c. */
   --fond-code-inline: #1a1818;
   --texte-code-bloc: #ea553c;
-  /* v20261007 (ea) : texte du plan en blanc, par jeton. Il Ã©tait figÃ© en dur,
-     donc il ne suivait ni le thÃ¨me ni le contraste calculÃ©. */
+  /* v20261007 (ea) : texte du plan en blanc, par jeton. Il était figé en dur,
+     donc il ne suivait ni le thème ni le contraste calculé. */
   --texte-plan-bloc: #ffffff;
   --ok: #111111;
-  /* v20261007 (dx) â€” SURFACES DE ZONE, en variables.
-     Elles manquaient, et c'est pourquoi les couleurs Ã©taient Ã©crites en dur
-     dans les rÃ¨gles : sans jeton, un littÃ©ral est le seul moyen d'exprimer une
-     surface de zone. ConsÃ©quence observÃ©e : changer la couleur d'une zone
-     imposait d aller chercher la valeur dans le CSS, et le thÃ¨me clair ne
-     pouvait pas la suivre â€” il ne savait pas quoi surcharger.
-     Chaque surface a donc son jeton, avec son opposÃ© en thÃ¨me clair dÃ©clarÃ©
+  /* v20261007 (dx) — SURFACES DE ZONE, en variables.
+     Elles manquaient, et c'est pourquoi les couleurs étaient écrites en dur
+     dans les règles : sans jeton, un littéral est le seul moyen d'exprimer une
+     surface de zone. Conséquence observée : changer la couleur d'une zone
+     imposait d aller chercher la valeur dans le CSS, et le thème clair ne
+     pouvait pas la suivre — il ne savait pas quoi surcharger.
+     Chaque surface a donc son jeton, avec son opposé en thème clair déclaré
      dans le bloc `html[data-theme="light"]` plus bas. */
   --fond-msgs: #211f1f;       /* le fil de discussion */
-  --fond-row: #1f1d1d;         /* une rangÃ©e, un cran au-dessus du fil */
-  /* v20261007 (ea) : la zone de conversation et la barre latÃ©rale ont deux
+  --fond-row: #1f1d1d;         /* une rangée, un cran au-dessus du fil */
+  /* v20261007 (ea) : la zone de conversation et la barre latérale ont deux
      valeurs distinctes. `.chat-shell` est le conteneur de conversation ; il
-     Ã©tait restÃ© sur `--fond`, si bien que la couleur demandÃ©e pour l'Ã©cran
-     principal n'Ã©tait appliquÃ©e nulle part. `--fond-side` couvre TOUTE la
-     barre latÃ©rale, pied compris. */
+     était resté sur `--fond`, si bien que la couleur demandée pour l'écran
+     principal n'était appliquée nulle part. `--fond-side` couvre TOUTE la
+     barre latérale, pied compris. */
   --fond-chat: #1f1d1d;
-  --fond-side: #141414;        /* TOUTE la barre latÃ©rale */
-  --fond-side-pied: #141414;   /* son pied : mÃªme valeur, la zone est continue */
+  --fond-side: #141414;        /* TOUTE la barre latérale */
+  --fond-side-pied: #141414;   /* son pied : même valeur, la zone est continue */
   --fond-share: #454242;       /* le bouton Partager */
   --fond-share-survol: #555250;
   --fond-partage-texte: #f2f2f2;
   --heros: linear-gradient(135deg, #fafafa 0%, #f1f1f1 55%, #ffffff 100%);
   --ombre: 0 1px 3px rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 0, 0, 0.07);
-  /* Ã‰chelle de rayons partagÃ©e : S=petits contrÃ´les, dÃ©faut=cartes, L=compositeur */
+  /* Èchelle de rayons partagée : S=petits contrôles, défaut=cartes, L=compositeur */
 --rayon-s: 8px;
 --rayon: 12px;
 --rayon-l: 16px;
-/* v20261007 (dh) â€” Ã‰CHELLE DE Z-INDEX NOMMÃ‰E.
-   Les valeurs Ã©taient posÃ©es en dur et dispersÃ©es (0, 1, 3, 5, 6, 8, 20, 30,
-   40, 60, 65) : impossible de vÃ©rifier si deux couches se chevauchent sans les
-   compter Ã  la main, et un ajout Â« au feeling Â» pouvait passer sous une
-   modale. Chaque rangÃ©e est nommÃ©e. ATTENTION : chaque token vaut EXACTEMENT la
-   valeur qu'il remplace â€” un `--z-dans` valant 3 alors que l'ancien 3 meant
-   autre chose dÃ©graderait l'empilement sans qu'on le voie au premier rendu. */
+/* v20261007 (dh) — ÈCHELLE DE Z-INDEX NOMMÈE.
+   Les valeurs étaient posées en dur et dispersées (0, 1, 3, 5, 6, 8, 20, 30,
+   40, 60, 65) : impossible de vérifier si deux couches se chevauchent sans les
+   compter à la main, et un ajout « au feeling » pouvait passer sous une
+   modale. Chaque rangée est nommée. ATTENTION : chaque token vaut EXACTEMENT la
+   valeur qu'il remplace — un `--z-dans` valant 3 alors que l'ancien 3 meant
+   autre chose dégraderait l'empilement sans qu'on le voie au premier rendu. */
 --z-base: 0;          /* saisie, mirror */
 --z-dans: 1;          /* .saisie, au-dessus de son mirror */
---z-eco-echo: 3;      /* Ã©cho de clic et capture d'image dans le HUD navigateur */
---z-collant: 5;       /* en-tÃªte de discussion (sticky) */
+--z-eco-echo: 3;      /* écho de clic et capture d'image dans le HUD navigateur */
+--z-collant: 5;       /* en-tête de discussion (sticky) */
 --z-pastille: 6;      /* pastille de progression */
 --z-toast: 8;         /* corps du toast */
 --z-voile: 20;        /* voiles de modale, boutons flottants */
 --z-menu: 30;         /* sidebar mobile */
 --z-toast-hud: 40;    /* panneau du HUD fichier */
---z-hud: 60;          /* panneaux HUD (modÃ¨les, effort, navigateur) */
---z-modale: 65;       /* modales et bandeau d'interprÃ©teur, au-dessus de tout */
-  /* â€”â€”â€”â€” RÃ©glages de position (modifiez ici) â€”â€”â€”â€”
-     Largeur + dÃ©calages de la sidebar : une seule valeur Ã  changer.
+--z-hud: 60;          /* panneaux HUD (modèles, effort, navigateur) */
+--z-modale: 65;       /* modales et bandeau d'interpréteur, au-dessus de tout */
+  /* ———— Réglages de position (modifiez ici) ————
+     Largeur + décalages de la sidebar : une seule valeur à changer.
      `width` et `flex-basis` suivent --pos-sidebar-largeur ; la marge du
-     mode Â« fermÃ© Â» en est calculÃ©e ; `translateX` du voile mobile est
-     pilotÃ© par --pos-sidebar-cachee / --pos-sidebar-ouverte. */
+     mode « fermé » en est calculée ; `translateX` du voile mobile est
+     piloté par --pos-sidebar-cachee / --pos-sidebar-ouverte. */
   --pos-sidebar-largeur: 300px;
   --pos-sidebar-cachee: translateX(-104%);
   --pos-sidebar-ouverte: translateX(0);
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --primaire: #f5f5f5;
-    --primaire-fort: #ffffff;
-    --primaire-doux: #202020;
-    --primaire-texte: #f5f5f5;
-    --sur-primaire: #0a0a0a;  /* texte posÃ© SUR --primaire (blancâ†’noir) */
-    --lien: #ff5f4a;          /* rouge lisible sur fond noir */
-    --violet: #aaaaaa;
-    --violet-doux: #202020;
-    --violet-texte: #cfcfcf;
-    --fond: #0a0a0a;
-    --carte: #161616;
-    --carte-doux: #1e1e1e;
-    --texte: #f2f2f2;
-    --texte-doux: #a0a0a0;
-    --bord: #2b2b2b;
-    --bord-fort: #404040;
-    --ambre-fond: #202020;
-    --ambre-bord: #404040;
-    --ambre-texte: #cfcfcf;
-    --danger-fond: #202020;
-    --danger-bord: #464646;
-    --danger-texte: #f2f2f2;
-    --rouge-fond: var(--danger-fond);
-    --rouge-bord: var(--danger-bord);
-    --rouge-texte: var(--danger-texte);
-    --gris-fond: #1a1a1a;
-    --gris-bord: #303030;
-    --gris-texte: #a0a0a0;
-    --code-fond: #050505;
-    --ok: #f2f2f2;
-    --heros: linear-gradient(135deg, #1b1b1b 0%, #111111 55%, #0a0a0a 100%);
-    --ombre: 0 2px 6px rgba(0, 0, 0, 0.5), 0 12px 30px rgba(0, 0, 0, 0.4);
-  }
-}
 
-/* â€”â€”â€”â€”â€” Base â€”â€”â€”â€”â€” */
+
+/* ————— Base ————— */
 html,
 body {
   margin: 0;
   padding: 0;
-  /* v20261007 (dw) : police de base Ã  16px. Elle n'Ã©tait fixÃ©e nulle part, donc
-     la racine restait Ã  la valeur par dÃ©faut du navigateur (16px) â€” mais rien
-     ne l'assurait : un reset plus tard, un style hÃ©ritÃ©, ou un navigateur
-     rÃ©glÃ© autrement suffisait Ã  dÃ©caler toute l'Ã©chelle. Elle est donc
-     dÃ©clarÃ©e explicitement, en rem pour suivre le zoom de l'utilisateur. */
+  /* v20261007 (dw) : police de base à 16px. Elle n'était fixée nulle part, donc
+     la racine restait à la valeur par défaut du navigateur (16px) — mais rien
+     ne l'assurait : un reset plus tard, un style hérité, ou un navigateur
+     réglé autrement suffisait à décaler toute l'échelle. Elle est donc
+     déclarée explicitement, en rem pour suivre le zoom de l'utilisateur. */
   font-size: 16px;
   /* la pile s'applique aussi hors .page-demo (modales,
-     voiles) â€” avant : Times New Roman par dÃ©faut du navigateur. */
+     voiles) — avant : Times New Roman par défaut du navigateur. */
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
 }
 
-/* v20260926h : Inter auto-hÃ©bergÃ©e â€” les @font-face sont dans le <head>
-   (docs/index.html + src/app/page.tsx) car le bundler Next ne rÃ©sout pas
-   les url() relatives du CSS partagÃ©. Inter = plus proche Ã©quivalent libre
+/* v20260926h : Inter auto-hébergée — les @font-face sont dans le <head>
+   (docs/index.html + src/app/page.tsx) car le bundler Next ne résout pas
+   les url() relatives du CSS partagé. Inter = plus proche équivalent libre
    de Styrene, la police de Claude (commerciale, non embarquable). */
 
 [hidden] {
@@ -192,7 +157,7 @@ body {
 }
 
 .page-demo {
-  height: 100dvh; /* shell bornÃ© SANS pied de page (demande utilisateur) :
+  height: 100dvh; /* shell borné SANS pied de page (demande utilisateur) :
                      le fil de discussion scrolle en interne */
   display: flex;
   flex-direction: column;
@@ -223,7 +188,7 @@ button {
   font-family: inherit;
 }
 
-/* Jeu d'icÃ´nes SVG inline (stroke hÃ©rite de currentColor). */
+/* Jeu d'icônes SVG inline (stroke hérite de currentColor). */
 .ico {
   width: 16px;
   height: 16px;
@@ -242,7 +207,7 @@ button {
   outline-offset: 2px;
 }
 
-/* Le ROUGE est rÃ©servÃ© aux liens (demande explicite de l'utilisateur). */
+/* Le ROUGE est réservé aux liens (demande explicite de l'utilisateur). */
 a {
   color: var(--lien);
 }
@@ -250,7 +215,7 @@ a:hover {
   color: color-mix(in srgb, var(--lien) 78%, var(--texte));
 }
 
-/* â€”â€”â€”â€”â€” Structure â€”â€”â€”â€”â€” */
+/* ————— Structure ————— */
 #app {
   flex: 1 1 auto;
   min-height: 0;
@@ -285,7 +250,7 @@ a:hover {
   position: relative;
 }
 
-/* â€”â€”â€”â€”â€” Barre latÃ©rale â€”â€”â€”â€”â€” */
+/* ————— Barre latérale ————— */
 .side-corps {
   flex: 1 1 auto;
   min-height: 0;
@@ -296,7 +261,7 @@ a:hover {
   overflow: hidden;
 }
 
-/* Bloc Â« Conversations Â» : titre de section + recherche + liste (flex:1). */
+/* Bloc « Conversations » : titre de section + recherche + liste (flex:1). */
 .side-bloc {
   flex: 1 1 auto;
   min-height: 0;
@@ -347,7 +312,7 @@ a:hover {
   display: flex;
   gap: 6px;
   align-items: center;
-  /* v20260926o (kimi) : la loupe suit le thÃ¨me via mask (avant : stroke
+  /* v20260926o (kimi) : la loupe suit le thème via mask (avant : stroke
      #888 en dur, invisible sur fond sombre comme clair). */
   position: relative;
 }
@@ -383,7 +348,7 @@ a:hover {
 }
 .recherche::placeholder {
   color: var(--texte-doux);
-  /* v20260926o-2 (kimi) : Firefox attÃ©nue les placeholders par dÃ©faut. */
+  /* v20260926o-2 (kimi) : Firefox atténue les placeholders par défaut. */
   opacity: 1;
 }
 .plier {
@@ -453,7 +418,7 @@ a:hover {
   align-items: center;
   gap: 2px;
   border-radius: 10px;
-  /* v20261007 (dr) : repÃ¨re du panneau .convo-actions, qui est en absolute. */
+  /* v20261007 (dr) : repère du panneau .convo-actions, qui est en absolute. */
   position: relative;
 }
 .side-item {
@@ -527,8 +492,8 @@ a:hover {
   flex: 0 0 auto;
   font-size: 0.68rem;
   color: var(--texte-doux);
-  /* v20260926o-2 (kimi) : l'opacity 0.72 faisait tomber le contraste Ã  ~3:1
-     pour un micro-texte â€” couleur pleine (~5,9:1 en clair). */
+  /* v20260926o-2 (kimi) : l'opacity 0.72 faisait tomber le contraste à ~3:1
+     pour un micro-texte — couleur pleine (~5,9:1 en clair). */
   font-variant-numeric: tabular-nums;
 }
 .convo-renommer,
@@ -551,10 +516,10 @@ a:hover {
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
 /* v20261007 (dr) : les quatre boutons d'action d'une conversation sont
-   regroupÃ©s. Il ne reste donc qu'UNE cible cliquable sur la ligne (le bouton
-   Â« trois points Â»), au survol ou au focus â€” plus quatre zones mortelles Ã 
-   cÃ´tÃ© du titre. Les actions vivent dans un panneau Ã  part, donc elles ne
-   sont plus positionnÃ©es dans le flux de la ligne. */
+   regroupés. Il ne reste donc qu'UNE cible cliquable sur la ligne (le bouton
+   « trois points »), au survol ou au focus — plus quatre zones mortelles à
+   côté du titre. Les actions vivent dans un panneau à part, donc elles ne
+   sont plus positionnées dans le flux de la ligne. */
 .convo-menu {
   flex: 0 0 auto;
   width: 27px;
@@ -571,9 +536,9 @@ a:hover {
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
 .convo-menu .ico {
-  /* Les trois points sont verticaux : une boÃ®te carrÃ©e les tassait en un trait
-     illisible, et le vide de la moitiÃ© basse rendait le clic imprÃ©cis.
-     BoÃ®te plus haute que large, comme un vrai kebab. */
+  /* Les trois points sont verticaux : une boîte carrée les tassait en un trait
+     illisible, et le vide de la moitié basse rendait le clic imprécis.
+     Boîte plus haute que large, comme un vrai kebab. */
   width: 15px;
   height: 20px;
 }
@@ -587,19 +552,19 @@ a:hover {
   color: var(--texte);
 }
 /* Panneau d'actions : en position FIXE dans <body> (voir placerMenuConvo).
-   AncrÃ© dans la ligne, il recouvrait le bouton de la ligne suivante et
-   rendait impossible l'ouverture d'un second menu. `right` n'est pas utilisÃ© :
-   c'est le JS qui calcule un `left` bornÃ© aux bords de l'Ã©cran. */
-/* v20261007 (dw) : panneau VERTICAL, icÃ´ne + libellÃ©. Quatre icÃ´nes de 27 px
-   alignÃ©es horizontalement sans texte Ã©taient une devinette : rien ne
-   distinguait Â« Exporter en Markdown Â» d'Â« Ã‰pingler Â», et rien n'Ã©tait lisible
-   au doigt â€” le panneau ne s'ouvre pas au survol. En colonne, chaque action se
+   Ancré dans la ligne, il recouvrait le bouton de la ligne suivante et
+   rendait impossible l'ouverture d'un second menu. `right` n'est pas utilisé :
+   c'est le JS qui calcule un `left` borné aux bords de l'écran. */
+/* v20261007 (dw) : panneau VERTICAL, icône + libellé. Quatre icônes de 27 px
+   alignées horizontalement sans texte étaient une devinette : rien ne
+   distinguait « Exporter en Markdown » d'« Èpingler », et rien n'était lisible
+   au doigt — le panneau ne s'ouvre pas au survol. En colonne, chaque action se
    nomme et la zone de toucher devient confortable. */
 .convo-actions {
   position: fixed;
-  /* --z-toast-hud : mÃªme rang que les panneaux flottants du HUD fichier. Un
-     400 en dur â€” mon premier rÃ©flexe â€” Ã©tait le SEUL z-index du CSS Ã 
-     contourner l'Ã©chelle ; l'audit l'a montrÃ© net (18 usages par token,
+  /* --z-toast-hud : même rang que les panneaux flottants du HUD fichier. Un
+     400 en dur — mon premier réflexe — était le SEUL z-index du CSS à
+     contourner l'échelle ; l'audit l'a montré net (18 usages par token,
      1 nombre en dur). */
   z-index: var(--z-toast-hud);
   display: flex;
@@ -622,9 +587,9 @@ a:hover {
   color: var(--texte);
   white-space: nowrap;
 }
-/* Dans le panneau, les actions sont le contenu : pas d'opacitÃ© conditionnelle
+/* Dans le panneau, les actions sont le contenu : pas d'opacité conditionnelle
    au survol de ligne, sinon elles seraient invisibles au clavier. Le bouton est
-   Ã©tirÃ© pour que son Ã©tiquette ait la place, et l'icÃ´ne passe au-dessus. */
+   étiré pour que son étiquette ait la place, et l'icône passe au-dessus. */
 .convo-actions .convo-renommer,
 .convo-actions .convo-export,
 .convo-actions .convo-suppr,
@@ -746,8 +711,8 @@ a:hover {
   gap: 10px;
 }
 
-/* v20260926n (audit) : tuiles .side-actions/.side-onglet supprimÃ©es du DOM
-   avec leurs boutons â€” rÃ¨gles purgÃ©es. */
+/* v20260926n (audit) : tuiles .side-actions/.side-onglet supprimées du DOM
+   avec leurs boutons — règles purgées. */
 .compte-wrap {
   position: relative;
   margin-top: 4px;
@@ -801,7 +766,7 @@ a:hover {
   bottom: calc(100% + 8px);
   left: 0;
   right: 0;
-  /* v20260926o (kimi) : jamais plus haut que le viewport sur petit Ã©cran. */
+  /* v20260926o (kimi) : jamais plus haut que le viewport sur petit écran. */
   max-height: 60dvh;
   overflow-y: auto;
   background: var(--carte);
@@ -833,17 +798,17 @@ a:hover {
   background: var(--gris-fond);
 }
 
-/* â€”â€”â€”â€”â€” En-tÃªte de discussion â€”â€”â€”â€”â€” */
+/* ————— En-tête de discussion ————— */
 .chat-tete {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 10px 18px;
-  /* v20261007 (dx) : plus de trait de sÃ©paration. L'en-tÃªte Ã©tait dÃ©jÃ 
+  /* v20261007 (dx) : plus de trait de séparation. L'en-tête était déjà
      transparent, mais une bordure basse dessinait un cadre de plus entre la
-     barre latÃ©rale et le fil â€” alors que le composeur, lui, gardait le sien.
-     Les deux ensemble donnaient une interface fragmentÃ©e en trois bandes
-     fermÃ©es. Ni l'un ni l'autre ne sÃ©pare rien : le fond du fil le fait. */
+     barre latérale et le fil — alors que le composeur, lui, gardait le sien.
+     Les deux ensemble donnaient une interface fragmentée en trois bandes
+     fermées. Ni l'un ni l'autre ne sépare rien : le fond du fil le fait. */
   border-bottom: none;
   background: transparent;
   position: sticky;
@@ -897,20 +862,20 @@ a:hover {
   cursor: default;
   border: 0 solid transparent;
 }
-/* PrÃªt : disque PLEIN â€” lisibles sans animation (reduce-motion compris). */
+/* Prêt : disque PLEIN — lisibles sans animation (reduce-motion compris). */
 .dot.pret {
   background: var(--ok);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent);
 }
-/* Indisponible : ANNEAU creux â€” forme distincte du disque plein,
-   donc distinguishable mÃªme sans pulse (reduce-animation). */
+/* Indisponible : ANNEAU creux — forme distincte du disque plein,
+   donc distinguishable même sans pulse (reduce-animation). */
 .dot.indisponible {
   background: transparent;
   border: 2.5px solid var(--primaire);
   box-shadow: 0 0 0 3px var(--primaire-doux);
   animation: pulse 1.6s ease-in-out infinite;
 }
-/* Actionnable : clic = relance immÃ©diate de la sonde. */
+/* Actionnable : clic = relance immédiate de la sonde. */
 button.dot,
 .dot[data-actionnable] {
   cursor: pointer;
@@ -922,7 +887,7 @@ button.dot:focus-visible,
   outline-offset: 3px;
 }
 
-/* â€”â€”â€”â€”â€” Fil de discussion â€”â€”â€”â€”â€” */
+/* ————— Fil de discussion ————— */
 .msgs {
   flex: 1 1 auto;
   min-height: 0;
@@ -967,16 +932,16 @@ button.dot:focus-visible,
   border: 1px solid var(--bord);
   box-shadow: var(--ombre);
   overflow-wrap: break-word;
-  /* v20261007 (dz) â€” L'ENCADRAGE POUVAIT ÃŠTRE COUPÃ‰.
-     `.bubble` est un enfant flex de `.row`, et un enfant flex a par dÃ©faut
-     `min-width: auto` : il refuse de descendre sous la largeur intrinsÃ¨que de
+  /* v20261007 (dz) — L'ENCADRAGE POUVAIT ÉTRE COUPÈ.
+     `.bubble` est un enfant flex de `.row`, et un enfant flex a par défaut
+     `min-width: auto` : il refuse de descendre sous la largeur intrinsèque de
      son contenu. Un tableau large, une URL longue ou une ligne de code sans
-     espace le pushing donc au-delÃ  de son `max-width`, et la bordure passait
-     hors du cadre visible â€” le Â« cadrage coupÃ© Â».
-     `min-width: 0` rend la rÃ©duction possible ; `overflow-x: auto` fait
-     dÃ©filer le dÃ©bordement Ã€ L'INTÃ‰RIEUR de la bulle au lieu de le laisser
-     dÃ©border. Le second ne suffit pas seul : sans le premier, rien ne
-     rÃ©trÃ©cit. */
+     espace le pushing donc au-delà de son `max-width`, et la bordure passait
+     hors du cadre visible — le « cadrage coupé ».
+     `min-width: 0` rend la réduction possible ; `overflow-x: auto` fait
+     défiler le débordement À L'INTÈRIEUR de la bulle au lieu de le laisser
+     déborder. Le second ne suffit pas seul : sans le premier, rien ne
+     rétrécit. */
   min-width: 0;
   overflow-x: auto;
   animation: apparait 0.18s ease;
@@ -1132,7 +1097,7 @@ button.dot:focus-visible,
 .row.user .fichier-joint-meta {
   color: inherit;
 }
-/* v1.2 (anti-bÃ¢clage) : badge de rÃ©ponse coupÃ©e par le budget. */
+/* v1.2 (anti-bâclage) : badge de réponse coupée par le budget. */
 .coupe-badge {
   margin-top: 8px;
   padding: 6px 10px;
@@ -1142,8 +1107,8 @@ button.dot:focus-visible,
   color: var(--ambre-texte);
   font-size: 0.76rem;
 }
-/* v banc 20261006 (Â§8.2) : le badge coupe propose ENCORE la suite â€” un clic
-   envoie Â« continue Â», la rÃ©ponse reprend dans la MÃŠME bulle. */
+/* v banc 20261006 (§8.2) : le badge coupe propose ENCORE la suite — un clic
+   envoie « continue », la réponse reprend dans la MÉME bulle. */
 .coupe-continue {
   margin-left: 8px;
   padding: 2px 10px;
@@ -1157,14 +1122,14 @@ button.dot:focus-visible,
 }
 .coupe-continue:hover { background: var(--ambre-bord); }
 .coupe-continue:disabled { opacity: 0.5; cursor: default; }
-/* v1.2 (anti-bÃ¢clage, item 10) : voie rÃ©ellement servie â€” discret. */
+/* v1.2 (anti-bâclage, item 10) : voie réellement servie — discret. */
 .voie-modele {
   margin-top: 6px;
   font-size: 0.7rem;
   color: var(--texte-doux);
 }
-/* v1.2 (suite) : continuation d'une rÃ©ponse dans la MÃŠME bulle â€” un filet
-   discret sÃ©pare les tours, sans casser la lecture d'un seul message. */
+/* v1.2 (suite) : continuation d'une réponse dans la MÉME bulle — un filet
+   discret sépare les tours, sans casser la lecture d'un seul message. */
 .suite-sep {
   margin: 10px 0;
   border: 0;
@@ -1242,7 +1207,7 @@ button.dot:focus-visible,
   color: var(--texte-doux);
   border-radius: 0 9px 9px 0;
 }
-/* v20260926n : la citation rend ses sous-blocs en rÃ©cursion â†’ un <p> interne
+/* v20260926n : la citation rend ses sous-blocs en récursion ⅒ un <p> interne
    ne doit pas ajouter sa marge au premier/au dernier rang. */
 .md blockquote > *:first-child {
   margin-top: 0;
@@ -1250,7 +1215,7 @@ button.dot:focus-visible,
 .md blockquote > *:last-child {
   margin-bottom: 0;
 }
-/* Case Ã  cocher des listes de tÃ¢ches (Â« - [x] fait Â» / Â« - [ ] Ã  faire Â»). */
+/* Case à cocher des listes de tâches (« - [x] fait » / « - [ ] à faire »). */
 .md-check {
   display: inline-flex;
   align-items: center;
@@ -1295,10 +1260,10 @@ button.dot:focus-visible,
 .md pre {
   position: relative;
   /* v20261007 (dz) : le BLOC de code passe au fond sombre lui aussi.
-     `--code-fond` vaut #f4f4f4 en thÃ¨me clair : le code en bloc y Ã©tait donc
-     CLAIR, alors que le code en ligne venait d'Ãªtre rendu sombre. Deux
-     traitements pour la mÃªme chose dans une mÃªme bulle. Un bloc de code est
-     une surface sombre dans les deux thÃ¨mes â€” c'est ce qui le distingue du
+     `--code-fond` vaut #f4f4f4 en thème clair : le code en bloc y était donc
+     CLAIR, alors que le code en ligne venait d'être rendu sombre. Deux
+     traitements pour la même chose dans une même bulle. Un bloc de code est
+     une surface sombre dans les deux thèmes — c'est ce qui le distingue du
      texte. */
   background: var(--fond-code-bloc);
   color: var(--texte-code-bloc);
@@ -1358,9 +1323,9 @@ button.dot:focus-visible,
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* Bloc ```athena-exec â€” commande locale via agent :3020.
-   v-next : violet/vert/rouge codÃ©s en dur retirÃ©s â€” cette zone Ã©tait la
-   seule Ã  sortir du systÃ¨me de tokens (voir ARCHITECTURE.md, revue design).
+/* Bloc ```athena-exec — commande locale via agent :3020.
+   v-next : violet/vert/rouge codés en dur retirés — cette zone était la
+   seule à sortir du système de tokens (voir ARCHITECTURE.md, revue design).
    Le contour reprend --bord-fort comme le reste des blocs de code. */
 .exec-bloc {
   border-color: var(--bord-fort);
@@ -1386,19 +1351,19 @@ button.dot:focus-visible,
   opacity: 0.55;
   cursor: wait;
 }
-/* Repli : conservÃ© pour tout appelant qui Ã©crirait encore du texte brut
-   dans .exec-sortie plutÃ´t que d'utiliser details.trace-cmd ci-dessous. */
-/* v20261007 : dÃ©tail de cascade affichÃ© sous un Ã©chec â€” Â« #1 gemma â†’ HTTP 429
-   en 2 s, #2 nemotron â†’ timeout 300 sâ€¦ Â». RepliÃ© par dÃ©faut (ce n'est qu'un
-   diagnostic), lisible d'un coup d'Å“il sur la chronologie rÃ©elle. */
+/* Repli : conservé pour tout appelant qui écrirait encore du texte brut
+   dans .exec-sortie plutôt que d'utiliser details.trace-cmd ci-dessous. */
+/* v20261007 : détail de cascade affiché sous un échec — « #1 gemma ⅒ HTTP 429
+   en 2 s, #2 nemotron ⅒ timeout 300 s… ». Replié par défaut (ce n'est qu'un
+   diagnostic), lisible d'un coup d'œil sur la chronologie réelle. */
 .chain-detail {
   margin-top: 10px;
   padding: 8px 10px;
   border: 1px solid var(--bord);
   border-radius: 6px;
-  /* v20261007 (U1) : fond dÃ©rivÃ© d'une variable et non blanc translucide fixe â€”
-     `rgba(255,255,255,.03)` sur fond blanc rendait le cadre invisible en thÃ¨me
-     clair (le texte, lui, Ã©tait en #d8d8d8 quasi blanc). */
+  /* v20261007 (U1) : fond dérivé d'une variable et non blanc translucide fixe —
+     `rgba(255,255,255,.03)` sur fond blanc rendait le cadre invisible en thème
+     clair (le texte, lui, était en #d8d8d8 quasi blanc). */
   background: var(--carte-doux, rgba(255, 255, 255, 0.03));
   font-size: 0.8rem;
 }
@@ -1414,7 +1379,7 @@ button.dot:focus-visible,
 }
 .chain-detail li {
   margin: 2px 0;
-  /* v20261007 : couleur de thÃ¨me (lisibilitÃ© correcte sur les deux fonds). */
+  /* v20261007 : couleur de thème (lisibilité correcte sur les deux fonds). */
   color: var(--texte, #d8d8d8);
 }
 .exec-sortie {
@@ -1434,10 +1399,10 @@ button.dot:focus-visible,
   background: rgba(255, 255, 255, 0.09);
 }
 
-/* â€”â€”â€”â€”â€” Trace de commande â€” compte-rendu repliable d'une commande exÃ©cutÃ©e
-   (commande + code de sortie + durÃ©e + stdout/stderr), mÃªme langage visuel
-   que details.raisonnement : repliÃ© par dÃ©faut, forme distincte pour
-   l'Ã©chec (icÃ´ne alerte + fond marquÃ©), jamais de rouge/vert en dur. */
+/* ————— Trace de commande — compte-rendu repliable d'une commande exécutée
+   (commande + code de sortie + durée + stdout/stderr), même langage visuel
+   que details.raisonnement : replié par défaut, forme distincte pour
+   l'échec (icône alerte + fond marqué), jamais de rouge/vert en dur. */
 details.trace-cmd {
   margin-top: 8px;
   background: var(--code-fond);
@@ -1519,10 +1484,10 @@ details.trace-cmd pre.trace-cmd-err {
   color: #f2f2f2;
 }
 
-/* â€”â€”â€”â€”â€” Marqueur de statut inline (remplace âœ…/âš ï¸ gÃ©nÃ©rÃ©s par le modÃ¨le) â€”
-   Â« ZÃ©ro Ã©moji Â» vaut aussi pour le texte que le modÃ¨le produit lui-mÃªme :
-   on substitue les deux glyphes les plus frÃ©quents par l'icÃ´ne SVG du
-   systÃ¨me avant rendu (voir markdownInline / STATUT_EMOJIS). */
+/* ————— Marqueur de statut inline (remplace ✄/⚠️ générés par le modèle) —
+   « Zéro émoji » vaut aussi pour le texte que le modèle produit lui-même :
+   on substitue les deux glyphes les plus fréquents par l'icône SVG du
+   système avant rendu (voir markdownInline / STATUT_EMOJIS). */
 .statut-ligne {
   display: inline-flex;
   align-items: center;
@@ -1541,12 +1506,12 @@ details.trace-cmd pre.trace-cmd-err {
   color: var(--texte-doux);
 }
 
-/* â€”â€”â€”â€”â€” Panneau de raisonnement (type Â« rÃ©flexion Â» des IA classiques) â€”â€”â€”â€”
-   En direct : dÃ©pliÃ©, spinner + derniÃ¨re Ã©tape, frise des Ã©tapes.
-   Ã€ la rÃ©ponse : repliÃ©, Â« Raisonnement Â· N Ã©tapes Â· Xs Â» (clic = dÃ©tail). */
+/* ————— Panneau de raisonnement (type « réflexion » des IA classiques) ————
+   En direct : déplié, spinner + dernière étape, frise des étapes.
+   À la réponse : replié, « Raisonnement · N étapes · Xs » (clic = détail). */
 details.raisonnement {
-  /* v20260926g (Claude) : bloc conversationnel sobre â€” fond transparent,
-     pas d'encadrÃ©, texte secondaire attÃ©nuÃ©, air vertical. */
+  /* v20260926g (Claude) : bloc conversationnel sobre — fond transparent,
+     pas d'encadré, texte secondaire atténué, air vertical. */
   margin: 0 0 10px;
   background: transparent;
   border: none;
@@ -1597,8 +1562,8 @@ details.raisonnement summary > .raisonnement-titre {
 details[open] .chev {
   transform: rotate(90deg);
 }
-/* v20260926g-revue : frise d'Ã©vÃ©nements supprimÃ©e (console de logs) â€”
-   le panneau agrÃ©gÃ© n'utilise plus ni ol, ni pastilles, ni durÃ©es. */
+/* v20260926g-revue : frise d'événements supprimée (console de logs) —
+   le panneau agrégé n'utilise plus ni ol, ni pastilles, ni durées. */
 .think {
   color: var(--primaire);
   font-weight: 500;
@@ -1626,13 +1591,13 @@ details.raisonnement.vivant .think::before {
   white-space: nowrap;
   font-weight: 400;
   /* v20260926o-2 (kimi) : l'opacity 0.85 faisait tomber le contraste sous
-     4,5:1 pour ce micro-texte â€” couleur pleine. */
+     4,5:1 pour ce micro-texte — couleur pleine. */
 }
 span.think:not(details .think) {
   font-size: 0.8rem;
 }
 
-/* Ã‰cran d'accueil (.examples) */
+/* Ècran d'accueil (.examples) */
 .examples {
   max-width: 620px;
   margin: 12vh auto 0;
@@ -1666,7 +1631,7 @@ span.think:not(details .think) {
   color: var(--primaire-texte);
   transform: translateY(-1px);
 }
-/* v20260926c (affichage) : rangÃ©e des pastilles de l'accueil. */
+/* v20260926c (affichage) : rangée des pastilles de l'accueil. */
 .examples-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1674,7 +1639,7 @@ span.think:not(details .think) {
   gap: 8px;
 }
 
-/* Vue plein Ã©cran (Projets / ParamÃ¨tres / Compte / Aide) */
+/* Vue plein écran (Projets / Paramètres / Compte / Aide) */
 .workspace-view {
   max-width: 880px;
   margin: 0 auto;
@@ -1692,11 +1657,11 @@ span.think:not(details .think) {
   font-size: 0.92rem;
 }
 
-/* ---------- v20261007 (dy) â€” HUD DES PARAMÃˆTRES ----------
-   Les paramÃ¨tres Ã©taient une VUE : ils remplaÃ§aient le fil (msgsEl.replaceChildren).
-   Ils sont dÃ©sormais superposÃ©s, conversation intacte derriÃ¨re. Le voile n'est
-   pas un simple fond â€” sans lui, cliquer hors du panneau ne fermait rien et
-   la personne perdait le fil des ses propres rÃ©glages. */
+/* ---------- v20261007 (dy) — HUD DES PARAMÇTRES ----------
+   Les paramètres étaient une VUE : ils remplaçaient le fil (msgsEl.replaceChildren).
+   Ils sont désormais superposés, conversation intacte derrière. Le voile n'est
+   pas un simple fond — sans lui, cliquer hors du panneau ne fermait rien et
+   la personne perdait le fil des ses propres réglages. */
 .hud-voile {
   position: absolute;
   inset: 0;
@@ -1705,15 +1670,15 @@ span.think:not(details .think) {
   animation: fondu 0.15s ease;
 }
 .hud-parametres {
-  /* v20261007 (ea) : centrÃ© sur la COLONNE DE CONVERSATION, pas sur la
-     fenÃªtre. En `position: fixed` + `left: 50%`, le panneau Ã©tait centrÃ© sur le
-     viewport â€” donc dÃ©calÃ© Ã  droite d'environ la moitiÃ© de la barre latÃ©rale,
-     puisque la conversation commence aprÃ¨s elle. Visuellement Â« pas centrÃ© Â»,
-     alors que la mesure disait 700px sur 1400 : la mesure Ã©tait juste, c'est
-     la rÃ©fÃ©rence qui ne l'Ã©tait pas.
+  /* v20261007 (ea) : centré sur la COLONNE DE CONVERSATION, pas sur la
+     fenêtre. En `position: fixed` + `left: 50%`, le panneau était centré sur le
+     viewport — donc décalé à droite d'environ la moitié de la barre latérale,
+     puisque la conversation commence après elle. Visuellement « pas centré »,
+     alors que la mesure disait 700px sur 1400 : la mesure était juste, c'est
+     la référence qui ne l'était pas.
      `.chat-shell` est en `position: relative`, donc `absolute` y donne le bon
-     cadre. Le voile suit : il ne couvre que la conversation, la barre latÃ©rale
-     reste utilisable derriÃ¨re â€” ce qui est plus utile que de tout voiler. */
+     cadre. Le voile suit : il ne couvre que la conversation, la barre latérale
+     reste utilisable derrière — ce qui est plus utile que de tout voiler. */
   position: absolute;
   top: 6vh;
   left: 50%;
@@ -1729,8 +1694,8 @@ span.think:not(details .think) {
   border-radius: var(--rayon-l);
   box-shadow: var(--ombre);
 }
-/* La croix est en haut Ã  droite de la carte : sur un panneau large, un bouton
-   Â« fermer Â» dans le flux se confond avec les onglets juste en dessous. */
+/* La croix est en haut à droite de la carte : sur un panneau large, un bouton
+   « fermer » dans le flux se confond avec les onglets juste en dessous. */
 .hud-croix {
   position: absolute;
   top: 12px;
@@ -1753,7 +1718,7 @@ span.think:not(details .think) {
   width: 15px;
   height: 15px;
 }
-/* ClÃ©s API */
+/* Clés API */
 .cles-apercu {
   margin: 12px 0 6px;
   padding: 10px 12px;
@@ -1774,7 +1739,7 @@ span.think:not(details .think) {
   font-size: 0.8rem;
   color: var(--texte-doux);
 }
-/* Journal et requÃªtes (vue) */
+/* Journal et requêtes (vue) */
 .journal-view h3 {
   margin: 22px 0 8px;
   font-size: 1.05rem;
@@ -1900,7 +1865,7 @@ span.think:not(details .think) {
   border-top: 1px solid var(--bord);
 }
 
-/* ParamÃ¨tres (vue) */
+/* Paramètres (vue) */
 .settings-head h2 {
   margin: 6px 0 4px;
 }
@@ -2062,7 +2027,7 @@ span.think:not(details .think) {
   white-space: nowrap;
 }
 
-/* EntraÃ®nement (onglet) */
+/* Entraînement (onglet) */
 .ex-carte {
   border: 1px solid var(--bord);
   border-radius: var(--rayon);
@@ -2160,7 +2125,7 @@ span.think:not(details .think) {
   margin-top: 10px;
 }
 
-/* â€”â€”â€”â€”â€” PiÃ¨ces jointes â€”â€”â€”â€”â€” */
+/* ————— Pièces jointes ————— */
 .file-preview {
   max-width: 880px;
   width: 100%;
@@ -2169,9 +2134,9 @@ span.think:not(details .think) {
   flex-wrap: wrap;
   gap: 8px;
   padding: 0 22px 8px;
-  /* v20261007 (dx) : transparent. La zone des piÃ¨ces jointes se collait au
-     composeur â€” et le composeur venant de perdre son cadre, elle en gardait
-     un Ã  sa place. */
+  /* v20261007 (dx) : transparent. La zone des pièces jointes se collait au
+     composeur — et le composeur venant de perdre son cadre, elle en gardait
+     un à sa place. */
   background: transparent;
 }
 .file-preview:empty {
@@ -2182,19 +2147,19 @@ span.think:not(details .think) {
   align-items: center;
   gap: 4px;
   /* v20261007 (dx) : fond discret. Sur un composeur devenu transparent, une
-     puce posÃ©e sur --carte se dessinait une ombre pour rien et faisait
-     Â« bouton Â» Ã  cÃ´tÃ© d'un retrait qui est, lui, un bouton. Le trait suffit Ã 
-     dÃ©limiter ; l'ombre ne sert plus. */
+     puce posée sur --carte se dessinait une ombre pour rien et faisait
+     « bouton » à côté d'un retrait qui est, lui, un bouton. Le trait suffit à
+     délimiter ; l'ombre ne sert plus. */
   background: color-mix(in srgb, var(--texte) 5%, transparent);
   border: 1px solid var(--bord);
   border-radius: 10px;
   padding: 4px 5px 4px 10px;
   font-size: 0.8rem;
   animation: apparait 0.16s ease;
-  /* v20261007 (ds) : la puce est bornÃ©e au composeur. Sans `max-width: 100%`,
-     un nom de fichier trÃ¨s long avec badges faisait dÃ©border la puce hors du
-     composeur : le `max-width: 260px` du nom, lui, Ã©tait une constante et non
-     une limite liÃ©e Ã  la largeur rÃ©ellement disponible. */
+  /* v20261007 (ds) : la puce est bornée au composeur. Sans `max-width: 100%`,
+     un nom de fichier très long avec badges faisait déborder la puce hors du
+     composeur : le `max-width: 260px` du nom, lui, était une constante et non
+     une limite liée à la largeur réellement disponible. */
   max-width: 100%;
   min-width: 0;
 }
@@ -2210,10 +2175,10 @@ span.think:not(details .think) {
   white-space: nowrap;
   font-weight: 500;
 }
-/* v20261007 (ds) : la puce est faite d'un bloc (nom + mÃ©ta + Ã©tat) et du
-   bouton de retrait. Avant, le nom, la taille et l'Ã©tat tenaient dans UNE
-   chaÃ®ne, si longue qu'elle dÃ©bordait la ligne et que l'info utile â€” l'Ã©chec
-   â€” arrivait hors du champ de vision. `.file-chip-corps` en colonne laisse le
+/* v20261007 (ds) : la puce est faite d'un bloc (nom + méta + état) et du
+   bouton de retrait. Avant, le nom, la taille et l'état tenaient dans UNE
+   chaîne, si longue qu'elle débordait la ligne et que l'info utile — l'échec
+   — arrivait hors du champ de vision. `.file-chip-corps` en colonne laisse le
    nom prendre la largeur et les badges rester lisibles. */
 .file-chip-corps {
   display: flex;
@@ -2222,12 +2187,12 @@ span.think:not(details .think) {
   gap: 8px;
   min-width: 0;
 }
-/* v20261007 (dz) â€” la pastille d'EXTENSION remplace les badges d'Ã©tat.
+/* v20261007 (dz) — la pastille d'EXTENSION remplace les badges d'état.
    `.file-chip-meta`, `.file-chip-etat` (et ses variantes ok / attente) et
-   `.file-chip-alerte` ont Ã©tÃ© SUPPRIMÃ‰S : plus aucun Ã©lÃ©ment ne porte ces
-   classes depuis que la puce ne montre ni libellÃ© ni icÃ´ne d'Ã©tat. Les laisser
-   aurait Ã©tÃ© du code mort â€” 8 rÃ¨gles pour rien, et un risque de Â« rÃ©paration Â»
-   par quelqu'un qui croirait le badge encore utilisÃ©. */
+   `.file-chip-alerte` ont été SUPPRIMÈS : plus aucun élément ne porte ces
+   classes depuis que la puce ne montre ni libellé ni icône d'état. Les laisser
+   aurait été du code mort — 8 règles pour rien, et un risque de « réparation »
+   par quelqu'un qui croirait le badge encore utilisé. */
 .file-chip-extension {
   flex: 0 0 auto;
   min-width: 34px;
@@ -2240,9 +2205,9 @@ span.think:not(details .think) {
   background: color-mix(in srgb, var(--texte) 14%, transparent);
   color: var(--texte);
 }
-/* Vignette d'image : 34Ã—34, `object-fit: cover` pour que toutes les images
-   aient la mÃªme taille quelle que soit leur format â€” sans quoi une photo
-   panoramique fait exploser la hauteur de la rangÃ©e. */
+/* Vignette d'image : 34×34, `object-fit: cover` pour que toutes les images
+   aient la même taille quelle que soit leur format — sans quoi une photo
+   panoramique fait exploser la hauteur de la rangée. */
 .file-chip-image {
   flex: 0 0 auto;
   width: 34px;
@@ -2251,10 +2216,10 @@ span.think:not(details .think) {
   border-radius: 5px;
   background: color-mix(in srgb, var(--texte) 10%, transparent);
 }
-/* Â« texte non lisible Â» est sÃ©parÃ© de l'Ã©tat : c'est un fichier SUCCÃˆS dont
-   le contenu ne sera pas lu par le modÃ¨le. Le confondre avec Â« indexÃ© Â»
-   revenait Ã  annoncer du vide comme du plein. Le liserÃ© `--ambre-bord` le
-   distingue du badge d'Ã©tat sans introduire de couleur concurrente. */
+/* « texte non lisible » est séparé de l'état : c'est un fichier SUCCÇS dont
+   le contenu ne sera pas lu par le modèle. Le confondre avec « indexé »
+   revenait à annoncer du vide comme du plein. Le liseré `--ambre-bord` le
+   distingue du badge d'état sans introduire de couleur concurrente. */
 
 .file-chip-remove {
   border: none;
@@ -2278,7 +2243,7 @@ span.think:not(details .think) {
   height: 13px;
 }
 
-/* â€”â€”â€”â€”â€” Composeur â€”â€”â€”â€”â€” */
+/* ————— Composeur ————— */
 .composeur {
   padding: 6px 18px calc(12px + env(safe-area-inset-bottom));
   background: linear-gradient(to top, var(--fond) 78%, transparent);
@@ -2366,12 +2331,12 @@ span.think:not(details .think) {
 }
 .btn-envoyer {
   flex: 0 0 auto;
-  width: 32px;               /* CarrÃ© : largeur Ã©gale Ã  la hauteur */
+  width: 32px;               /* Carré : largeur égale à la hauteur */
   height: 32px;
-  border-radius: var(--rayon-s);        /* Bords arrondis du carrÃ© */
+  border-radius: var(--rayon-s);        /* Bords arrondis du carré */
   border: none;
-  background: transparent;   /* Translucide/masquÃ© par dÃ©faut */
-  color: var(--texte);       /* Couleur de l'icÃ´ne adaptÃ©e au fond */
+  background: transparent;   /* Translucide/masqué par défaut */
+  color: var(--texte);       /* Couleur de l'icône adaptée au fond */
   font-size: 0.95rem;
   cursor: pointer;
   display: inline-grid;
@@ -2381,7 +2346,7 @@ span.think:not(details .think) {
 
 /* Background gris clair au survol uniquement */
 .btn-envoyer:hover:not(:disabled) {
-  background: #545353;       /* Gris clair (utilisez rgba(255, 255, 255, 0.1) si vous Ãªtes en thÃ¨me sombre) */
+  background: #545353;       /* Gris clair (utilisez rgba(255, 255, 255, 0.1) si vous êtes en thème sombre) */
 }
 
 .btn-envoyer:active:not(:disabled) {
@@ -2404,7 +2369,7 @@ span.think:not(details .think) {
   animation: pulse 1.8s ease-in-out infinite;
 }
 
-/* â€”â€”â€”â€”â€” Pastille Â« nouvelle rÃ©ponse Â» â€”â€”â€”â€”â€” */
+/* ————— Pastille « nouvelle réponse » ————— */
 .pastille-reponse {
   position: absolute;
   left: 50%;
@@ -2456,7 +2421,7 @@ span.think:not(details .think) {
   padding: 0 5px;
 }
 
-/* â€”â€”â€”â€”â€” Toast â€”â€”â€”â€”â€” */
+/* ————— Toast ————— */
 .toast-notice {
   position: absolute;
   right: 18px;
@@ -2499,7 +2464,7 @@ span.think:not(details .think) {
   border-color: var(--primaire);
 }
 
-/* â€”â€”â€”â€”â€” Modale â€”â€”â€”â€”â€” */
+/* ————— Modale ————— */
 .voile-modale {
   position: fixed;
   inset: 0;
@@ -2519,7 +2484,7 @@ span.think:not(details .think) {
   padding: 22px;
   box-shadow: var(--ombre);
   animation: apparait 0.18s ease;
-  /* v20260926o (kimi) : sur petit Ã©cran les actions sortaient du viewport. */
+  /* v20260926o (kimi) : sur petit écran les actions sortaient du viewport. */
   max-height: calc(100dvh - 40px);
   overflow-y: auto;
 }
@@ -2568,17 +2533,17 @@ span.think:not(details .think) {
 .modale-actions button:hover {
   border-color: var(--primaire);
 }
-/* v20261007 (di) â€” FIN DE LA GUERRE DE SPÃ‰CIFICITÃ‰.
+/* v20261007 (di) — FIN DE LA GUERRE DE SPÈCIFICITÈ.
    `.modale-actions button` est (0,1,1) : une classe + un type. Les variantes
-   `.modale-principal` / `.modale-danger` n'Ã©taient que (0,1,0) â€” donc battues
-   sur background, color et border â€” et il fallu dix `!important` pour
-   forcer. On scope les variantes Ã  leur conteneur rÃ©el
+   `.modale-principal` / `.modale-danger` n'étaient que (0,1,0) — donc battues
+   sur background, color et border — et il fallu dix `!important` pour
+   forcer. On scope les variantes à leur conteneur réel
    (`.modale-actions button.modale-principal` = 0,2,1) : le conflit
-   disparaÃ®t par la structure du sÃ©lecteur, pas par la force.
+   disparaît par la structure du sélecteur, pas par la force.
    chat-demo.js construit ces boutons en `actions.appendChild(ok)`, le parent
-   `.modale-actions` est donc garanti ; et mÃªme sans lui, l'ordre de la cascade
+   `.modale-actions` est donc garanti ; et même sans lui, l'ordre de la cascade
    ne joue plus.
-   Styles INCHANGÃ‰S : vÃ©rifiÃ© par mesure des styles calculÃ©s avant/aprÃ¨s
+   Styles INCHANGÈS : vérifié par mesure des styles calculés avant/après
    (fond, texte, bordure, graisse, corps, interlettrage, casse, rayon). */
 .modale-actions button.modale-principal {
   background: var(--primaire);
@@ -2589,7 +2554,7 @@ span.think:not(details .think) {
 .modale-actions button.modale-principal:hover {
   background: var(--primaire-fort);
 }
-/* Danger : contour DOUBLE + fond contrastÃ© â€” forme distincte du bouton
+/* Danger : contour DOUBLE + fond contrasté — forme distincte du bouton
    principal (le monochrome interdit de jouer sur la teinte rouge). */
 .modale-actions button.modale-danger {
   background: var(--fond);
@@ -2605,7 +2570,7 @@ span.think:not(details .think) {
   border-color: var(--danger-texte);
   color: var(--danger-texte);
 }
-/* Bandeau persistant (stockage saturÃ©, etc.) â€” role=alert, pas un toast. */
+/* Bandeau persistant (stockage saturé, etc.) — role=alert, pas un toast. */
 .bandeau-persistant {
   flex: 0 0 auto;
   display: flex;
@@ -2643,7 +2608,7 @@ span.think:not(details .think) {
   border-color: var(--danger-texte);
 }
 
-/* â€”â€”â€”â€”â€” Animations â€”â€”â€”â€”â€” */
+/* ————— Animations ————— */
 @keyframes apparait {
   from {
     opacity: 0;
@@ -2687,7 +2652,7 @@ span.think:not(details .think) {
   }
 }
 
-/* â€”â€”â€”â€”â€” Responsive â€”â€”â€”â€”â€” */
+/* ————— Responsive ————— */
 @media (max-width: 940px) {
   .sidebar {
     position: fixed;
@@ -2747,7 +2712,7 @@ span.think:not(details .think) {
   }
 }
 
-/* TrÃ¨s petits Ã©crans */
+/* Très petits écrans */
 @media (max-width: 480px) {
   .examples {
     margin-top: 7vh;
@@ -2776,17 +2741,17 @@ span.think:not(details .think) {
   .msgs {
     overflow: visible;
   }
-  /* v20260926o (kimi) : sans Ã§a, le contenu au-delÃ  d'une page est coupÃ©. */
+  /* v20260926o (kimi) : sans ça, le contenu au-delà d'une page est coupé. */
   .page-demo {
     height: auto;
     overflow: visible;
   }
 }
 
-/* â€”â€”â€”â€”â€” v10.9.4 â€” HUD sÃ©lecteur de modÃ¨le (badge header + panneau overlay) â€”â€”â€”â€”â€”
-   Sobre, monochrome, cohÃ©rent avec la coquille : mÃªmes tokens, mÃªmes rayons.
-   Le ROUGE reste rÃ©servÃ© aux liens ; l'Ã©tat up/down = point plein (--ok) /
-   point grisÃ© (--gris-bord). Aucune couleur ajoutÃ©e. */
+/* ————— v10.9.4 — HUD sélecteur de modèle (badge header + panneau overlay) —————
+   Sobre, monochrome, cohérent avec la coquille : mêmes tokens, mêmes rayons.
+   Le ROUGE reste réservé aux liens ; l'état up/down = point plein (--ok) /
+   point grisé (--gris-bord). Aucune couleur ajoutée. */
 .hud-modele-wrap {
   position: relative;
   flex: 0 0 auto;
@@ -2799,10 +2764,10 @@ span.think:not(details .think) {
   height: 32px;
   padding: 0 10px;
   border-radius: var(--rayon-s);
-  /* v20261007 (dw) : #btn-reglages et #btn-contexte ne sont plus encadrÃ©s, comme
-     #btn-fichiers et #btn-navigateur avant eux. MÃªme raison : quatre boutons de
-     la mÃªme barre avec quatre cadres diffÃ©rents donnaient l'impression d'une
-     hiÃ©rarchie qui n'existe pas. Le fond n'apparaÃ®t qu'au survol. */
+  /* v20261007 (dw) : #btn-reglages et #btn-contexte ne sont plus encadrés, comme
+     #btn-fichiers et #btn-navigateur avant eux. Même raison : quatre boutons de
+     la même barre avec quatre cadres différents donnaient l'impression d'une
+     hiérarchie qui n'existe pas. Le fond n'apparaît qu'au survol. */
   border: 1px solid transparent;
   background: transparent;
   color: var(--texte-doux);
@@ -2842,8 +2807,8 @@ span.think:not(details .think) {
 }
 
 .hud-modeles {
-  /* v20260926c (affichage) : les boutons sont dans le composeur (bas d'Ã©cran)
-     â†’ le panneau s'ouvre VERS LE HAUT, sinon il dÃ©passait sous le viewport. */
+  /* v20260926c (affichage) : les boutons sont dans le composeur (bas d'écran)
+     ⅒ le panneau s'ouvre VERS LE HAUT, sinon il dépassait sous le viewport. */
   position: absolute;
   top: auto;
   bottom: calc(100% + 8px);
@@ -2988,14 +2953,14 @@ span.think:not(details .think) {
   cursor: wait;
 }
 
-/* â€”â€”â€”â€”â€” HUD navigateur (v1.5) : DOCKÃ‰ Ã€ DROITE, coquille du rendu â€”â€”â€”â€”â€”
-   MÃªme mÃ©canique que .interpreteur (L.~5034) : position fixed Ã  droite,
-   largeur --hud-largeur rÃ©servÃ©e en padding par .page-demo.hud-ouvert (la
-   conversation se rÃ©tracte, jamais recouverte), poignÃ©e #navigateur-bord,
-   en-tÃªte + fermeture. Le CONTENU est la page du modÃ¨le.
-   Le corps dimensionne l'IMAGE au plus prÃ¨s du cadre (width/height auto +
-   max-*) : la boÃ®te de l'img vaut alors exactement son rendu, ce qui rend
-   le clic reconverti en coordonnÃ©e PAGE exact â€” un object-fit:cover ferait
+/* ————— HUD navigateur (v1.5) : DOCKÈ À DROITE, coquille du rendu —————
+   Même mécanique que .interpreteur (L.~5034) : position fixed à droite,
+   largeur --hud-largeur réservée en padding par .page-demo.hud-ouvert (la
+   conversation se rétracte, jamais recouverte), poignée #navigateur-bord,
+   en-tête + fermeture. Le CONTENU est la page du modèle.
+   Le corps dimensionne l'IMAGE au plus près du cadre (width/height auto +
+   max-*) : la boîte de l'img vaut alors exactement son rendu, ce qui rend
+   le clic reconverti en coordonnée PAGE exact — un object-fit:cover ferait
    mentir la conversion. */
 .navigateur-hud {
   position: fixed;
@@ -3036,7 +3001,7 @@ span.think:not(details .think) {
   align-items: center;
   gap: 10px;
   row-gap: 7px;
-  flex-wrap: wrap;          /* v1.6 : barre d'outils sur 2 lignes (rangÃ©e + URL) */
+  flex-wrap: wrap;          /* v1.6 : barre d'outils sur 2 lignes (rangée + URL) */
   padding: 9px 14px;
   border-bottom: 1px solid var(--bord);
   border-radius: var(--rayon-l) 0 0 0;
@@ -3084,9 +3049,9 @@ span.think:not(details .think) {
   width: 15px;
   height: 15px;
 }
-/* â€”â€”â€”â€”â€” v1.6 : barre d'outils du navigateur (â† â†’ âŸ³ | session | âœ•) â€”â€”â€”â€”â€”
-   MÃªme bouton que la fermeture pour rester dans la mÃªme famille visuelle,
-   en plus compact, avec Ã©tat dÃ©sactivÃ© explicite quand l'historique est vide. */
+/* ————— v1.6 : barre d'outils du navigateur (⅐ ⅒ ⟳ | session | ✕) —————
+   Même bouton que la fermeture pour rester dans la même famille visuelle,
+   en plus compact, avec état désactivé explicite quand l'historique est vide. */
 .hnav-outil {
   width: 30px;
   height: 30px;
@@ -3099,7 +3064,7 @@ span.think:not(details .think) {
   border-color: var(--bord);
   color: var(--texte);
 }
-/* barre d'adresse : pleine largeur, seconde rangÃ©e de l'en-tÃªte */
+/* barre d'adresse : pleine largeur, seconde rangée de l'en-tête */
 .hnav-url {
   flex: 1 1 100%;
   box-sizing: border-box;
@@ -3114,15 +3079,15 @@ span.think:not(details .think) {
   font-size: 0.82rem;
 }
 .hnav-url:focus {
-  /* v20261007 (dh) : on ne neutralise plus l'anneau clavier ici â€” le repÃ¨re
-     :focus-visible est dÃ©fini plus haut. Le changement de bordure reste, il
+  /* v20261007 (dh) : on ne neutralise plus l'anneau clavier ici — le repère
+     :focus-visible est défini plus haut. Le changement de bordure reste, il
      sert au survol et n'est qu'un indice faible pour la souris. */
   border-color: var(--primaire);
 }
 .hnav-url::placeholder {
   color: var(--texte-doux);
 }
-/* bandeau d'Ã©tat : erreurs de geste, Â« occupÃ© Â», session fermÃ©e.
+/* bandeau d'état : erreurs de geste, « occupé », session fermée.
    hidden au repos (le test de coquille compte les enfants de #hud-navigateur). */
 .hnav-info {
   flex: 1 1 100%;
@@ -3143,13 +3108,13 @@ span.think:not(details .think) {
   border-left-color: var(--danger-bord);
   color: var(--danger-texte);
 }
-/* P5 â€” panneau Ã©purÃ© : le bandeau d'Ã©tat sort du rendu (l'Ã©tat d'une action
-   se lit dans l'image du flux, pas dans une ligne de texte sous l'en-tÃªte).
-   Le nÅ“ud reste dans le DOM et le JS continue de le remplir : les tests
+/* P5 — panneau épuré : le bandeau d'état sort du rendu (l'état d'une action
+   se lit dans l'image du flux, pas dans une ligne de texte sous l'en-tête).
+   Le nœud reste dans le DOM et le JS continue de le remplir : les tests
    lisent .hidden, .textContent et la classe .hnav-info-err. */
 .hnav-info { display: none !important; }
-/* Sauf quand c'est une ERREUR : Â« geste refusÃ© Â», Â« agent injoignable Â»,
-   Â« ouverture annulÃ©e Â» doivent rester lisibles â€” masquer le bandeau neutre
+/* Sauf quand c'est une ERREUR : « geste refusé », « agent injoignable »,
+   « ouverture annulée » doivent rester lisibles — masquer le bandeau neutre
    ne doit pas masquer ce que l'utilisateur a besoin de savoir. */
 .hnav-info.hnav-info-err { display: block !important; }
 .navigateur-corps {
@@ -3161,32 +3126,32 @@ span.think:not(details .think) {
   overflow: hidden;
   background: #000;
   border-radius: 0 0 0 var(--rayon-l);
-  /* v1.7 : la surface est une ZONE DE SAISIE autant qu'une page â€”
-     pas de dÃ©filement tactile parasite, et la souris est une vraie flÃ¨che
-     (un rÃ©ticule dit Â« outil de mesure Â», pas Â« navigateur Â»). */
+  /* v1.7 : la surface est une ZONE DE SAISIE autant qu'une page —
+     pas de défilement tactile parasite, et la souris est une vraie flèche
+     (un réticule dit « outil de mesure », pas « navigateur »). */
   touch-action: none;
   cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="24" viewBox="0 0 20 24"><path d="M2 1.6 L2 19.2 L6.5 14.9 L9.3 21.6 L12.6 20 L9.8 13.5 L15.7 13.2 Z" fill="%23fff" stroke="%23111" stroke-width="1.5" stroke-linejoin="round"/></svg>') 2 1, default;
 }
-/* v1.7 : `:focus` et non `:focus-visible` â€” on veut VOIR que le clavier est
-   braquÃ© sur la page dÃ¨s qu'on l'a cliquÃ©e (sinon on tape dans le vide sans
+/* v1.7 : `:focus` et non `:focus-visible` — on veut VOIR que le clavier est
+   braqué sur la page dès qu'on l'a cliquée (sinon on tape dans le vide sans
    s'en rendre compte). */
 .navigateur-corps:focus {
   outline: 2px solid var(--ok);
   outline-offset: -2px;
 }
-/* P3 â€” Ã‰CHO LOCAL : une image poussÃ©e arrive ~20-40 ms aprÃ¨s le geste, et
-   pendant ce temps la surface a l'air MORTE (Â« Ã§a ne rÃ©agit pas Â»). On montre
-   donc tout de suite, en local, ce que l'agent confirmera juste aprÃ¨s :
-   `::after` = point de visÃ©e suivi du curseur (aussi fort Ã  l'appui),
+/* P3 — ÈCHO LOCAL : une image poussée arrive ~20-40 ms après le geste, et
+   pendant ce temps la surface a l'air MORTE (« ça ne réagit pas »). On montre
+   donc tout de suite, en local, ce que l'agent confirmera juste après :
+   `::after` = point de visée suivi du curseur (aussi fort à l'appui),
    `::before` = frappe en attente avant son envoi. Tout passe par des
-   pseudo-Ã©lÃ©ments pilotÃ©s en variables CSS : le corps ne reÃ§oit AUCUN nÅ“ud,
+   pseudo-éléments pilotés en variables CSS : le corps ne reçoit AUCUN nœud,
    il doit contenir UNIQUEMENT la page (contrat de test). */
 .navigateur-corps {
   position: relative;
 }
-/* P5 â€” l'Ã©cho devient une VRAIE souris Windows : mÃªme tracÃ© que le curseur
+/* P5 — l'écho devient une VRAIE souris Windows : même tracé que le curseur
    du panneau (voir `cursor:` ci-dessus), la pointe (point chaud 2,1) tombe
-   pile sur --hnav-echo-x/y. ZÃ©ro nÅ“ud DOM : pseudo-Ã©lÃ©ment seul. */
+   pile sur --hnav-echo-x/y. Zéro nœud DOM : pseudo-élément seul. */
 .navigateur-corps::after {
   content: "";
   position: absolute;
@@ -3242,8 +3207,8 @@ span.think:not(details .think) {
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: 100%;       /* la boÃ®te = le rendu : conversion de clic exacte */
-  cursor: inherit;        /* la flÃ¨che vient du panneau (v1.7) */
+  max-height: 100%;       /* la boîte = le rendu : conversion de clic exacte */
+  cursor: inherit;        /* la flèche vient du panneau (v1.7) */
   user-select: none;
   -webkit-user-drag: none;
 }
@@ -3261,12 +3226,12 @@ span.think:not(details .think) {
   padding: 18px 16px;
   white-space: pre-line;
 }
-/* badge d'Ã©tat dans le bouton d'en-tÃªte (Ã  gauche de Â« Partager Â») */
-/* v20261007 (U1) : le badge est masquÃ© AU REPOS et visible dÃ¨s qu'il porte une
-   information (session ouverte, ou action du modÃ¨le en cours). Avant,
-   `display:none !important` neutralisait aussi les deux rÃ¨gles ci-dessous :
-   l'Ã©tat de la navigation Ã©tait donc invisible alors que c'est prÃ©cisÃ©ment ce
-   que ce bouton doit montrer. Le texte reste alimentÃ© par majBadgeNavigateur. */
+/* badge d'état dans le bouton d'en-tête (à gauche de « Partager ») */
+/* v20261007 (U1) : le badge est masqué AU REPOS et visible dès qu'il porte une
+   information (session ouverte, ou action du modèle en cours). Avant,
+   `display:none !important` neutralisait aussi les deux règles ci-dessous :
+   l'état de la navigation était donc invisible alors que c'est précisément ce
+   que ce bouton doit montrer. Le texte reste alimenté par majBadgeNavigateur. */
 .hnav-badge {
   display: none;
   padding: 1px 7px;
@@ -3281,8 +3246,8 @@ span.think:not(details .think) {
   border-color: var(--ok);
   color: var(--ok);
 }
-/* v1.6 : Â« occupÃ© Â» = une action du modÃ¨le tourne. Avant, le badge disait
-   Â« actif Â» pendant tout un snapshot â€” impossible de voir que la page bouge. */
+/* v1.6 : « occupé » = une action du modèle tourne. Avant, le badge disait
+   « actif » pendant tout un snapshot — impossible de voir que la page bouge. */
 .btn-nav.nav-occupe .hnav-badge {
   display: inline-block;
   border-color: var(--primaire);
@@ -3303,8 +3268,8 @@ span.think:not(details .think) {
     width: min(300px, calc(100vw - 24px));
     right: -6px;
   }
-  /* v20260926c (affichage) : le toast ne doit jamais dÃ©passer ni masquer
-     tout le composeur sur petit Ã©cran. */
+  /* v20260926c (affichage) : le toast ne doit jamais dépasser ni masquer
+     tout le composeur sur petit écran. */
   .toast-notice {
     right: 12px;
     left: 12px;
@@ -3472,7 +3437,7 @@ span.think:not(details .think) {
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
 }
 
-/* v20260926n (audit) : rÃ¨gles des tuiles supprimÃ©es (voir plus haut). */
+/* v20260926n (audit) : règles des tuiles supprimées (voir plus haut). */
 
 .compte-bouton {
   min-height: 42px;
@@ -3494,11 +3459,11 @@ span.think:not(details .think) {
 .chat-tete {
   min-height: 68px;
   padding: 12px 24px;
-  /* v20261007 (dx) : cette rÃ¨gle remettait un fond opaque et une bordure basse,
-     plus bas dans le fichier que la rÃ¨gle qui les avait supprimÃ©es â€” donc
-     prioritaire, et annulant purement et simplement la demande. Deux rÃ¨gles
-     qui se contredisent sur le mÃªme sÃ©lecteur, Ã  2 600 lignes d'Ã©cart : c'est
-     le genre deè¡çª que seul un relevÃ© permet de voir. */
+  /* v20261007 (dx) : cette règle remettait un fond opaque et une bordure basse,
+     plus bas dans le fichier que la règle qui les avait supprimées — donc
+     prioritaire, et annulant purement et simplement la demande. Deux règles
+     qui se contredisent sur le même sélecteur, à 2 600 lignes d'écart : c'est
+     le genre de衝突 que seul un relevé permet de voir. */
   border-bottom: none;
   background: transparent;
 }
@@ -3551,9 +3516,9 @@ span.think:not(details .think) {
 .btn-partager {
   display: inline-flex;
   align-items: center;
-  justify-content: center; /* v20261007 (dw) : l'icÃ´ne partie, le texte reste
-                               centrÃ© â€” sans justify-content, un bouton flex
-                               colle son unique enfant Ã  gauche. */
+  justify-content: center; /* v20261007 (dw) : l'icône partie, le texte reste
+                               centré — sans justify-content, un bouton flex
+                               colle son unique enfant à gauche. */
   gap: 7px;
   min-height: 34px;
   padding: 0 16px;
@@ -3646,21 +3611,21 @@ details.raisonnement summary {
   gap: 8px;
   min-height: 64px;
   padding: 9px 11px;
-  /* v20261007 (dx) : le composeur n'est plus cadrÃ©. C'est ICI que se
-     trouvait le vrai cadre â€” fond #2b2b2b, bordure et ombre â€” pas sur
-     .saisie-zone comme je l'avais d'abord cherchÃ© : .saisie-zone est le champ
-     Ã  l'intÃ©rieur, .composeur-carte est la boÃ®te qui l'englobe. Je n'avais
-     donc dÃ©gagÃ© que l'intÃ©rieur du cadre, en laissant l'enveloppe.
-     Le fond devient transparent : sans lui, la zone de saisie â€” maintenant
-     transparente elle aussi â€” se retrouverait posÃ©e sur la surface du fil.
-     Les jetons remplacent au passage 3 littÃ©raux (#2b2b2b, #777, rgba(255)). */
+  /* v20261007 (dx) : le composeur n'est plus cadré. C'est ICI que se
+     trouvait le vrai cadre — fond #2b2b2b, bordure et ombre — pas sur
+     .saisie-zone comme je l'avais d'abord cherché : .saisie-zone est le champ
+     à l'intérieur, .composeur-carte est la boîte qui l'englobe. Je n'avais
+     donc dégagé que l'intérieur du cadre, en laissant l'enveloppe.
+     Le fond devient transparent : sans lui, la zone de saisie — maintenant
+     transparente elle aussi — se retrouverait posée sur la surface du fil.
+     Les jetons remplacent au passage 3 littéraux (#2b2b2b, #777, rgba(255)). */
   border-color: var(--bord-fort);
   border-radius: 24px;
-  /* v20261007 (dz) : le cadre du COMPOSEUR revient (fond, bordure, ombre) â€”
-     c'est le seul repÃ¨re de la zone de saisie, et sans lui le champ flottait
-     dans le vide. En revanche le CHAMP lui-mÃªme, .saisie-zone, reste
+  /* v20261007 (dz) : le cadre du COMPOSEUR revient (fond, bordure, ombre) —
+     c'est le seul repère de la zone de saisie, et sans lui le champ flottait
+     dans le vide. En revanche le CHAMP lui-même, .saisie-zone, reste
      transparent : le fond est sur l'enveloppe, pas sur le texte. Deux plans
-     superposÃ©s, un seul visible. */
+     superposés, un seul visible. */
   background: var(--carte);
   box-shadow: var(--ombre);
 }
@@ -3713,9 +3678,9 @@ details.raisonnement summary {
   background: #2b2b2b;
 }
 
-/* v1.2 (allÃ¨gement) : plus de carte encadrÃ©e sombre autour des commandes â€”
-   le groupe est une simple rÃ¨gle typographique. Le contraste vient du
-   contenu (la trace), pas d'un cadre Ã©pais qui vole la lecture. */
+/* v1.2 (allègement) : plus de carte encadrée sombre autour des commandes —
+   le groupe est une simple règle typographique. Le contraste vient du
+   contenu (la trace), pas d'un cadre épais qui vole la lecture. */
 .activity-group {
   margin: 12px 0 14px;
   overflow: hidden;
@@ -4038,11 +4003,11 @@ details.raisonnement summary {
 
 .md code {
   /* v20261007 (dz) : fond SOMBRE et non plus rouge, texte #ea553c.
-     Le fond et la bordure Ã©taient #3a2525 / #65413d â€” un brun rouge, choisi
-     pour Â« faire code Â». ConsÃ©quence : sur une bulle sombre, un bout de code
-     en clair Ã©tait la zone la plus claire de la page et sautait aux yeux ; en
-     thÃ¨me clair, le texte #f0b0a5 sur #3a2525 passait Ã  4.0:1, sous le seuil.
-     Fond sombre dans les deux thÃ¨mes, texte #ea553c : la teinte est conservÃ©e,
+     Le fond et la bordure étaient #3a2525 / #65413d — un brun rouge, choisi
+     pour « faire code ». Conséquence : sur une bulle sombre, un bout de code
+     en clair était la zone la plus claire de la page et sautait aux yeux ; en
+     thème clair, le texte #f0b0a5 sur #3a2525 passait à 4.0:1, sous le seuil.
+     Fond sombre dans les deux thèmes, texte #ea553c : la teinte est conservée,
      elle porte sur le TEXTE et non sur le fond. */
   border-color: #2a2a2a;
   background: var(--fond-code-inline);
@@ -4083,11 +4048,11 @@ details.raisonnement li.doute {
   line-height: 1.35;
 }
 
-/* v20261007 (dh) â€” BOUTON UNIQUE modÃ¨le + effort + tempÃ©rature.
-   Les trois rÃ©glages partageaient trois boutons (plus contexte et journal)
-   dans un pied de 744 px : le conteneur passait Ã  la ligne, la mention
+/* v20261007 (dh) — BOUTON UNIQUE modèle + effort + température.
+   Les trois réglages partageaient trois boutons (plus contexte et journal)
+   dans un pied de 744 px : le conteneur passait à la ligne, la mention
    d'avertissement flottait seule en haut et les commandes en bas, sans lien
-   visuel. Un bouton unique porte les trois valeurs, sÃ©parÃ©es par un filet
+   visuel. Un bouton unique porte les trois valeurs, séparées par un filet
    vertical, et un panneau unique regroupe les trois listes. */
 .hud-reglages-wrap {
   position: relative;
@@ -4095,9 +4060,9 @@ details.raisonnement li.doute {
 }
 .btn-reglages {
   gap: 7px;
-  /* v20261007 (dh) : `.btn-modele` plafonne Ã  180px â€” largeur calibrÃ©e pour
-     UN nom de modÃ¨le. Le bouton portant les trois rÃ©glages, le nom se
-     retrouvait rÃ©duit Ã  Â« aâ€¦ Â». On relÃ¨ve le plafond. */
+  /* v20261007 (dh) : `.btn-modele` plafonne à 180px — largeur calibrée pour
+     UN nom de modèle. Le bouton portant les trois réglages, le nom se
+     retrouvait réduit à « a… ». On relève le plafond. */
   max-width: 340px;
 }
 .reglage-partie {
@@ -4114,8 +4079,8 @@ details.raisonnement li.doute {
 .reglage-val {
   font-size: 0.78rem;
 }
-/* Â« sans effet sur ce modÃ¨le Â» : on attÃ©nue la partie, on ne dÃ©sactive pas le
-   bouton (il porte aussi le modÃ¨le et la tempÃ©rature). */
+/* « sans effet sur ce modèle » : on atténue la partie, on ne désactive pas le
+   bouton (il porte aussi le modèle et la température). */
 .reglage-partie-effort.sans-effet {
   opacity: 0.5;
 }
@@ -4126,7 +4091,7 @@ details.raisonnement li.doute {
   background: var(--bord);
 }
 /* Panneau commun : plus large que les anciens (300/268 px) car il porte les
-   trois listes, et plus haut pour Ã©viter un triple dÃ©filement. */
+   trois listes, et plus haut pour éviter un triple défilement. */
 .hud-reglages {
   width: 340px;
   max-height: min(640px, calc(100vh - 140px));
@@ -4167,7 +4132,7 @@ details.raisonnement li.doute {
   background: transparent;
   color: inherit;
   font-family: inherit;
-  /* v20260926e (kimi) : 16 px minimum â€” en dessous, iOS zoome au focus. */
+  /* v20260926e (kimi) : 16 px minimum — en dessous, iOS zoome au focus. */
   font-size: 1rem;
   line-height: 1.2;
   resize: none;
@@ -4181,8 +4146,8 @@ details.raisonnement li.doute {
   overflow: hidden;
   color: #eeeeee;
   pointer-events: none;
-  /* v20260926l : mÃªme retour Ã  la ligne que le textarea (sinon le texte
-     visible dÃ©croche du caret dÃ¨s qu'on dÃ©passe une ligne). */
+  /* v20260926l : même retour à la ligne que le textarea (sinon le texte
+     visible décroche du caret dès qu'on dépasse une ligne). */
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -4356,9 +4321,9 @@ details.trace-cmd.echec .trace-cmd-status {
   min-height: 64px;
   height: 64px;
   padding: 0 24px;
-  /* v20261007 (dx) : troisiÃ¨me rÃ¨gle .chat-tete du fichier, et encore une
-     bordure. Sans ce relevÃ©, la suppression faite en amont n'aurait rien
-     changÃ© Ã  l'Ã©cran. */
+  /* v20261007 (dx) : troisième règle .chat-tete du fichier, et encore une
+     bordure. Sans ce relevé, la suppression faite en amont n'aurait rien
+     changé à l'écran. */
   background: transparent;
   border-bottom: none;
 }
@@ -4415,9 +4380,9 @@ details.trace-cmd.echec .trace-cmd-status {
   color: #eeeeee;
   box-shadow: none;
 }
-/* v20260926e : rÃ¨gle hÃ©ritÃ©e de de4eada (Â« simplify Â») SUPPRIMÃ‰E â€” elle
+/* v20260926e : règle héritée de de4eada (« simplify ») SUPPRIMÈE — elle
    masquait TOUS les panneaux de raisonnement dans le fil, rendant la
-   prÃ©fÃ©rence Â« Raisonnement visible Â» sans effet. */
+   préférence « Raisonnement visible » sans effet. */
 
 .composeur-carte {
   box-sizing: border-box;
@@ -4426,16 +4391,16 @@ details.trace-cmd.echec .trace-cmd-status {
   min-height: 30px;
   height: 44px;
   max-height: 64px;
-  padding: 4px 10px; /* AjustÃ© pour respecter les 30px au total */
+  padding: 4px 10px; /* Ajusté pour respecter les 30px au total */
   border-radius: 15px;
-  /* v20261007 (dx) : le composeur n'est plus cadrÃ©. Le fond (#181818 en dur)
-     Ã©tait le vrai cadre â€” plus visible que la bordure de 1px qu'il portait.
-     D'oÃ¹ le passage par un jeton : sans lui, Â« transparent Â» aurait laissÃ©
-     remonter la couleur de la zone derriÃ¨re, et le fond sombre du fil
-     aurait dÃ©borde visuellement dans le champ de saisie. */
+  /* v20261007 (dx) : le composeur n'est plus cadré. Le fond (#181818 en dur)
+     était le vrai cadre — plus visible que la bordure de 1px qu'il portait.
+     D'où le passage par un jeton : sans lui, « transparent » aurait laissé
+     remonter la couleur de la zone derrière, et le fond sombre du fil
+     aurait déborde visuellement dans le champ de saisie. */
   background: transparent;
   border: none;
-  overflow-y: auto; /* Affiche un scroll si le texte dÃ©passe max-height */
+  overflow-y: auto; /* Affiche un scroll si le texte dépasse max-height */
   display: flex;
   align-items: center;
 }
@@ -4494,7 +4459,7 @@ details.trace-cmd.echec .trace-cmd-status {
 .btn-modele {
   font-family: inherit;
   font-size: 0.88rem;
-  background: transparent; /* AlignÃ© avec la surcharge de .btn-attacher */
+  background: transparent; /* Aligné avec la surcharge de .btn-attacher */
   transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
 
@@ -4504,7 +4469,7 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 .btn-modele:active {
-  transform: scale(0.94); /* Effet d'enfoncement identique Ã  .btn-attacher */
+  transform: scale(0.94); /* Effet d'enfoncement identique à .btn-attacher */
 }
 
 .hud-modeles {
@@ -4538,9 +4503,9 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 /* ---------- Effort de raisonnement ----------
-   SÃ©lecteur posÃ© Ã  droite du bouton modÃ¨le : celui-ci est ainsi poussÃ© un
-   peu vers la gauche et l'espace libÃ©rÃ© Ã  sa droite reÃ§oit le nouvel
-   effort (appliquÃ© au payload NVIDIA via api-shim.js). */
+   Sélecteur posé à droite du bouton modèle : celui-ci est ainsi poussé un
+   peu vers la gauche et l'espace libéré à sa droite reçoit le nouvel
+   effort (appliqué au payload NVIDIA via api-shim.js). */
 .composeur-modele {
   display: flex;
   align-items: center;
@@ -4573,7 +4538,7 @@ details.trace-cmd.echec .trace-cmd-status {
   width: 268px;
 }
 
-/* v20260926g : texte de rÃ©flexion regroupÃ© + phases â€” jamais de frise. */
+/* v20260926g : texte de réflexion regroupé + phases — jamais de frise. */
 .raisonnement-texte {
   color: var(--texte-doux);
   font-size: 0.85rem;
@@ -4610,7 +4575,7 @@ details.trace-cmd.echec .trace-cmd-status {
   50% { opacity: 0; }
 }
 .pensee-vive {
-  /* v20260926h : scrollable (demande UI) â€” fini le fondu qui tronquait. */
+  /* v20260926h : scrollable (demande UI) — fini le fondu qui tronquait. */
   color: var(--texte-doux);
   font-size: 0.85rem;
   line-height: 1.6;
@@ -4623,20 +4588,20 @@ details.trace-cmd.echec .trace-cmd-status {
   scrollbar-width: thin;
   scrollbar-color: var(--bord-fort) transparent;
 }
-/* v20260926h : le bloc ```athena-exec n'est plus affichÃ© (demande UI) â€”
-   l'exÃ©cution (auto) et le compte-rendu (trace) sont inchangÃ©s : le marqueur
+/* v20260926h : le bloc ```athena-exec n'est plus affiché (demande UI) —
+   l'exécution (auto) et le compte-rendu (trace) sont inchangés : le marqueur
    reste dans le DOM pour autoExecBlocs. */
 .exec-bloc {
   display: none;
 }
-/* v1.2 (audit UI) : mode manuel (executionAuto off, classe posÃ©e par
-   appliquerPreferences) â€” le bloc reste visible pour le bouton ExÃ©cuter. */
+/* v1.2 (audit UI) : mode manuel (executionAuto off, classe posée par
+   appliquerPreferences) — le bloc reste visible pour le bouton Exécuter. */
 .exec-manuel .exec-bloc {
   display: block;
 }
-/* v1.3 : bloc ```athena-browser â€” visible ENCORE PLUS que le bloc exec
-   (masquÃ© en mode auto) : c'est lui qui montre oÃ¹ va le modÃ¨le ET reÃ§oit
-   la capture d'Ã©cran (une capture dans un pre[display:none] serait invisible). */
+/* v1.3 : bloc ```athena-browser — visible ENCORE PLUS que le bloc exec
+   (masqué en mode auto) : c'est lui qui montre où va le modèle ET reçoit
+   la capture d'écran (une capture dans un pre[display:none] serait invisible). */
 .nav-bloc {
   display: block;
 }
@@ -4650,12 +4615,12 @@ details.trace-cmd.echec .trace-cmd-status {
 html[data-theme="light"] .nav-capture {
   border-color: var(--bord);
 }
-/* bouton Lancer : libellÃ© plus large que Â« ExÃ©cuter Â» */
+/* bouton Lancer : libellé plus large que « Exécuter » */
 .code-nav {
   right: 42px;
 }
-/* v20260926e (kimi) : indicateur Â« le modÃ¨le rÃ©flÃ©chit Â» â€” trois points
-   pulsants, CSS pur, monochrome. DÃ©sactivÃ© par .reduce-animation (global)
+/* v20260926e (kimi) : indicateur « le modèle réfléchit » — trois points
+   pulsants, CSS pur, monochrome. Désactivé par .reduce-animation (global)
    et prefers-reduced-motion (ci-dessous). */
 .thinking {
   display: inline-flex;
@@ -4682,17 +4647,17 @@ html[data-theme="light"] .nav-capture {
   30% { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  /* v20261007 (dh) â€” COUVERTURE EXHAUSTIVE.
-     Audit : le bloc ne listait que 5 animations sur 13 dÃ©clarÃ©es, et aucune des
-     40 `transition:` du fichier. Le repÃ¨re Â« l'IA rÃ©flÃ©chit Â» (.thinking i)
+  /* v20261007 (dh) — COUVERTURE EXHAUSTIVE.
+     Audit : le bloc ne listait que 5 animations sur 13 déclarées, et aucune des
+     40 `transition:` du fichier. Le repère « l'IA réfléchit » (.thinking i)
      restait couvert, mais pas la pastille d'envoi, l'anneau de navigation, ni
-     les transitions de survol. Ã‰numÃ©rer Ã  la main ne tient pas : la moindre
-     animation ajoutÃ©e ensuite repasse hors couverture, silencieusement.
-     On pose donc un filet global â€” mÃªme famille que le `animation: none
-     !important` dÃ©jÃ  acceptÃ© plus haut pour `.reduce-animation`, donc pas une
-     exception nouvelle au principe Â« pas de !important dÃ©coratif Â».
-     Les rÃ¨gles ci-dessous ne font que PRESERVER L'INFORMATION : sans elles,
-     neutraliser l'animation du point de chargement le laisserait figÃ©, donc
+     les transitions de survol. Ènumérer à la main ne tient pas : la moindre
+     animation ajoutée ensuite repasse hors couverture, silencieusement.
+     On pose donc un filet global — même famille que le `animation: none
+     !important` déjà accepté plus haut pour `.reduce-animation`, donc pas une
+     exception nouvelle au principe « pas de !important décoratif ».
+     Les règles ci-dessous ne font que PRESERVER L'INFORMATION : sans elles,
+     neutraliser l'animation du point de chargement le laisserait figé, donc
      illisible. */
   *,
   *::before,
@@ -4707,13 +4672,13 @@ html[data-theme="light"] .nav-capture {
     animation: none;
     opacity: 0.6;
   }
-  /* Les indicateurs Â« en action Â» restent distinguables par leur couleur. */
+  /* Les indicateurs « en action » restent distinguables par leur couleur. */
   .btn-envoyer.en-cours,
   .dot,
   .btn-nav.nav-occupe .hnav-badge {
     animation: none;
   }
-  /* DÃ©filement : le dÃ©filement doux est un mouvement, il est neutralisÃ© plus
+  /* Défilement : le défilement doux est un mouvement, il est neutralisé plus
      haut par le filet global ; on le reaffirmed ici pour les navigateurs qui
      ne l appliqueraient pas au conteneur. */
   .msgs {
@@ -4791,7 +4756,7 @@ html[data-theme="light"] .nav-capture {
   font-size: 0.76rem;
   line-height: 1.5;
   tab-size: 2;
-  /* v20260926h : contenu INTÃ‰GRAL (scroll interne), plus de troncature. */
+  /* v20260926h : contenu INTÈGRAL (scroll interne), plus de troncature. */
   max-height: 420px;
   overflow: auto;
   white-space: pre;
@@ -4800,7 +4765,7 @@ html[data-theme="light"] .nav-capture {
   background: #0e0e0e;
   color: #d8d8d8;
 }
-/* v20260926h : coloration syntaxique faÃ§on VSCode (thÃ¨me sombre). */
+/* v20260926h : coloration syntaxique façon VSCode (thème sombre). */
 .file-apercu .tok-com { color: #6a9955; }
 .file-apercu .tok-ch { color: #ce9178; }
 .file-apercu .tok-mot { color: #569cd6; }
@@ -4849,7 +4814,7 @@ html[data-theme="light"] .nav-capture {
 .md-table tbody tr:nth-child(even) td {
   background: #101010;
 }
-/* v20260926e : coche de bilan du raisonnement + champ des rÃ©glages. */
+/* v20260926e : coche de bilan du raisonnement + champ des réglages. */
 .raisonnement-fini {
   flex: 0 0 auto;
   display: grid;
@@ -4875,7 +4840,7 @@ html[data-theme="light"] .nav-capture {
   outline: 2px solid var(--primaire-doux);
   border-color: var(--primaire);
 }
-/* v1.2 : curseur de tempÃ©rature (rÃ©glages) â€” sobre, 24 px de haut. */
+/* v1.2 : curseur de température (réglages) — sobre, 24 px de haut. */
 .setting-curseur-zone {
   display: inline-flex;
   align-items: center;
@@ -4893,10 +4858,10 @@ html[data-theme="light"] .nav-capture {
   font-size: 0.82rem;
   color: var(--texte-doux);
 }
-/* v20260926m : PAS de ligne sous le header (demande UI) â€” ni bordure,
-   ni couleur de bordure rÃ©siduelle des surcharges.
-   v20260926o (kimi) : le dÃ©filement restait lisible sous le fond
-   transparent â€” flou lÃ©ger, toujours transparent. */
+/* v20260926m : PAS de ligne sous le header (demande UI) — ni bordure,
+   ni couleur de bordure résiduelle des surcharges.
+   v20260926o (kimi) : le défilement restait lisible sous le fond
+   transparent — flou léger, toujours transparent. */
 header.chat-tete {
   background: transparent;
   border-bottom: none;
@@ -4904,8 +4869,8 @@ header.chat-tete {
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
 }
-/* v20260926k (HUD fichier) : panneau latÃ©ral droit UNIFORME â€” ouvert au
-   clic sur une carte, largeur rÃ©glable Ã  la souris (persistÃ©e). */
+/* v20260926k (HUD fichier) : panneau latéral droit UNIFORME — ouvert au
+   clic sur une carte, largeur réglable à la souris (persistée). */
 .hud-fichier {
   position: fixed;
   top: 0;
@@ -5002,7 +4967,7 @@ header.chat-tete {
 .hudf-actions .file-statut {
   margin-left: auto;
 }
-/* Carte : en-tÃªte cliquable + Ã©tat ouvert. */
+/* Carte : en-tête cliquable + état ouvert. */
 .file-tete.file-ouvre {
   cursor: pointer;
 }
@@ -5013,7 +4978,7 @@ header.chat-tete {
   border-color: var(--primaire);
 }
 @media (max-width: 720px) {
-  /* Sur mobile : le HUD prend tout l'Ã©cran (pas de redimensionnement). */
+  /* Sur mobile : le HUD prend tout l'écran (pas de redimensionnement). */
   .hud-fichier {
     left: 0;
     width: auto;
@@ -5028,12 +4993,12 @@ header.chat-tete {
   }
 }
 
-/* ============ v20260926i (UI) : mÃ©triques demandÃ©es ============ */
+/* ============ v20260926i (UI) : métriques demandées ============ */
 /* Inter dans TOUTE l'UI, y compris le markdown (fini le serif). */
 .md {
   font-family: "Inter", var(--font-geist-sans, system-ui), -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
 }
-/* Ã‰mojis style Twemoji (proche macOS) au lieu des Ã©mojis systÃ¨me. */
+/* Èmojis style Twemoji (proche macOS) au lieu des émojis système. */
 .bubble img.emoji,
 .md img.emoji {
   height: 1.2em;
@@ -5042,8 +5007,8 @@ header.chat-tete {
   margin: 0 0.05em;
 }
 @media (min-width: 721px) {
-  /* v20260926j (cadrage) : colonne messages 768 px â€” 736 de contenu +
-     16 px de chaque cÃ´tÃ©, bords bien droits des deux cÃ´tÃ©s. */
+  /* v20260926j (cadrage) : colonne messages 768 px — 736 de contenu +
+     16 px de chaque côté, bords bien droits des deux côtés. */
   .row,
   .row.bot,
   .row.user {
@@ -5051,9 +5016,9 @@ header.chat-tete {
     padding: 4px 16px 0;
     box-sizing: border-box;
   }
-  /* v20260926j : les deux rangÃ©es partagent EXACTEMENT la mÃªme gÃ©omÃ©trie
-     (la rangÃ©e bot avait un dÃ©calage gauche de +64 px intÃ©grÃ©, la user
-     Ã©tait collÃ©e Ã  droite) â€” colonnes superposÃ©es au pixel prÃ¨s. */
+  /* v20260926j : les deux rangées partagent EXACTEMENT la même géométrie
+     (la rangée bot avait un décalage gauche de +64 px intégré, la user
+     était collée à droite) — colonnes superposées au pixel près. */
   .row.bot,
   .row.user {
     margin-left: auto;
@@ -5071,22 +5036,22 @@ header.chat-tete {
     max-width: 744px;
     box-sizing: border-box;
   }
-  /* v20260926i : .chat-tete transparent (des rÃ¨gles plus spÃ©cifiques
+  /* v20260926i : .chat-tete transparent (des règles plus spécifiques
      remettaient un fond opaque plus bas dans la cascade). */
   .chat-tete {
     background: transparent;
   }
 }
-/* Compositeur : dÃ©part 44 px, +24 px par ligne (line-height 24), plafond
-   424 px avec scroll interne. Miroir alignÃ© au pixel prÃ¨s. */
+/* Compositeur : départ 44 px, +24 px par ligne (line-height 24), plafond
+   424 px avec scroll interne. Miroir aligné au pixel près. */
 .saisie,
 .saisie-mirror {
-  /* v20260926n-2 : 16 px / 20 px pile (demande UI) â€” la croissance suit la
+  /* v20260926n-2 : 16 px / 20 px pile (demande UI) — la croissance suit la
      ligne (scrollHeight), pas une constante. */
   font-size: 16px;
   line-height: 20px;
   /* v20260926i : 10 px haut + 0 bas + ligne 24 = 34 de champ ; +8 de carte
-     +2 de bordure = 44 px pile au dÃ©part, +24/ligne ensuite. */
+     +2 de bordure = 44 px pile au départ, +24/ligne ensuite. */
   padding: 10px 4px 0;
 }
 .saisie {
@@ -5104,19 +5069,19 @@ header.chat-tete {
   height: auto;
   max-height: none;
 }
-/* v20261007 (ea) : plus de FOND sur le composeur, le champ et l'en-tÃªte.
-   Le cadre est conservÃ© â€” bordure et ombre â€” mais la surface disparaÃ®t : le
+/* v20261007 (ea) : plus de FOND sur le composeur, le champ et l'en-tête.
+   Le cadre est conservé — bordure et ombre — mais la surface disparaît : le
    composeur doit se poser sur la conversation, pas poser une carte dessus.
    Trois plans se superposaient (fond de zone, fond d'enveloppe, fond de champ)
-   et c'est ce troisiÃ¨me qui rendait l'Ã©cran morcelÃ©. */
+   et c'est ce troisième qui rendait l'écran morcelé. */
 .composeur-carte {
   background: transparent;
   border-color: var(--bord);
   box-shadow: var(--ombre);
 }
-/* v20260926i : la zone et le miroir suivent la croissance â€” le groupe
-   .saisie-zone/.saisie-mirror/.saisie les figeait Ã  35-40 px (blocage
-   constatÃ© : textarea Ã  262 px dans une carte Ã  45 px). */
+/* v20260926i : la zone et le miroir suivent la croissance — le groupe
+   .saisie-zone/.saisie-mirror/.saisie les figeait à 35-40 px (blocage
+   constaté : textarea à 262 px dans une carte à 45 px). */
 .saisie-zone {
   height: auto;
   max-height: none;
@@ -5126,9 +5091,9 @@ header.chat-tete {
   height: auto;
 }
 
-/* ============ v20260926l : barres de dÃ©filement UNIFORMES ============
-   Piste #292929 en thÃ¨me sombre (demande UI) ; claire en thÃ¨me clair.
-   Les rÃ¨gles spÃ©cifiques existantes (msgsâ€¦) restent, mÃªmes teintes. */
+/* ============ v20260926l : barres de défilement UNIFORMES ============
+   Piste #292929 en thème sombre (demande UI) ; claire en thème clair.
+   Les règles spécifiques existantes (msgs…) restent, mêmes teintes. */
 * {
   scrollbar-width: thin;
   scrollbar-color: #5a5a5a #292929;
@@ -5149,9 +5114,9 @@ header.chat-tete {
   background: #292929;
 }
 
-/* ============ v20260926l : thÃ¨me clair / sombre (toute la page) ============
-   Le sombre reste le dÃ©faut (bloc :root existant). Le clair surcharge les
-   variables PUIS chaque surface codÃ©e en dur encore sombre. */
+/* ============ v20260926l : thème clair / sombre (toute la page) ============
+   Le sombre reste le défaut (bloc :root existant). Le clair surcharge les
+   variables PUIS chaque surface codée en dur encore sombre. */
 html {
   color-scheme: dark;
 }
@@ -5239,7 +5204,7 @@ html[data-theme="light"] *::-webkit-scrollbar-thumb {
 html[data-theme="light"] *::-webkit-scrollbar-corner {
   background: #e8e8e8;
 }
-/* Surfaces codÃ©es en dur restÃ©es sombres : */
+/* Surfaces codées en dur restées sombres : */
 html[data-theme="light"] .composeur-carte {
   /* v20261007 (ea) : transparent aussi, comme en sombre. Cette règle remettait
      `background: var(--carte)` — le composeur redevenait une carte blanche,
@@ -5251,20 +5216,20 @@ html[data-theme="light"] .composeur-carte {
 html[data-theme="light"] .sidebar {
   border-right-color: var(--bord-fort);
 }
-/* v20260926m : audit blanc-sur-blanc â€” icÃ´nes et textes codÃ©s clairs en
+/* v20260926m : audit blanc-sur-blanc — icônes et textes codés clairs en
    dur, invisibles sur fond blanc.
-   v20260926n-3 : survols Ã  fond sombre = texte clair imposÃ© aussi. */
+   v20260926n-3 : survols à fond sombre = texte clair imposé aussi. */
 html[data-theme="light"] .btn-nouvelle:hover {
   background: #e2e2e2;
   color: #111111;
   border-color: transparent;
 }
-/* v20261007 (dz) : DEUX rÃ¨gles `html[data-theme="light"] .md pre`peaker
-   redÃ©finissaient `color: #171717` â€” le texte sombre du bloc. Le fond, lui,
-   venait d'Ãªtre rendu sombre : il ne restait qu'un texte quasi noir SUR fond
-   quasi noir, mesurÃ© Ã  1.08:1. Invisible.
-   Ce commentaire historique (Â« le bloc garde son fond neutre Â») est caduc : le
-   fond n'est plus neutre, il est sombre, dans les deux thÃ¨mes. Il reste donc Ã 
+/* v20261007 (dz) : DEUX règles `html[data-theme="light"] .md pre`peaker
+   redéfinissaient `color: #171717` — le texte sombre du bloc. Le fond, lui,
+   venait d'être rendu sombre : il ne restait qu'un texte quasi noir SUR fond
+   quasi noir, mesuré à 1.08:1. Invisible.
+   Ce commentaire historique (« le bloc garde son fond neutre ») est caduc : le
+   fond n'est plus neutre, il est sombre, dans les deux thèmes. Il reste donc à
    fixer la couleur du bloc et de ses liens. */
 html[data-theme="light"] .code-lang,
 html[data-theme="light"] .row.bot .copier,
@@ -5288,12 +5253,12 @@ html[data-theme="light"] .side-utilitaires button:hover,
 html[data-theme="light"] .btn-partager:hover {
   color: #111111;
 }
-/* v20261007 (dx) : #partager sort de ces surcharges de thÃ¨me clair.
-   Elles le forÃ§aient Ã  #171717 en fond et #333333 en texte : sur le cadre
-   #454242 demandÃ©, ce texte sombre sur fond sombre Ã©tait ILLISIBLE. Trois
-   rÃ¨gles pour un seul bouton, et chacune prenait le dessus sur la prÃ©cÃ©dente.
+/* v20261007 (dx) : #partager sort de ces surcharges de thème clair.
+   Elles le forçaient à #171717 en fond et #333333 en texte : sur le cadre
+   #454242 demandé, ce texte sombre sur fond sombre était ILLISIBLE. Trois
+   règles pour un seul bouton, et chacune prenait le dessus sur la précédente.
    Le fond et la couleur du texte viennent maintenant des jetons, identiques
-   dans les deux thÃ¨mes : le bouton garde son cadre dans les deux, et reste
+   dans les deux thèmes : le bouton garde son cadre dans les deux, et reste
    lisible dans les deux. */
 html[data-theme="light"] .side-nav-item {
   color: #333333;
@@ -5301,8 +5266,8 @@ html[data-theme="light"] .side-nav-item {
 html[data-theme="light"] .btn-modele {
   color: #333333;
 }
-/* v20260926m : audit survols â€” chaque hover Ã  fond sombre impose aussi son
-   texte clair, sinon blanc-sur-blanc en thÃ¨me clair. */
+/* v20260926m : audit survols — chaque hover à fond sombre impose aussi son
+   texte clair, sinon blanc-sur-blanc en thème clair. */
 html[data-theme="light"] .btn-nouvelle:hover,
 html[data-theme="light"] .side-nav-item:hover,
 html[data-theme="light"] #filtre-discussions:hover,
@@ -5320,14 +5285,14 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 html[data-theme="light"] .code-copier {
   color: #333333;
 }
-/* v20260926o : champ de recherche restÃ© sombre en thÃ¨me clair. */
+/* v20260926o : champ de recherche resté sombre en thème clair. */
 html[data-theme="light"] .recherche {
   background-color: #ffffff;
   border-color: var(--bord-fort);
   color: var(--texte);
 }
-/* v20260926n-2 : pastille + des boutons et icÃ´ne du groupe d'activitÃ© â€”
-   disque sombre et icÃ´ne claire invisibles sur fond blanc. */
+/* v20260926n-2 : pastille + des boutons et icône du groupe d'activité —
+   disque sombre et icône claire invisibles sur fond blanc. */
 html[data-theme="light"] .btn-nouvelle > .ico {
   background: #e2e2e2;
   color: #111111;
@@ -5344,12 +5309,12 @@ html[data-theme="light"] .message-actions button,
 html[data-theme="light"] .btn-effort .effort-ico .ico {
   color: var(--texte-doux);
 }
-/* v20260926m : le champ de saisie affichait #eeeeee en thÃ¨me clair
-   (blanc sur blanc) â€” le miroir Ã©tant masquÃ©, c'est lui qu'on lit. */
+/* v20260926m : le champ de saisie affichait #eeeeee en thème clair
+   (blanc sur blanc) — le miroir étant masqué, c'est lui qu'on lit. */
 html[data-theme="light"] .saisie {
   color: var(--texte);
 }
-/* v20260926m : #btn-reset-theme (crÃ©Ã© par l'import de design) n'avait plus
+/* v20260926m : #btn-reset-theme (créé par l'import de design) n'avait plus
    aucun style depuis la purge des tuiles. */
 #btn-reset-theme {
   display: inline-flex;
@@ -5385,18 +5350,18 @@ html[data-theme="light"] details.raisonnement li.doute {
 html[data-theme="light"] .side-brand {
   color: var(--texte);
 }
-/* v20260926l : le code en BLOC garde son fond neutre + texte hÃ©ritÃ© (sinon
-   la rÃ¨gle inline ci-dessus, plus spÃ©cifique, le teintait en rouge). */
+/* v20260926l : le code en BLOC garde son fond neutre + texte hérité (sinon
+   la règle inline ci-dessus, plus spécifique, le teintait en rouge). */
 html[data-theme="light"] .md pre code {
   background: transparent;
   border-color: transparent;
   color: inherit;
 }
 html[data-theme="light"] .md code {
-  /* v20261007 (dz) : fond sombre conservÃ© en thÃ¨me clair â€” c'est un bloc de
+  /* v20261007 (dz) : fond sombre conservé en thème clair — c'est un bloc de
      code, pas un texte courant. Seul le texte change, pour rester lisible.
-     L'ancien fond #f6e9e4 avec #9c2b1e faisait un aplat rouge trÃ¨s clair dans
-     une bulle claire : l'inverse du but recherchÃ©. */
+     L'ancien fond #f6e9e4 avec #9c2b1e faisait un aplat rouge très clair dans
+     une bulle claire : l'inverse du but recherché. */
   border-color: #2a2a2a;
   background: var(--fond-code-inline);
   color: var(--texte-code-bloc);
@@ -5444,7 +5409,7 @@ html[data-theme="light"] .hudf-editer {
   color: var(--texte);
   border-color: var(--bord-fort);
 }
-/* v20261007 (dh) : zone d'Ã©dition du HUD (texte brut, pleine hauteur). */
+/* v20261007 (dh) : zone d'édition du HUD (texte brut, pleine hauteur). */
 .hudf-edition {
   width: 100%;
   height: 100%;
@@ -5457,13 +5422,13 @@ html[data-theme="light"] .hudf-editer {
   font-family: var(--mono);
 }
 
-/* â€”â€”â€”â€”â€” Focus clavier â€”â€”â€”â€”â€”
-   Audit : `outline: none` supprimait le repÃ¨re de focus sur des zones clÃ©s.
-   VÃ©rification faite zone par zone :
+/* ————— Focus clavier —————
+   Audit : `outline: none` supprimait le repère de focus sur des zones clés.
+   Vérification faite zone par zone :
    - `.saisie` / `.saisie-mirror` : le `outline: none` est VOLONTAIRE et sans
-     perte â€” l'anneau est portÃ© par `.composeur-carte:focus-within`
-     (border-color + box-shadow 3px). Rien Ã  rÃ©tablir ici.
-   - `.saisie-mirror` est un div non focusable : sans anneau Ã  restituer.
+     perte — l'anneau est porté par `.composeur-carte:focus-within`
+     (border-color + box-shadow 3px). Rien à rétablir ici.
+   - `.saisie-mirror` est un div non focusable : sans anneau à restituer.
    - `.hudf-edition` et `.hnav-url` en revanche n'avaient RIEN (et pour la
      seconde seulement un changement de couleur de bordure) : anneau
      explicite ci-dessous. */
@@ -5502,9 +5467,9 @@ html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
   border-color: transparent;
 }
 /* v20261007 (dx) : #partager garde son cadre #454242 au survol, dans les deux
-   thÃ¨mes. Il sortait de la rÃ¨gle ci-dessus et passait au gris clair : le
-   bouton changeait de couleur au survol alors qu'il n'a pas d'Ã©tat autre que
-   survol â€” et le contraste du texte changeait avec lui. */
+   thèmes. Il sortait de la règle ci-dessus et passait au gris clair : le
+   bouton changeait de couleur au survol alors qu'il n'a pas d'état autre que
+   survol — et le contraste du texte changeait avec lui. */
 html[data-theme="light"] .btn-partager:hover {
   background: var(--fond-share-survol);
   color: var(--fond-partage-texte);
@@ -5544,7 +5509,7 @@ html[data-theme="light"] .hudf-taille {
 html[data-theme="light"] .code-lang {
   color: #666666;
 }
-/* Choix du thÃ¨me (onglet Apparence) : segmentÃ© Sombre/Clair. */
+/* Choix du thème (onglet Apparence) : segmenté Sombre/Clair. */
 .theme-choix {
   display: inline-flex;
   border: 1px solid var(--bord-fort);
@@ -5566,9 +5531,9 @@ html[data-theme="light"] .code-lang {
   font-weight: 600;
 }
 
-/* ============ v20260926n : compte en icÃ´ne utilitaire ============
-   #ouvrir-compte vit dans .side-utilitaires : avatar seul (nom masquÃ©),
-   mÃªme gabarit que les icÃ´nes voisines ; le menu s'ancre Ã  droite. */
+/* ============ v20260926n : compte en icône utilitaire ============
+   #ouvrir-compte vit dans .side-utilitaires : avatar seul (nom masqué),
+   même gabarit que les icônes voisines ; le menu s'ancre à droite. */
 .side-utilitaires {
   align-items: center;
 }
@@ -5612,9 +5577,9 @@ html[data-theme="light"] .side-utilitaires .compte-bouton {
   color: #666666;
 }
 /* v20261007 (U1) : `.filtre-discussions` gardait `color:#999` (2,85:1 sur
-   blanc) â€” sous le seuil de 3:1 exigÃ© pour un composant d'interface porteur
-   de sens (WCAG 1.4.11). Les rÃ¨gles `â€¦:hover` du thÃ¨me clair ne couvraient
-   que l'Ã©tat survolÃ© : au repos l'icÃ´ne restait quasi invisible. */
+   blanc) — sous le seuil de 3:1 exigé pour un composant d'interface porteur
+   de sens (WCAG 1.4.11). Les règles `…:hover` du thème clair ne couvraient
+   que l'état survolé : au repos l'icône restait quasi invisible. */
 html[data-theme="light"] .filtre-discussions {
   color: #5c5c5c;
 }
@@ -5624,7 +5589,7 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   color: #111111;
 }
 
-/* v20260926o (kimi) : tactile sans hover â€” les actions des conversations
+/* v20260926o (kimi) : tactile sans hover — les actions des conversations
    restent accessibles (avant : invisibles, opacity 0). */
 @media (hover: none) {
   .convo-renommer,
@@ -5635,31 +5600,31 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
     opacity: 1;
   }
 }
-/* v20260926o (kimi) : compteur au-dessus des chips de piÃ¨ces jointes. */
+/* v20260926o (kimi) : compteur au-dessus des chips de pièces jointes. */
 .compteur-saisie {
   top: -28px;
 }
-/* v20261007 (dx) â€” le fond va sur .msgs et .side-pied, avec les jetons.
-   J'avais mis #1A1C1C sur .row.bot : c'Ã©tait la mauvaise cible. Une rangÃ©e est
-   une bande de contenu qui se dÃ©place, pas une zone ; la peindre donnait un
-   rectangle sombre en travers du fil Ã  chaque message, et le fond du fil
-   lui-mÃªme restait celui du corps. */
+/* v20261007 (dx) — le fond va sur .msgs et .side-pied, avec les jetons.
+   J'avais mis #1A1C1C sur .row.bot : c'était la mauvaise cible. Une rangée est
+   une bande de contenu qui se déplace, pas une zone ; la peindre donnait un
+   rectangle sombre en travers du fil à chaque message, et le fond du fil
+   lui-même restait celui du corps. */
 .msgs {
   background: var(--fond-msgs);
 }
 .row.bot {
   background: var(--fond-row);
 }
-/* v20261007 (dz) : la classe est `.sidebar` (l'Ã©lÃ©ment est `<aside id="sidebar"
-   class="sidebar">`), pas `.side`. J'avais Ã©crit `.side`, un sÃ©lecteur qui ne
-   dÃ©signe RIEN : la rÃ¨gle Ã©tait inerte, et la mesure l'a montrÃ© â€” `.side`
-   renvoyait Â« ABSENT Â» alors que `--fond-side` Ã©tait bien dÃ©fini. Une rÃ¨gle
-   morte ne se voit pas au relecture ; elle se voit Ã  la mesure. */
+/* v20261007 (dz) : la classe est `.sidebar` (l'élément est `<aside id="sidebar"
+   class="sidebar">`), pas `.side`. J'avais écrit `.side`, un sélecteur qui ne
+   désigne RIEN : la règle était inerte, et la mesure l'a montré — `.side`
+   renvoyait « ABSENT » alors que `--fond-side` était bien défini. Une règle
+   morte ne se voit pas au relecture ; elle se voit à la mesure. */
 .sidebar {
   background: var(--fond-side);
 }
 /* v20261007 (ea) : la zone de conversation, pas seulement le fil. `.msgs` ne
-   couvrait que la zone dÃ©filante : l'en-tÃªte et le composeur gardaient le fond
+   couvrait que la zone défilante : l'en-tête et le composeur gardaient le fond
    du document, ce qui se voyait aux jointures. */
 .chat-shell {
   background: var(--fond-chat);
@@ -5669,8 +5634,8 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 }
 
 /* v20260926n : sidebar compacte et uniforme ============
-   L'espace libre vit dans la liste des discussions (flex:1) â€” le reste
-   est resserrÃ© : marque, bouton, nav, section projets et pied. */
+   L'espace libre vit dans la liste des discussions (flex:1) — le reste
+   est resserré : marque, bouton, nav, section projets et pied. */
 .side-corps {
   gap: 6px;
   padding: 10px 10px 2px;
@@ -5701,22 +5666,22 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   padding-top: 6px;
 }
 
-/* ============ v20261001 : liste des fichiers + interprÃ©teur HTML ============
-   Bouton en haut Ã  droite, Ã  gauche de Â« Partager Â» : liste les fichiers de
-   la conversation (cartes athena-file + piÃ¨ces jointes analysÃ©es). Un clic
-   sur un fichier .html ouvre l'interprÃ©teur (iframe sandboxÃ© + console). */
+/* ============ v20261001 : liste des fichiers + interpréteur HTML ============
+   Bouton en haut à droite, à gauche de « Partager » : liste les fichiers de
+   la conversation (cartes athena-file + pièces jointes analysées). Un clic
+   sur un fichier .html ouvre l'interpréteur (iframe sandboxé + console). */
 .zone-fichiers {
   position: relative;
   display: flex;
   align-items: center;
 }
 /* v20261007 (dq) : boutons Fichiers / Navigateur SANS ENCADREMENT.
-   Ils partageaient le style Â« bouton plein Â» (fond #3a3a3a, bordure grise,
-   4 couleurs en dur qui ne suivaient pas le thÃ¨me). On les passe en
-   transparent : seule la zone cliquable reste visible, l'icÃ´ne et l'Ã©tiquette
-   hÃ©ritent de --texte-doux, et le fond n'apparaÃ®t qu'au survol / focus.
-   Ã‡a les aligne sur les autres contrÃ´les de la barre de titre, qui sont dÃ©jÃ 
-   en zone de toucher translucide, et supprime les 4 littÃ©raux de couleur. */
+   Ils partageaient le style « bouton plein » (fond #3a3a3a, bordure grise,
+   4 couleurs en dur qui ne suivaient pas le thème). On les passe en
+   transparent : seule la zone cliquable reste visible, l'icône et l'étiquette
+   héritent de --texte-doux, et le fond n'apparaît qu'au survol / focus.
+   Æa les aligne sur les autres contrôles de la barre de titre, qui sont déjà
+   en zone de toucher translucide, et supprime les 4 littéraux de couleur. */
 .btn-fichiers {
   display: inline-flex;
   align-items: center;
@@ -5826,29 +5791,29 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   border-color: var(--primaire);
   color: var(--primaire);
 }
-/* â€”â€”â€”â€”â€” InterprÃ©teur HTML (code â†’ iframe sandboxÃ©e) â€”â€”â€”â€”â€” */
-/* v20261001 : HUD ancrÃ© Ã  DROITE â€” la PAGE se rÃ©tracte : .page-demo rÃ©serve
-   la largeur du HUD en padding-right (conversation + barre latÃ©rale se
-   rÃ©adaptent, JAMAIS recouvertes). Sans le code par dÃ©faut (rendu seul) ;
-   largeur rÃ©glable par #interpreteur-bord, mÃ©morisÃ©e (--hud-largeur). */
+/* ————— Interpréteur HTML (code ⅒ iframe sandboxée) ————— */
+/* v20261001 : HUD ancré à DROITE — la PAGE se rétracte : .page-demo réserve
+   la largeur du HUD en padding-right (conversation + barre latérale se
+   réadaptent, JAMAIS recouvertes). Sans le code par défaut (rendu seul) ;
+   largeur réglable par #interpreteur-bord, mémorisée (--hud-largeur). */
 .page-demo {
   transition: padding-right 0.18s ease;
 }
 .page-demo.hud-ouvert {
   padding-right: var(--hud-largeur, 640px);
 }
-/* MÃªme mÃ©canique pour le HUD d'aperÃ§u de code (fichiers non-HTML) : la page
-   se rÃ©tracte Ã  sa largeur au lieu d'Ãªtre recouverte (Â« il ne s'adapte pas
-   Ã  toute l'UI Â»). */
+/* Même mécanique pour le HUD d'aperçu de code (fichiers non-HTML) : la page
+   se rétracte à sa largeur au lieu d'être recouverte (« il ne s'adapte pas
+   à toute l'UI »). */
 .page-demo.hudf-ouvert {
   padding-right: var(--hudf-largeur, 480px);
 }
 .page-demo.hudf-ouvert #app {
   max-width: none;
 }
-/* Espace tendu (HUD large / Ã©cran moyen) : la barre latÃ©rale se rÃ©tracte Ã 
-   son tour pour rendre toute la largeur Ã  la conversation (mÃªme mÃ©canique
-   que sidebar-fermee, Ã©tat gÃ©rÃ© par evaluerAdaptationHud()). */
+/* Espace tendu (HUD large / écran moyen) : la barre latérale se rétracte à
+   son tour pour rendre toute la largeur à la conversation (même mécanique
+   que sidebar-fermee, état géré par evaluerAdaptationHud()). */
 #app.hud-ouvert #app,
 .page-demo.hud-ouvert #app {
   max-width: none;
@@ -5858,8 +5823,8 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   opacity: 0;
   pointer-events: none;
 }
-/* Le HUD entre en coulissant pendant que la page se rÃ©tracte : mouvement
-   coordonnÃ©, on voit la page Â« poussÃ©e Â» par le HUD. */
+/* Le HUD entre en coulissant pendant que la page se rétracte : mouvement
+   coordonné, on voit la page « poussée » par le HUD. */
 @keyframes hud-entree {
   from {
     transform: translateX(100%);
@@ -5868,9 +5833,9 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
     transform: translateX(0);
   }
 }
-/* Adaptation du composeur quand la colonne se rÃ©duit : le texte de mise en
+/* Adaptation du composeur quand la colonne se réduit : le texte de mise en
    garde tronque en une ligne (au lieu d'une colonne verticale) et les
-   rÃ©glages passent Ã  la ligne proprement. */
+   réglages passent à la ligne proprement. */
 .composeur-pied {
   flex-wrap: wrap;
   row-gap: 6px;
@@ -5999,9 +5964,9 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 }
 .interpreteur-corps.sans-code {
   grid-template-columns: 1fr;
-  /* force la PLEINE hauteur : sinon la rangÃ©e (.etroit / media â‰¤760 =
-     minmax(150px,38%) 1fr) restait vide sous le code masquÃ© et le rendu
-     n'occupait que 38-40 % de la hauteur (Â« le rendu ne marche pas Â»). */
+  /* force la PLEINE hauteur : sinon la rangée (.etroit / media ∤760 =
+     minmax(150px,38%) 1fr) restait vide sous le code masqué et le rendu
+     n'occupait que 38-40 % de la hauteur (« le rendu ne marche pas »). */
   grid-template-rows: 1fr;
 }
 .interpreteur-corps.sans-code .interpreteur-code,
@@ -6049,9 +6014,9 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   border: 0;
   background: var(--carte);
 }
-/* HUD Ã©troit (glissÃ© sous 560 px) : le split code|rendu passe en PILE -
-   code au-dessus, rendu dessous, poignÃ©e masquÃ©e â€” comme en mobile, mais
-   dÃ©clenchÃ© par la largeur rÃ©elle du HUD, pas du viewport. */
+/* HUD étroit (glissé sous 560 px) : le split code|rendu passe en PILE -
+   code au-dessus, rendu dessous, poignée masquée — comme en mobile, mais
+   déclenché par la largeur réelle du HUD, pas du viewport. */
 .interpreteur-corps.etroit {
   grid-template-columns: 1fr;
 }
@@ -6139,7 +6104,7 @@ html[data-theme="light"] .interpreteur-code {
   color: var(--texte);
 }
 
-/* â€”â€”â€”â€”â€” Menu Â« / Â» : skills du moteur (docs/chat-demo.js) â€”â€”â€”â€”â€” */
+/* ————— Menu « / » : skills du moteur (docs/chat-demo.js) ————— */
 .menu-skills {
   position: absolute;
   left: 0;
@@ -6198,7 +6163,7 @@ html[data-theme="light"] .interpreteur-code {
   color: var(--texte-doux);
 }
 
-/* â€”â€”â€”â€”â€” Pastille du skill forcÃ© (au-dessus du composeur) â€”â€”â€”â€”â€” */
+/* ————— Pastille du skill forcé (au-dessus du composeur) ————— */
 .chip-skill {
   display: flex;
   align-items: center;
@@ -6238,7 +6203,7 @@ html[data-theme="light"] .interpreteur-code {
   background: var(--danger-fond);
 }
 
-/* â€”â€”â€”â€”â€” Panneau /mcp : serveurs MCP branchÃ©s â€”â€”â€”â€”â€” */
+/* ————— Panneau /mcp : serveurs MCP branchés ————— */
 .panneau-mcp {
   position: absolute;
   left: 0;
@@ -6344,9 +6309,9 @@ html[data-theme="light"] .interpreteur-code {
   color: var(--texte-doux);
 }
 
-/* Â§8.7-4 â€” plan de travail visible (HUD Â« Plan Â») : alimentÃ© par le bloc
-   ```athena-plan (majPlan), persistÃ© par conversation (_plan), rÃ©injectÃ© Ã 
-   chaque tour (body.plan â†’ consigne systÃ¨me). Le JS pose/masque l'attribut
+/* §8.7-4 — plan de travail visible (HUD « Plan ») : alimenté par le bloc
+   ```athena-plan (majPlan), persisté par conversation (_plan), réinjecté à
+   chaque tour (body.plan ⅒ consigne système). Le JS pose/masque l'attribut
    hidden selon que le plan est vide. */
 .hud-plan {
   flex: 0 0 auto;
@@ -6357,13 +6322,13 @@ html[data-theme="light"] .interpreteur-code {
   border-left: 3px solid var(--primaire);
   border-radius: var(--rayon);
   box-shadow: var(--ombre);
-/* v20261007 (dw) : largeur FIXE 450px et CENTRÃ‰. Le plan Ã©tait calÃ© Ã  gauche
-  (768px + marge), ce qui le dÃ©centrait par rapport au fil de discussion et le
-  faisait lire comme un encart. CentrÃ©, il redevient un bandeau de contexte.
-  `border-box` est indispensable : en `content-box` (dÃ©faut), les 450px
+/* v20261007 (dw) : largeur FIXE 450px et CENTRÈ. Le plan était calé à gauche
+  (768px + marge), ce qui le décentrait par rapport au fil de discussion et le
+  faisait lire comme un encart. Centré, il redevient un bandeau de contexte.
+  `border-box` est indispensable : en `content-box` (défaut), les 450px
   s'ajoutaient au remplissage et aux bordures, et le plan mesurait 474px au
-  lieu des 450 demandÃ©s â€” un Ã©cart qu'on ne voit qu'en mesurant.
-  Le max-width Ã©vite le dÃ©bordement sous ~480px de fenÃªtre. */
+  lieu des 450 demandés — un écart qu'on ne voit qu'en mesurant.
+  Le max-width évite le débordement sous ~480px de fenêtre. */
   box-sizing: border-box;
   width: 450px;
   max-width: calc(100% - 28px);
@@ -6375,7 +6340,7 @@ html[data-theme="light"] .interpreteur-code {
 .hud-plan[hidden] {
   display: none;
 }
-/* En-tÃªte : un vrai bouton (focus clavier, aria-expanded) â€” c'est lui qui
+/* En-tête : un vrai bouton (focus clavier, aria-expanded) — c'est lui qui
    porte le repliage, pas un titre neutre. */
 .plan-tete {
   display: flex;
@@ -6420,7 +6385,7 @@ html[data-theme="light"] .interpreteur-code {
   text-transform: none;
   opacity: 0.85;
 }
-/* Indicateur d'activitÃ© : visible seulement quand le modÃ¨le travaille. */
+/* Indicateur d'activité : visible seulement quand le modèle travaille. */
 .plan-actif {
   display: none;
   align-items: center;
@@ -6446,7 +6411,7 @@ html[data-theme="light"] .interpreteur-code {
 .plan-corps[hidden] {
   display: none;
 }
-/* v20261007 (do) : retour visuel du dÃ©pÃ´t de fichiers sur le composeur. */
+/* v20261007 (do) : retour visuel du dépôt de fichiers sur le composeur. */
 .saisie-zone.depot-fichiers {
   outline: 2px dashed var(--primaire);
   outline-offset: 3px;
@@ -6473,20 +6438,20 @@ html[data-theme="light"] .interpreteur-code {
 .plan-liste li.fait::marker {
   color: var(--primaire);
 }
-/* bloc ```athena-plan rendu dans la conversation : Ã©tat publiÃ© par le
-   modÃ¨le, jamais exÃ©cutÃ© â€” traitÃ© comme une note, pas comme du code. */
+/* bloc ```athena-plan rendu dans la conversation : état publié par le
+   modèle, jamais exécuté — traité comme une note, pas comme du code. */
 .md pre.plan-bloc {
   border-left: 3px solid var(--primaire);
   font-size: 0.8rem;
-  /* v20261007 (ea) : le texte du plan passe en blanc par jeton. Il hÃ©ritait de
-     `.md pre`, donc de `--texte-code-bloc` (#ea553c) : le plan â€” un Ã©tat
-     publiÃ©, pas du code â€” s'affichait en rouge. Un plan Ã©crit par le modÃ¨le
-     mÃ©rite d'Ãªtre lu, pas d'Ãªtre coloration syntaxique. */
+  /* v20261007 (ea) : le texte du plan passe en blanc par jeton. Il héritait de
+     `.md pre`, donc de `--texte-code-bloc` (#ea553c) : le plan — un état
+     publié, pas du code — s'affichait en rouge. Un plan écrit par le modèle
+     mérite d'être lu, pas d'être coloration syntaxique. */
   color: var(--texte-plan-bloc);
 }
-/* v20261007 (ea) : le plan n'est plus une carte. MÃªme rÃ¨gle que le composeur et
-   l'en-tÃªte : pas de fond, la bordure et le liserÃ© gauche suffisent Ã  le
-   dÃ©limiter. */
+/* v20261007 (ea) : le plan n'est plus une carte. Même règle que le composeur et
+   l'en-tête : pas de fond, la bordure et le liseré gauche suffisent à le
+   délimiter. */
 .hud-plan {
   background: transparent;
 }
