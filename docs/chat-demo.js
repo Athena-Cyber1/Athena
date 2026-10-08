@@ -502,28 +502,55 @@ function majBouton() {
 }
 function afficherFichiers() {
   apercuFichiersEl.replaceChildren();
-  fichiersJoints.forEach((fichier, index) => {
+  fichiersJoints.forEach((fichier) => {
     const chip = document.createElement('div');
     chip.className = 'file-chip';
     if (fichier.status === 'failed') chip.classList.add('echec');
-    const nom = document.createElement('span');
-    nom.className = 'file-chip-name';
     /* v1.2 (anti-bâclage) : binaire indexé mais sans texte lisible côté
        navigateur (PDF/image) — sur Pages, sans sidecar, le modèle n'a rien
        à lire et invente : on l'affiche dans la puce au lieu de le taire. */
     const sansTexte = fichier.status === 'indexed' && fichier.file_id
       && !contenusFichiers.get(fichier.file_id);
-    const etat = fichier.status === 'indexed'
-      ? '✓ indexé · ' + (fichier.chunks || 0) + ' seg.' + (sansTexte ? ' · ⚠ texte non lisible' : '')
-      : fichier.status === 'failed'
-      ? 'échec : ' + (fichier.erreur || 'extraction impossible')
-      : '… ' + (fichier.status === 'uploading' ? 'envoi' : 'indexation');
-    nom.textContent = fichier.name + ' · ' + tailleFichier(fichier.size || 0) + ' · ' + etat;
+    /* v20261007 (ds) : l'état passe du texte au BALISE.
+       Avant, tout était collé dans une chaîne — « ✓ indexé · 4 seg. · ⚠ texte
+       non lisible » — avec des glyphes en dur. Deux conséquences : on ne
+       pouvait ni colorer l'état selon sa gravité, ni le tronquer, et un
+       fichier en échec était visuellement identique à un fichier indexé
+       tant qu'on ne lisait pas la petite ligne. Ici l'état est un badge avec
+       sa propre tonalité, et l'avertissement en a un à lui. */
+    const corps = document.createElement('div');
+    corps.className = 'file-chip-corps';
+    const nom = document.createElement('span');
+    nom.className = 'file-chip-name';
+    nom.textContent = fichier.name;
+    nom.title = fichier.name;
+    const details = [tailleFichier(fichier.size || 0)];
+    if (fichier.chunks) details.push(fichier.chunks + ' seg.');
+    const meta = document.createElement('span');
+    meta.className = 'file-chip-meta';
+    meta.textContent = details.join(' · ');
+    corps.append(nom, meta);
+    const etat = document.createElement('span');
+    etat.className = 'file-chip-etat';
     if (fichier.status === 'indexed') {
+      etat.classList.add('ok');
+      etat.append(icoSvg('check'), document.createTextNode('indexé'));
       chip.title = 'Fichier indexé côté serveur — les segments pertinents seront fournis au modèle (FILE_DATA).'
         + (sansTexte ? ' Sans texte lisible côté navigateur (binaire ou volumineux) : en mode Pages le modèle ne pourra pas le lire.' : '');
     } else if (fichier.status === 'failed') {
+      etat.classList.add('ko');
+      etat.append(icoSvg('alert'), document.createTextNode(fichier.erreur || 'échec'));
       chip.title = (fichier.erreur || 'Extraction impossible') + ' — ce fichier ne sera pas transmis.';
+    } else {
+      etat.classList.add('attente');
+      etat.append(icoSvg('refresh'), document.createTextNode(fichier.status === 'uploading' ? 'envoi' : 'indexation'));
+    }
+    corps.appendChild(etat);
+    if (sansTexte) {
+      const alerte = document.createElement('span');
+      alerte.className = 'file-chip-alerte';
+      alerte.append(icoSvg('alert'), document.createTextNode('texte non lisible'));
+      corps.appendChild(alerte);
     }
     const retirer = document.createElement('button');
     retirer.type = 'button';
@@ -544,7 +571,7 @@ function afficherFichiers() {
       afficherFichiers();
       majBouton();
     });
-    chip.append(nom, retirer);
+    chip.append(corps, retirer);
     apercuFichiersEl.appendChild(chip);
   });
 }
