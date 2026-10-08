@@ -4873,8 +4873,8 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   const zone = document.createElement('div');
   zone.className = 'diffusion';
   zone.hidden = true;
-  let txtEl = document.createElement('span');
-  txtEl.className = 'diffusion-texte';
+  let txtEl = document.createElement('div');
+  txtEl.className = 'md diffusion-texte';   /* v20261007 (dp) : la queue est du markdown */
   const curseur = document.createElement('span');
   curseur.className = 'diffusion-curseur';
   curseur.textContent = '▍';
@@ -4924,7 +4924,7 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
         zone.replaceChildren();
         if (limite > 0) zone.appendChild(markdownVersFragment(reponse.slice(0, limite)));
         const queue = dansBloc ? '' : reponse.slice(limite);
-        txtEl = document.createElement('span');
+        txtEl = document.createElement('div');   /* v20261007 (dp) : markdown, plus texte brut */
         txtEl.className = 'diffusion-texte';
         txtEl.textContent = queue;
         zone.append(txtEl, curseur);
@@ -4963,6 +4963,38 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   let afficheQueue = '';
   const FENETRE_DIFFUSION = 12000;
   const FENETRE_PENSEE = 6000;
+  /* v20261007 (dp) — RETENIR LA CONSTRUCTION MARKDOWN INACHEVÉE.
+     La queue était injectée en `createTextNode` : pendant la frappe on voyait
+     les **, les |, les ``` et les 1. du dernier passage tels quels (les
+     « résidus de markdown »). On ne rendra la queue en markdown qu'à partir
+     du moment où la construction est complète :
+       - fence ``` ouverte  -> on masque tout le bloc non clôturé ;
+       - lien `[t](url` sans `)` -> on masque depuis le `[` ;
+       - `**` ou `inline code` impairs en fin -> on masque depuis le dernier.
+     Pendant qu'un motif s'écrit, ne pas encore l'afficher vaut mieux que d'en
+     montrer le squelette. Rien n'est perdu : dès que le caractère fermant arrive,
+     la construction apparaît d'un bloc. */
+  function tronquerQueue(q) {
+    let s = String(q || '');
+    /* fence ouverte : on recule jusqu'à la dernière ouvrante */
+    const fences = s.match(/```/g);
+    if (fences && fences.length % 2 === 1) {
+      const i = s.lastIndexOf('```');
+      if (i >= 0) s = s.slice(0, i);
+    }
+    /* lien markdown tronqué : [texte](url sans parenthese fermante */
+    const lien = /\[([^\]\n]*)\]\([^)\n]*$/.exec(s);
+    if (lien) s = s.slice(0, lien.index);
+    /* emphasis forte et code inline : nombre impair de marqueurs */
+    const impair = (t, marqueur) => {
+      const n = t.split(marqueur).length - 1;
+      if (n % 2 === 1) { const i = t.lastIndexOf(marqueur); return t.slice(0, i); }
+      return t;
+    };
+    s = impair(s, '**');
+    s = impair(s, '`');
+    return s;
+  }
   const flusher = () => {
     flushTimer = null;
     if (!gardeVue || gardeVue()) {
@@ -4975,10 +5007,15 @@ function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
       const debutQueue = Math.max(renduJusqua, reponse.length - FENETRE_DIFFUSION);
       const queue = ouvert ? '' : reponse.slice(debutQueue);
       if (queue !== afficheQueue) {
-        /* v20260926g : appendData n'existe que sur les Text — pour un
-           élément, on ajoute un nœud texte (pas de réécriture complète). */
-        if (queue.startsWith(afficheQueue)) txtEl.append(document.createTextNode(queue.slice(afficheQueue.length)));
-        else txtEl.textContent = queue;
+        /* v20261007 (dp) : la queue est rendue EN MARKDOWN, plus en texte brut.
+           On réécrit son contenu à chaque image plutôt que d'ajouter un nœud
+           texte : c'est ce qui fait disparaître les résidus (** | ``` 1.) du
+           dernier passage. Le texte affiché est la queue TRONQUÉE de sa
+           construction inachevée ; `afficheQueue` suit la queue BRUTE, donc le
+           bloc apparaît dès que le caractère manquant arrive. */
+        txtEl.replaceChildren();
+        const affichable = tronquerQueue(queue);
+        if (affichable) txtEl.appendChild(formater(affichable));
         afficheQueue = queue;
       }
       afficheReponse = reponse;

@@ -5919,7 +5919,7 @@ html[data-theme="light"] .interpreteur-code {
   /* v20261007 (dm) : 34vh poussait le fil de discussion hors de l'écran. Le
      plan est replié par défaut ; déployé il plafonne à 22vh (défilement
      interne), donc il ne mange jamais la place des réponses. */
-  max-height: 22vh;
+  max-height: 13vh;
   overflow: auto;
   animation: apparait 0.16s ease;
 }
