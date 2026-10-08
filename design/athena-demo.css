@@ -409,6 +409,8 @@ a:hover {
   align-items: center;
   gap: 2px;
   border-radius: 10px;
+  /* v20261007 (dr) : repère du panneau .convo-actions, qui est en absolute. */
+  position: relative;
 }
 .side-item {
   display: flex;
@@ -503,6 +505,67 @@ a:hover {
   padding: 0;
   opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+/* v20261007 (dr) : les quatre boutons d'action d'une conversation sont
+   regroupés. Il ne reste donc qu'UNE cible cliquable sur la ligne (le bouton
+   « trois points »), au survol ou au focus — plus quatre zones mortelles à
+   côté du titre. Les actions vivent dans un panneau à part, donc elles ne
+   sont plus positionnées dans le flux de la ligne. */
+.convo-menu {
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--texte-doux);
+  cursor: pointer;
+  border-radius: 7px;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.convo-menu .ico {
+  width: 15px;
+  height: 15px;
+}
+.convo-ligne:hover .convo-menu,
+.convo-ligne:focus-within .convo-menu,
+.convo-ligne.ouvert .convo-menu {
+  opacity: 1;
+}
+.convo-ligne.ouvert .convo-menu {
+  background: color-mix(in srgb, var(--texte) 12%, transparent);
+  color: var(--texte);
+}
+/* Panneau d'actions : en position FIXE dans <body> (voir placerMenuConvo).
+   Ancré dans la ligne, il recouvrait le bouton de la ligne suivante et
+   rendait impossible l'ouverture d'un second menu. `right` n'est pas utilisé :
+   c'est le JS qui calcule un `left` borné aux bords de l'écran. */
+.convo-actions {
+  position: fixed;
+  z-index: 400;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--carte);
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-s);
+  box-shadow: var(--ombre);
+  max-height: 80vh;
+  overflow: auto;
+}
+.convo-actions[hidden] {
+  display: none;
+}
+/* Dans le panneau, les actions sont le contenu : pas d'opacité conditionnelle
+   au survol de ligne, sinon elles seraient invisibles au clavier. */
+.convo-actions .convo-renommer,
+.convo-actions .convo-export,
+.convo-actions .convo-suppr,
+.convo-actions .convo-epingle {
+  opacity: 1;
 }
 .convo-renommer .ico,
 .convo-export .ico,

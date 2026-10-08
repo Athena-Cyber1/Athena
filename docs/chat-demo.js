@@ -91,6 +91,10 @@ const gererCompteEl = $('gerer-compte'), preferencesCompteEl = $('preferences-co
    Remplace les glyphes Unicode (✎ ⤓ × ↑ ↓ ⧉ ✓ ■ ↵ › …) par un jeu
    d'icônes homogène : stroke=currentColor, 1.7, extrémités arrondies. */
 const SVG_ICOS = {
+  /* v20261007 (dr) : icône « trois points » — elle porte le menu d'actions
+     d'une conversation. Aucune icône de ce genre n'existait, alors que
+     chevron/download/pencil/x/pincoient tous, elles, étaient déjà là. */
+  more: '<circle cx="5.2" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.8" cy="12" r="1.7"/>',
   pencil: '<path d="M4.5 19.5h4L19.8 8.2a2.1 2.1 0 0 0-3-3L5.5 16.5v3z"/><path d="m14.5 6.5 3 3"/>',
   download: '<path d="M12 4.5v10m0 0 3.5-3.5M12 14.5 8.5 11"/><path d="M5 19.5h14"/>',
   x: '<path d="m7.5 7.5 9 9m0-9-9 9"/>',
@@ -933,34 +937,61 @@ function rendreConversations() {
     l2.append(extrait, horloge);
     bouton.append(l1, l2);
     bouton.addEventListener('click', () => ouvrirConversation(c.id));
+    /* v20261007 (dr) : les quatre boutons d'action d'une ligne sont regroupés
+       derrière UN bouton « trois points ». Avant, chaque ligne portait quatre
+       cibles cliquables qui apparaissaient au survol : quatre zones mortelles
+       dans une barre latérale étroite, et quatre onglets de lecture d'un coup.
+
+       Les classes des actions sont CONSERVÉES (.convo-renommer, .convo-export,
+       .convo-suppr, .convo-epingle) : la délégation existante qui traite le
+       renommage continue de viser .convo-renommer sans avoir à être touchée. */
+    const actions = document.createElement('div');
+    actions.className = 'convo-actions';
+    actions.hidden = true;
+    actions.setAttribute('role', 'menu');
+    actions.setAttribute('aria-label', 'Actions pour « ' + c.titre + ' »');
     const renommer = document.createElement('button');
     renommer.type = 'button';
     renommer.className = 'convo-renommer';
     renommer.appendChild(icoSvg('pencil'));
     renommer.title = 'Renommer';
+    renommer.setAttribute('role', 'menuitem');
     renommer.setAttribute('aria-label', 'Renommer « ' + c.titre + ' »');
     const exportBtn = document.createElement('button');
     exportBtn.type = 'button';
     exportBtn.className = 'convo-export';
     exportBtn.appendChild(icoSvg('download'));
     exportBtn.title = 'Exporter en Markdown';
+    exportBtn.setAttribute('role', 'menuitem');
     exportBtn.setAttribute('aria-label', 'Exporter « ' + c.titre + ' » en Markdown');
-    exportBtn.addEventListener('click', (e) => { e.stopPropagation(); exporterConversation(c.id); });
+    exportBtn.addEventListener('click', (e) => { e.stopPropagation(); fermerMenusConvo(); exporterConversation(c.id); });
     const suppr = document.createElement('button');
     suppr.type = 'button';
     suppr.className = 'convo-suppr';
     suppr.appendChild(icoSvg('x'));
+    suppr.setAttribute('role', 'menuitem');
     suppr.setAttribute('aria-label', 'Supprimer « ' + c.titre + ' »');
     suppr.title = 'Supprimer';
-    suppr.addEventListener('click', (e) => { e.stopPropagation(); supprimerConversation(c.id); });
+    suppr.addEventListener('click', (e) => { e.stopPropagation(); fermerMenusConvo(); supprimerConversation(c.id); });
     const epingle = document.createElement('button');
     epingle.type = 'button';
     epingle.className = 'convo-epingle';
     epingle.appendChild(icoSvg(c.epingle ? 'pinOff' : 'pin'));
     epingle.title = c.epingle ? 'Désépingler' : 'Épingler en haut';
+    epingle.setAttribute('role', 'menuitem');
     epingle.setAttribute('aria-label', (c.epingle ? 'Désépingler « ' : 'Épingler « ') + c.titre + ' »');
-    epingle.addEventListener('click', (e) => { e.stopPropagation(); basculerEpingle(c.id); });
-    ligne.append(bouton, renommer, exportBtn, suppr, epingle);
+    epingle.addEventListener('click', (e) => { e.stopPropagation(); fermerMenusConvo(); basculerEpingle(c.id); });
+    actions.append(renommer, exportBtn, epingle, suppr);
+    const menu = document.createElement('button');
+    menu.type = 'button';
+    menu.className = 'convo-menu';
+    menu.appendChild(icoSvg('more'));
+    menu.title = 'Actions';
+    menu.setAttribute('aria-haspopup', 'menu');
+    menu.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-label', 'Actions pour « ' + c.titre + ' »');
+    menu.addEventListener('click', (e) => { e.stopPropagation(); basculerMenuConvo(ligne, menu, actions); });
+    ligne.append(bouton, menu, actions);
     listeConversationsEl.appendChild(ligne);
   });
   majRechercheConversations();
@@ -1607,12 +1638,107 @@ function renommerDepuisLigne(ligne) {
   input.addEventListener('blur', () => terminer(true));
   input.addEventListener('click', (e) => e.stopPropagation());
 }
-if (listeConversationsEl) {
-  listeConversationsEl.addEventListener('click', (e) => {
-    const btn = e.target.closest('.convo-renommer');
-    if (btn) renommerDepuisLigne(btn.closest('.convo-ligne'));
+/* v20261007 (dr) : l'écouteur passe de listeConversationsEl à document.
+   Le panneau d'actions est déplacé dans <body> à l'ouverture : un clic sur
+   « Renommer » ne remontait donc plus par la liste, et le renommage était
+   devenu totalement inerte. `.convo-renommer` reste assez spécifique pour
+   qu'aucun autre clic ne soit intercepté. */
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.convo-renommer');
+  if (!btn) return;
+  const panneau = btn.closest('.convo-actions');
+  renommerDepuisLigne(btn.closest('.convo-ligne') || (panneau && panneau._ligne));
+});
+
+/* ---------- v20261007 (dr) — menu d'actions des conversations ----------
+   Un seul bouton par ligne ouvre les quatre actions. Trois règles le rendent
+   utilisable au clavier, sinon un menu contextuel n'est qu'un piège :
+   - Échap ferme et rend le focus au bouton qui l'a ouvert ;
+   - Tab / flèches parcourent les items (role=menu) ;
+   - un clic hors du menu le ferme.
+   Un seul menu ouvert à la fois : dans une liste, deux menus empilés se
+   chevauchent sans qu'on sache lequel on referme. */
+function fermerMenusConvo() {
+  document.querySelectorAll('.convo-actions').forEach((a) => {
+    const ligne = a._ligne;
+    if (ligne) {
+      ligne.classList.remove('ouvert');
+      /* on remet le panneau dans SA ligne : c'est le document qui le désigne,
+         sinon il reste dans <body> et la ligne perd ses actions. */
+      a.style.position = ''; a.style.top = ''; a.style.left = '';
+      ligne.appendChild(a);
+    }
+    a.hidden = true;
+    const m = ligne ? ligne.querySelector('.convo-menu') : null;
+    if (m) m.setAttribute('aria-expanded', 'false');
   });
 }
+/* v20261007 (dr) : le panneau est déplacé dans <body> en position fixe.
+   Ancré dans la ligne, il recouvrait le bouton de la ligne SUIVANTE — le
+   test l'a vu tout de suite : impossible d'ouvrir un second menu, le premier
+   interceptait le clic. En 'fixed', il ne recouvre plus rien, et il déborde
+   peu : d'où le recentrage s'il sort de l'écran. Le nœud est déplacé, pas
+   cloné, donc les écouteurs et la délégation renommage survivent. */
+function placerMenuConvo(actions, bouton) {
+  const r = bouton.getBoundingClientRect();
+  actions.style.position = 'fixed';
+  actions.style.top = (r.bottom + 4) + 'px';
+  document.body.appendChild(actions);
+  const w = actions.offsetWidth || 130;
+  /* Décale le panneau à GAUCHE du bouton, de façon à dégager la colonne des
+     boutons « trois points ». Aligné sur le bord droit du bouton (ce qui est
+     tentant), il recouvrait exactement le bouton de la ligne suivante : le
+     clic tombait sur le panneau et aucun second menu ne pouvait s'ouvrir —
+     constaté au navigateur, pas à la lecture du code. */
+  let left = r.left - w - 6;
+  if (left < 8) left = Math.min(r.right + 6, window.innerWidth - w - 8);
+  if (left < 8) left = 8;
+  actions.style.left = left + 'px';
+}
+function basculerMenuConvo(ligne, bouton, actions) {
+  const ouvert = ligne.classList.contains('ouvert');
+  fermerMenusConvo();
+  if (ouvert) return;
+  ligne.classList.add('ouvert');
+  actions._ligne = ligne;
+  actions.hidden = false;
+  bouton.setAttribute('aria-expanded', 'true');
+  placerMenuConvo(actions, bouton);
+  const premier = actions.querySelector('button');
+  if (premier) premier.focus();
+}
+document.addEventListener('click', (e) => {
+  /* Le panneau vit dans <body> : un clic DANS le panneau n'est plus dans une
+     ligne, il ne doit donc pas le refermer. C'est ce que le test « clic
+     dehors » a révélé. */
+  if (e.target.closest('.convo-ligne') || e.target.closest('.convo-actions')) return;
+  fermerMenusConvo();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const ouverte = document.querySelector('.convo-ligne.ouvert');
+    if (!ouverte) return;
+    const m = ouverte.querySelector('.convo-menu');
+    fermerMenusConvo();
+    if (m) m.focus();
+    return;
+  }
+  if (e.key !== 'Tab' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  /* On cherche le panneau OUVERT globalement, plus depuis la ligne : à
+     l'ouverture il est déplacé dans <body>, et `ligne.querySelector` ne
+     trouvait donc plus aucun item — les flèches ne faisaient rien. */
+  const panneau = document.querySelector('.convo-actions:not([hidden])');
+  if (!panneau) return;
+  const items = Array.from(panneau.querySelectorAll('button'));
+  if (!items.length) return;
+  e.preventDefault();
+  const i = items.indexOf(document.activeElement);
+  let suivant;
+  if (e.key === 'ArrowDown') suivant = i < 0 ? 0 : (i + 1) % items.length;
+  else if (e.key === 'ArrowUp') suivant = i <= 0 ? items.length - 1 : i - 1;
+  else suivant = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i < 0 ? 0 : (i + 1) % items.length);
+  items[suivant].focus();
+});
 
 /* ---------- Import par glisser-déposer sur la barre latérale (v8.8) ----------
    Dépose de fichiers .md n'importe où sur la sidebar -> import (même
