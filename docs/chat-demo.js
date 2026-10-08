@@ -91,10 +91,11 @@ const gererCompteEl = $('gerer-compte'), preferencesCompteEl = $('preferences-co
    Remplace les glyphes Unicode (✎ ⤓ × ↑ ↓ ⧉ ✓ ■ ↵ › …) par un jeu
    d'icônes homogène : stroke=currentColor, 1.7, extrémités arrondies. */
 const SVG_ICOS = {
-  /* v20261007 (dr) : icône « trois points » — elle porte le menu d'actions
-     d'une conversation. Aucune icône de ce genre n'existait, alors que
-     chevron/download/pencil/x/pincoient tous, elles, étaient déjà là. */
-  more: '<circle cx="5.2" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.8" cy="12" r="1.7"/>',
+  /* v20261007 (dw) : les trois points sont VERTICAUX. À l'horizontale ils
+     se lisaient comme un tiret cadratin ou une ellipse de chargement — c'est
+     le menu « burger » horizontal, pas le kebab. En vertical, plus aucune
+     ambiguïté avec l'état de chargement. */
+  more: '<circle cx="12" cy="5.4" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="18.6" r="1.7"/>',
   pencil: '<path d="M4.5 19.5h4L19.8 8.2a2.1 2.1 0 0 0-3-3L5.5 16.5v3z"/><path d="m14.5 6.5 3 3"/>',
   download: '<path d="M12 4.5v10m0 0 3.5-3.5M12 14.5 8.5 11"/><path d="M5 19.5h14"/>',
   x: '<path d="m7.5 7.5 9 9m0-9-9 9"/>',
@@ -1008,7 +1009,21 @@ function rendreConversations() {
     epingle.setAttribute('role', 'menuitem');
     epingle.setAttribute('aria-label', (c.epingle ? 'Désépingler « ' : 'Épingler « ') + c.titre + ' »');
     epingle.addEventListener('click', (e) => { e.stopPropagation(); fermerMenusConvo(); basculerEpingle(c.id); });
+    /* v20261007 (dw) : chaque action porte son ÉTIQUETTE. Les titles et
+       aria-labels restent, mais un panneau d'icônes seules obligeait à deviner
+       laquelle est laquelle — et rien n'était lisible au doigt. */
+    const etiquette = (texte) => {
+      const e = document.createElement('span');
+      e.className = 'convo-action-nom';
+      e.textContent = texte;
+      return e;
+    };
+    renommer.appendChild(etiquette('Renommer'));
+    exportBtn.appendChild(etiquette('Exporter'));
+    epingle.appendChild(etiquette(c.epingle ? 'Désépingler' : 'Épingler'));
+    suppr.appendChild(etiquette('Supprimer'));
     actions.append(renommer, exportBtn, epingle, suppr);
+    actions.setAttribute('data-orientation', 'verticale');
     const menu = document.createElement('button');
     menu.type = 'button';
     menu.className = 'convo-menu';
@@ -5751,47 +5766,16 @@ function actionMessage(contenu, role) {
   };
   ajouter('copy', 'Copier le message', (event) => copierTexte(contenu, event.currentTarget));
   if (role === 'assistant') {
-    /* v20260926e (kimi) : lecture = bascule (clic = arrêter), état synchronisé
-       pour les lecteurs d'écran, jamais de bouton coincé sur « actif ». */
-    const lire = ajouter('volume', 'Lire le message', (event) => {
-      const bouton = event.currentTarget;
-      const arreter = () => { bouton.classList.remove('actif'); bouton.setAttribute('aria-pressed', 'false'); };
-      if (bouton.classList.contains('actif')) {
-        try { window.speechSynthesis.cancel(); } catch {}
-        arreter();
-        return;
-      }
-      if (!('speechSynthesis' in window)) {
-        notifier('La lecture vocale n’est pas disponible dans ce navigateur.');
-        return;
-      }
-      bouton.setAttribute('aria-pressed', 'true');
-      try { window.speechSynthesis.cancel(); } catch {}
-      const lecture = new SpeechSynthesisUtterance(contenu);
-      lecture.lang = 'fr-FR';
-      bouton.classList.add('actif');
-      lecture.onend = arreter;
-      lecture.onerror = arreter;
-      try { window.speechSynthesis.speak(lecture); }
-      catch { arreter(); }
-    });
-    lire.setAttribute('aria-pressed', 'false');
-    /* v20260926e (kimi) : avis EXCLUSIF — un seul des deux actif à la fois. */
-    const utile = ajouter('thumbUp', 'Réponse utile', null);
-    const bof = ajouter('thumbDown', 'Réponse à améliorer', null);
-    utile.setAttribute('aria-pressed', 'false');
-    bof.setAttribute('aria-pressed', 'false');
-    const basculeAvis = (positif) => {
-      const cible = positif ? utile : bof;
-      const autre = positif ? bof : utile;
-      const nouvelEtat = !cible.classList.contains('actif');
-      cible.classList.toggle('actif', nouvelEtat);
-      cible.setAttribute('aria-pressed', String(nouvelEtat));
-      autre.classList.remove('actif');
-      autre.setAttribute('aria-pressed', 'false');
-    };
-    utile.addEventListener('click', () => basculeAvis(true));
-    bof.addEventListener('click', () => basculeAvis(false));
+    /* v20261007 (dw) : lecture à voix haute retirée sur demande, comme les
+       deux boutons d'avis. Le bloc SpeechSynthesis qui suivait est parti avec
+       — il ne restait plus que la régénération, seule action qui agit. */
+    /* v20261007 (dw) : le bouton « lire à voix haute » et les deux boutons
+       d'avis (pouce haut / pouce bas) sont retirés sur demande. Ils
+       occupaient trois des quatre actions de chaque bulle du modèle, pour une
+       fonction non branchée : `basculeAvis` ne fait que cocher un bouton,
+       aucun retour n'est envoyé nulle part — c'était une fausse promesse
+       dentrant. Seule « Régénérer la réponse », qui agit pour de vrai,
+       reste. */
     ajouter('refresh', 'Régénérer la réponse', () => regenererDerniereReponse());
   }
   return actions;
@@ -6922,7 +6906,10 @@ nouvelleDiscussionEl.addEventListener('click', () => nouvelleDiscussion());
 navProjetsEl?.addEventListener('click', () => afficherProjets());
 navPersonnaliserEl?.addEventListener('click', () => afficherParametres());
 $('telecharger-conversations')?.addEventListener('click', () => exporterToutesConversations());
-$('ouvrir-journal')?.addEventListener('click', () => afficherJournal());
+/* v20261007 (dw) : #ouvrir-journal retiré sur demande — cet écouteur part avec
+   le bouton. `afficherJournal()` n'est PLUS appelé ici : c'était le clic qui
+   ouvrait la vue, et l'appeler au chargement aurait forcé l'ouverture du
+   journal au démarrage. La fonction reste appelée depuis le HUD journal. */
 $('rechercher-conversations')?.addEventListener('click', () => {
   const zone = document.querySelector('.side-recherche');
   if (!zone) return;
@@ -8170,14 +8157,18 @@ function rendreHudContexte() {
    pied du composeur sont retirés ; la fonction ne faisait QUE peindre ce badge
    et mettre à jour son title. Le HUD s'ouvre désormais par #ouvrir-journal,
    dans la barre latérale. */
+/* v20261007 (dw) : #ouvrir-journal retire sur demande — c'est le DERNIER
+   point d'entree du HUD journal (le #btn-journal du pied avait deja disparu
+   en dq). Le panneau #hud-journal reste dans le DOM et rendreHudJournal()
+   fonctionne toujours : il n'a plus de declencheur, il n'est donc plus mort,
+   seulement inatteignable. On ne supprime pas le rendu : le retirer aussi
+   ferait perdre les traces de debug a la moindre reprise.
+   Consequence : plus rien n'ecrit plus le title du declencheur, donc
+   majBadgeJournal() n'a plus d'effet observable et ne pouvait plus que
+   planter sur un element absent. */
 function majBadgeJournal() {
-  const dbg = window.__athenaDebug || { traces: [], journal: [] };
-  const bouton = $('ouvrir-journal');
-  if (!bouton) return;
-  const errN = dbg.journal.length;
-  bouton.title = 'Journal debug : ' + dbg.traces.length + ' appel'
-    + (dbg.traces.length > 1 ? 's' : '')
-    + (errN ? ' · ' + errN + ' erreur' + (errN > 1 ? 's' : '') + ' de cascade' : '');
+  /* plus de declencheur : le compteur de traces reste consultable dans
+     window.__athenaDebug, et le HUD affiche deja chaque appel. */
 }
 function fermerHudJournal() {
   const panneau = document.getElementById('hud-journal');
@@ -8242,19 +8233,14 @@ function rendreHudJournal() {
   });
 }
 (function initHudJournal() {
-  /* v20261007 (dq) : #btn-journal retiré du pied du composeur. Le HUD se
-     déclenche désormais depuis #ouvrir-journal, seul point d'entrée restant. */
-  const bouton = $('ouvrir-journal');
+  /* v20261007 (dw) : #ouvrir-journal retire, et avec lui le dernier
+     declencheur. Ce bloc ne cable donc plus rien ; le panneau #hud-journal et
+     rendreHudJournal() restent en place pour qu'une reactivation future soit
+     un simple re-bouton, pas une reecriture. */
   const panneau = document.getElementById('hud-journal');
-  if (!bouton || !panneau) return;
-  majBadgeJournal();
-  bouton.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (!panneau.hidden) { fermerHudJournal(); return; }
-    fermerHud(); /* un seul panneau ouvert à la fois */
-    rendreHudJournal();
-    panneau.hidden = false;
-    bouton.setAttribute('aria-expanded', 'true');
+  if (!panneau) return;
+panneau.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); fermerHudJournal(); }
   });
   panneau.addEventListener('click', (e) => e.stopPropagation());
 })();

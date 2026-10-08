@@ -133,7 +133,13 @@ html,
 body {
   margin: 0;
   padding: 0;
-  /* v20260926i : la pile s'applique aussi hors .page-demo (modales,
+  /* v20261007 (dw) : police de base à 16px. Elle n'était fixée nulle part, donc
+     la racine restait à la valeur par défaut du navigateur (16px) — mais rien
+     ne l'assurait : un reset plus tard, un style hérité, ou un navigateur
+     réglé autrement suffisait à décaler toute l'échelle. Elle est donc
+     déclarée explicitement, en rem pour suivre le zoom de l'utilisateur. */
+  font-size: 16px;
+  /* la pile s'applique aussi hors .page-demo (modales,
      voiles) — avant : Times New Roman par défaut du navigateur. */
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
 }
@@ -527,8 +533,11 @@ a:hover {
   transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
 }
 .convo-menu .ico {
+  /* Les trois points sont verticaux : une boîte carrée les tassait en un trait
+     illisible, et le vide de la moitié basse rendait le clic imprécis.
+     Boîte plus haute que large, comme un vrai kebab. */
   width: 15px;
-  height: 15px;
+  height: 20px;
 }
 .convo-ligne:hover .convo-menu,
 .convo-ligne:focus-within .convo-menu,
@@ -543,6 +552,11 @@ a:hover {
    Ancré dans la ligne, il recouvrait le bouton de la ligne suivante et
    rendait impossible l'ouverture d'un second menu. `right` n'est pas utilisé :
    c'est le JS qui calcule un `left` borné aux bords de l'écran. */
+/* v20261007 (dw) : panneau VERTICAL, icône + libellé. Quatre icônes de 27 px
+   alignées horizontalement sans texte étaient une devinette : rien ne
+   distinguait « Exporter en Markdown » d'« Épingler », et rien n'était lisible
+   au doigt — le panneau ne s'ouvre pas au survol. En colonne, chaque action se
+   nomme et la zone de toucher devient confortable. */
 .convo-actions {
   position: fixed;
   /* --z-toast-hud : même rang que les panneaux flottants du HUD fichier. Un
@@ -551,8 +565,9 @@ a:hover {
      1 nombre en dur). */
   z-index: var(--z-toast-hud);
   display: flex;
+  flex-direction: column;
   gap: 2px;
-  padding: 3px;
+  padding: 4px;
   background: var(--carte);
   border: 1px solid var(--bord);
   border-radius: var(--rayon-s);
@@ -563,13 +578,29 @@ a:hover {
 .convo-actions[hidden] {
   display: none;
 }
+.convo-action-nom {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--texte);
+  white-space: nowrap;
+}
 /* Dans le panneau, les actions sont le contenu : pas d'opacité conditionnelle
-   au survol de ligne, sinon elles seraient invisibles au clavier. */
+   au survol de ligne, sinon elles seraient invisibles au clavier. Le bouton est
+   étiré pour que son étiquette ait la place, et l'icône passe au-dessus. */
 .convo-actions .convo-renommer,
 .convo-actions .convo-export,
 .convo-actions .convo-suppr,
 .convo-actions .convo-epingle {
   opacity: 1;
+  width: 100%;
+  height: auto;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  justify-content: flex-start;
+  text-align: left;
 }
 .convo-renommer .ico,
 .convo-export .ico,
@@ -2652,20 +2683,24 @@ span.think:not(details .think) {
   height: 32px;
   padding: 0 10px;
   border-radius: var(--rayon-s);
-  border: 1px solid var(--bord);
-  background: var(--carte-doux); /* Même fond que .btn-attacher */
-  color: var(--texte);
+  /* v20261007 (dw) : #btn-reglages et #btn-contexte ne sont plus encadrés, comme
+     #btn-fichiers et #btn-navigateur avant eux. Même raison : quatre boutons de
+     la même barre avec quatre cadres différents donnaient l'impression d'une
+     hiérarchie qui n'existe pas. Le fond n'apparaît qu'au survol. */
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--texte-doux);
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
   max-width: 180px;
-  transition: color 0.15s, border-color 0.15s, transform 0.1s; /* Même transition que .btn-attacher */
+  transition: color 0.15s, background 0.15s, transform 0.1s;
 }
 
 .btn-modele:hover {
   border-color: transparent;
-  background: #3d3d3d; /* Même fond au survol que .btn-attacher */
-  color: #f1f1f1;
+  background: color-mix(in srgb, var(--texte) 8%, transparent);
+  color: var(--texte);
 }
 
 .modele-actif-nom {
@@ -3395,21 +3430,25 @@ span.think:not(details .think) {
 .btn-partager {
   display: inline-flex;
   align-items: center;
+  justify-content: center; /* v20261007 (dw) : l'icône partie, le texte reste
+                               centré — sans justify-content, un bouton flex
+                               colle son unique enfant à gauche. */
   gap: 7px;
   min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--bord-fort);
+  padding: 0 16px;
+  border: 1px solid #454242;
   border-radius: var(--rayon-s);
-  background: #3a3a3a;
-  color: #e5e5e5;
+  background: #454242;
+  color: #f2f2f2;
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .btn-partager:hover {
-  border-color: #707070;
-  background: #454545;
+  border-color: #454242;
+  background: #555250;
 }
 
 .btn-partager .ico {
@@ -5388,7 +5427,22 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 .compteur-saisie {
   top: -28px;
 }
-/* ============ v20260926n : sidebar compacte et uniforme ============
+/* v20261007 (dw) — COULEURS DE SURFACE DU THÈME SOMBRE.
+   Le thème sombre est le thème PAR DÉFAUT de ce CSS : il n'existe qu'une
+   surcharge `html[data-theme="light"]`. Il faut donc écrire ces règles sans
+   sélecteur de thème, sinon `data-theme="dark"` — qui n'existe nulle part —
+   donnerait l'illusion d'une règle qui s'applique.
+   --row / --side-corps sont posés en littéral parce que ce sont des surfaces
+   décoratives propres à ces deux zones, pas des couleurs sémantiques ; ils ne
+   doivent donc pas être recyclés par --carte ni --gris-fond. */
+.row.bot {
+  background: #1a1c1c;
+}
+.side-corps {
+  background: #1c1a1a;
+}
+
+/* v20260926n : sidebar compacte et uniforme ============
    L'espace libre vit dans la liste des discussions (flex:1) — le reste
    est resserré : marque, bouton, nav, section projets et pied. */
 .side-corps {
@@ -6077,11 +6131,17 @@ html[data-theme="light"] .interpreteur-code {
   border-left: 3px solid var(--primaire);
   border-radius: var(--rayon);
   box-shadow: var(--ombre);
-/* v20261007 (dq) : largeur FIXE 768px et plafond 12vh. La largeur est celle
-  demandée ; le max-width évite le débordement sur fenêtre étroite, sinon
-  768px forceraient un scroll horizontal sous ~800px de viewport. */
-  width: 768px;
+/* v20261007 (dw) : largeur FIXE 450px et CENTRÉ. Le plan était calé à gauche
+  (768px + marge), ce qui le décentrait par rapport au fil de discussion et le
+  faisait lire comme un encart. Centré, il redevient un bandeau de contexte.
+  `border-box` est indispensable : en `content-box` (défaut), les 450px
+  s'ajoutaient au remplissage et aux bordures, et le plan mesurait 474px au
+  lieu des 450 demandés — un écart qu'on ne voit qu'en mesurant.
+  Le max-width évite le débordement sous ~480px de fenêtre. */
+  box-sizing: border-box;
+  width: 450px;
   max-width: calc(100% - 28px);
+  margin: 8px auto 0;
   max-height: 12vh;
   overflow: auto;
   animation: apparait 0.16s ease;
