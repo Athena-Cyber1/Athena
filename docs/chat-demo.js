@@ -6053,10 +6053,33 @@ function reconcilierVerrou() {
     verrouChaine = false;
     occupe = false;
     arretDemandeDepuis = 0;
+    /* v20261007 (dv) — FUITE DU COMPTEUR DE GÉNÉRATIONS.
+       Le déverrouillage forcé rendait `occupe` mais laissait
+       `generationsEnCours` à sa valeur. Or c'est ce compteur qui conditionne
+       le déverrouillage NATUREL de toute génération future :
+           if (!generationsEnCours && !verrouChaine) occupe = false;
+       Un compteur resté à 1 rend cette condition fausse pour toujours, et
+       comme `arretDemandeDepuis` vient d'être remis à zéro, le délai de grâce
+       n'est plus armé : plus rien ne peut libérer le verrou.
+       Conséquence mesurée au navigateur : après un seul arrêt resté sans
+       réponse, l'interface se verrouillait DÉFINITIVEMENT — chaque envoi
+       suivant incrémentait puis décrémentait sans jamais retomber à zéro, le
+       bouton restait sur « Arrêter la génération » et plus rien n'était
+       envoyable. Seul un rechargement de page rendait la main. C'est
+       exactement le symptôme « il reste bloqué, un rechargement suffit », que
+       les correctifs précédents (dj/dk/dl) avaient traité par le repeint et
+       le délai : le repeint était juste, la fuite, elle, restait.
+       Ici la génération est définitivement abandonnée — l'arrêt a été demandé,
+       le délai de grâce est expiré — donc son compte doit repartir de zéro. */
+    if (arretForce) generationsEnCours = 0;
   }
   /* repeint dans tous les cas : le bouton doit refléter l'état réel, pas
-     l'état au moment du dernier appel. */
+     l'état au moment du dernier appel.
+     v20261007 (dv) : `majBouton()` manquait. `majBoutonArret()` peint
+     l'icône, mais c'est `majBouton()` qui réactive l'envoi — sans lui, le
+     bouton restait inerte après une libération. */
   majBoutonArret();
+  if (!occupe) majBouton();
 }
 /* §8.7 : libère le verrou UNIQUEMENT quand plus aucune génération ne vit —
    appelé en fin de chaîne (enchainerApresExec sans suite à lancer).
