@@ -67,7 +67,10 @@ for (const m2 of js.matchAll(/(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*["'`]([
 const missing = need.filter(i => !ids.includes(i) && !dyn.has(i));
 console.log('JS needs=' + need.length + ' (dynamiques=' + dyn.size + ') MISSING=' + JSON.stringify(missing));
 if (missing.length) signaler('id appele par le JS mais absent du HTML : ' + missing.join(', '));
-const uiContract = ['side-nav', 'nav-projets', 'nav-artefacts', 'nav-code', 'nav-personnaliser', 'titre-conversation', 'partager', 'saisie-mirror', 'composeur-pied'];
+/* v20261007 (dq) : nav-artefacts et nav-code sortent du contrat — boutons
+   retirés de la barre latérale. Le contrat décrit l'interface ACTUELLE, donc
+   le faire échouer ici aurait signalé une régression inexistante. */
+const uiContract = ['side-nav', 'nav-projets', 'nav-personnaliser', 'titre-conversation', 'partager', 'saisie-mirror', 'composeur-pied'];
 const uiMissing = uiContract.filter(i => !ids.includes(i) && !h.includes('class="' + i) && !h.includes(' ' + i + '"') && !h.includes(i + ' '));
 console.log('UI contract missing=' + JSON.stringify(uiMissing));
 if (uiMissing.length) signaler('contrat UI manquant : ' + uiMissing.join(', '));

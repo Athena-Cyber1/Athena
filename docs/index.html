@@ -64,19 +64,10 @@
               <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5H18A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z"/></svg>
               <span>Projets</span>
             </button>
-            <button id="nav-artefacts" class="side-nav-item" type="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 4-7 4-7-4 7-4Z"/><path d="m5 12 7 4 7-4M5 17l7 4 7-4"/></svg>
-              <span>Artefacts</span>
-            </button>
-            <button id="nav-code" class="side-nav-item" type="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/></svg>
-              <span>Code</span>
-              <span class="nav-badge">Mettre à niveau</span>
-            </button>
-            <button id="nav-personnaliser" class="side-nav-item" type="button">
-              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h16v11H4zM8 8.5V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2.5M4 12h16M10 12v2h4v-2"/></svg>
-              <span>Personnaliser</span>
-            </button>
+<button id="nav-personnaliser" class="side-nav-item" type="button">
+                <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5h16v11H4zM8 8.5V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2.5M4 12h16M10 12v2h4v-2"/></svg>
+                <span>Personnaliser</span>
+              </button>
           </nav>
 
           <div class="side-bloc">
@@ -109,21 +100,11 @@
             <p id="aucun-resultat" class="aucun-resultat" hidden>Aucun résultat pour cette recherche.</p>
           </div>
 
-          <div class="side-section">
-            <div class="side-section-titre">
-              <span>Projets</span>
-              <button
-                id="ajouter-projet"
-                type="button"
-                class="btn-plus"
-                title="Nouveau projet (conversation épinglée)"
-                aria-label="Nouveau projet"
-              ><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-            </div>
-            <div id="liste-projets"></div>
-            <p class="project-empty">Aucun projet épinglé.</p>
+<!-- v20261007 (dq) : section « Projets » de la barre latérale retirée — les
+             projets restent gérables depuis la vue #nav-projets, qui affiche la
+             même liste. ATTENTION : le </div> qui suit ferme la <aside class="side">
+             ; le retirer ferait avaler tout le document par la barre latérale. -->
           </div>
-        </div>
 
         <div class="side-pied">
           <!-- v20260926n : le compte est la 3e icône des utilitaires. -->
@@ -299,10 +280,8 @@
               <!-- v banc 20261006 (§3 observabilité) : journal debug — payload,
                    modèle servi, finish_reason, usage et latence par appel. -->
               <div class="hud-effort-wrap hud-effort-bas">
-                <button id="btn-journal" type="button" class="btn-modele btn-effort" aria-haspopup="dialog" aria-expanded="false" aria-controls="hud-journal" title="Journal debug : payload, modèle servi, finish_reason, usage et latence par appel">
-                  <span class="effort-ico" aria-hidden="true"><svg class="ico" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
-                  <span id="journal-actif-nom" class="modele-actif-nom effort-valeur">0</span>
-                </button>
+<!-- v20261007 (dq) : #btn-journal retiré du pied du composeur. Le journal reste
+     accessible par #ouvrir-journal dans la barre latérale. -->
                 <div id="hud-journal" class="hud-modeles hud-efforts" hidden role="dialog" aria-label="Journal debug des appels"></div>
               </div>
             </div>
@@ -384,7 +363,7 @@
     <script src="./api-shim.js?v=20261007do"></script>
     <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
     <script src="./vendor/twemoji.min.js"></script>
-    <script src="./chat-demo.js?v=20261007dp"></script>
+    <script src="./chat-demo.js?v=20261007dq"></script>
   </div>
 </body>
 </html>

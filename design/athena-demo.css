@@ -5278,24 +5278,33 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   display: flex;
   align-items: center;
 }
+/* v20261007 (dq) : boutons Fichiers / Navigateur SANS ENCADREMENT.
+   Ils partageaient le style « bouton plein » (fond #3a3a3a, bordure grise,
+   4 couleurs en dur qui ne suivaient pas le thème). On les passe en
+   transparent : seule la zone cliquable reste visible, l'icône et l'étiquette
+   héritent de --texte-doux, et le fond n'apparaît qu'au survol / focus.
+   Ça les aligne sur les autres contrôles de la barre de titre, qui sont déjà
+   en zone de toucher translucide, et supprime les 4 littéraux de couleur. */
 .btn-fichiers {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--bord-fort);
+  padding: 0 10px;
+  border: 1px solid transparent;
   border-radius: var(--rayon-s);
-  background: #3a3a3a;
-  color: #e5e5e5;
+  background: transparent;
+  color: var(--texte-doux);
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .btn-fichiers:hover {
-  border-color: #707070;
-  background: #454545;
+  border-color: transparent;
+  background: color-mix(in srgb, var(--texte) 8%, transparent);
+  color: var(--texte);
 }
 .btn-fichiers .ico {
   width: 15px;
@@ -5916,10 +5925,12 @@ html[data-theme="light"] .interpreteur-code {
   border-left: 3px solid var(--primaire);
   border-radius: var(--rayon);
   box-shadow: var(--ombre);
-  /* v20261007 (dm) : 34vh poussait le fil de discussion hors de l'écran. Le
-     plan est replié par défaut ; déployé il plafonne à 22vh (défilement
-     interne), donc il ne mange jamais la place des réponses. */
-  max-height: 13vh;
+/* v20261007 (dq) : largeur FIXE 768px et plafond 12vh. La largeur est celle
+  demandée ; le max-width évite le débordement sur fenêtre étroite, sinon
+  768px forceraient un scroll horizontal sous ~800px de viewport. */
+  width: 768px;
+  max-width: calc(100% - 28px);
+  max-height: 12vh;
   overflow: auto;
   animation: apparait 0.16s ease;
 }

@@ -67,8 +67,9 @@ const interpreteurExeEl = $('interpreteur-exe'), interpreteurFermerEl = $('inter
 const interpreteurCorpsEl = $('interpreteur-corps'), interpreteurSplitEl = $('interpreteur-split'), interpreteurToggleEl = $('interpreteur-toggle');
 const interpreteurBordEl = $('interpreteur-bord');
 const saisieMirrorEl = $('saisie-mirror');
-const navProjetsEl = $('nav-projets'), navArtefactsEl = $('nav-artefacts');
-const navCodeEl = $('nav-code'), navPersonnaliserEl = $('nav-personnaliser');
+/* v20261007 (dq) : #nav-artefacts et #nav-code retirés de la barre latérale ;
+   leurs références disparaissent avec eux. */
+const navProjetsEl = $('nav-projets'), navPersonnaliserEl = $('nav-personnaliser');
 /* v20261007 : plus de #statut / #dot (le pied du composeur a retrouvé son
    état d'origine) — voir la suppression de majStatut plus bas. */
 const fichiersEl = $('fichiers'), attacherEl = $('attacher'), apercuFichiersEl = $('file-preview');
@@ -78,7 +79,10 @@ const nouvelleDiscussionEl = $('nouvelle-discussion');
    HTML — les boutons portent les ids `nav-projets` / `nav-personnaliser`,
    câblés plus bas. Ces deux références étaient mortes (`?.` neutralisait
    l'échec sans bruit). */
-const ajouterProjetEl = $('ajouter-projet'), plierConversationsEl = $('plier-conversations'), listeConversationsEl = $('liste-conversations');
+/* v20261007 (dq) : le bloc « Projets » de la barre latérale est retiré, donc
+   #ajouter-projet n'existe plus. La création de projet reste possible depuis la
+   vue #nav-projets. */
+const plierConversationsEl = $('plier-conversations'), listeConversationsEl = $('liste-conversations');
 const ouvrirCompteEl = $('ouvrir-compte'), menuCompteEl = $('menu-compte');
 const basculeSidebarEl = $('bascule-sidebar');
 const gererCompteEl = $('gerer-compte'), preferencesCompteEl = $('preferences-compte'), aideCompteEl = $('aide-compte');
@@ -962,7 +966,7 @@ function rendreConversations() {
   majRechercheConversations();
   /* La section Projets vit sur les mêmes données (épinglées) — un seul
      point de re-rendu pour éviter toute dérive entre les deux listes. */
-  rendreProjets();
+  /* v20261007 (dq) : plus de rendu latéral — la vue #nav-projets, elle, tient. */
 }
 
 /* Recherche de conversations (filtrage local instantané, insensible à la
@@ -1667,41 +1671,9 @@ publierHooks('__atelierEpingler', {
    actions sobres (Ouvrir / Désépingler). « + » crée désormais une
    conversation Nommée ET épinglée : un projet est persistant (l'ancien
    projet purement DOM disparaissait au rechargement — bug). */
-const listeProjetsEl = document.getElementById('liste-projets');
-const projetVideEl = document.querySelector('.project-empty');
-
-function rendreProjets() {
-  if (!listeProjetsEl) return;
-  listeProjetsEl.replaceChildren();
-  const epinglees = trierPourAffichage().filter((c) => c.epingle);
-  if (projetVideEl) projetVideEl.hidden = epinglees.length > 0;
-  epinglees.forEach((c) => {
-    const ligne = document.createElement('div');
-    ligne.className = 'projet-ligne';
-    const bouton = document.createElement('button');
-    bouton.type = 'button';
-    bouton.className = 'side-item projet-item' + (c.id === idConversation ? ' active' : '');
-    bouton.title = c.titre;
-    const l1 = document.createElement('span');
-    l1.className = 'side-item-l1';
-    l1.appendChild(icoSvg('pin'));
-    const libelle = document.createElement('span');
-    libelle.className = 'side-item-label';
-    libelle.textContent = c.titre;
-    l1.appendChild(libelle);
-    bouton.appendChild(l1);
-    bouton.addEventListener('click', () => ouvrirConversation(c.id));
-    const desepingle = document.createElement('button');
-    desepingle.type = 'button';
-    desepingle.className = 'projet-desepingle';
-    desepingle.appendChild(icoSvg('pinOff'));
-    desepingle.title = 'Désépingler';
-    desepingle.setAttribute('aria-label', 'Désépingler « ' + c.titre + ' »');
-    desepingle.addEventListener('click', (e) => { e.stopPropagation(); basculerEpingle(c.id); });
-    ligne.append(bouton, desepingle);
-    listeProjetsEl.appendChild(ligne);
-  });
-}
+/* v20261007 (dq) : cette section doublait la vue #nav-projets dans la barre
+   latérale. Bloc retiré : #liste-projets, #ajouter-projet et rendreProjets()
+   disparaissent. Ce qui suit — la vue Projets — est conservée. */
 
 function afficherProjets() {
   /* Vue de gestion complète : les épinglées d'abord (Ouvrir / Désépingler),
@@ -1757,7 +1729,7 @@ function afficherProjets() {
   afficherVue('Projets', 'Vos espaces de travail : les conversations épinglées de la barre latérale, et les autres à portée de clic.', contenu);
 }
 publierHooks('__atelierProjets', {
-  rendre: rendreProjets,
+  /* v20261007 (dq) : le hook de rendu latéral part avec #liste-projets. */
   afficher: afficherProjets,
   titres: () => trierPourAffichage().filter((c) => c.epingle).map((c) => c.titre),
 }); /* hook QA — non utilisé par l'interface */
@@ -5580,25 +5552,17 @@ async function sonder() {
      bouton finit toujours par refléter l'etat reel (cf. reconcilierVerrou). */
   tacheFond(reconcilierVerrou, 2000);
 
-/* ---------- v9.4 — Pastille « ↓ nouvelle réponse » ----------
-   Défilement auto désactivé (ou remontée manuelle pendant la génération) :
-   les nouveaux messages sortaient de l'écran sans AUCUN signe. Une pastille
-   sobre apparaît dès qu'on n'est plus en bas, avec compteur ; un clic
-   ramène en bas. (Avec le défilement auto, le seul moyen de la voir est de
-   scroller soi-même pendant la génération — c'est voulu.) */
-const pastilleReponseEl = document.createElement('button');
-pastilleReponseEl.type = 'button';
-pastilleReponseEl.className = 'pastille-reponse';
-htmlInterne(pastilleReponseEl, '<span class="pastille-fleche"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" transform="rotate(180 12 12)"/></svg></span><span>Nouvelle réponse</span><span class="pastille-nouveau" hidden>0</span>');
-pastilleReponseEl.setAttribute('aria-label', 'Aller à la nouvelle réponse');
-let nbHorsVue = 0;
+/* ---------- v20261007 (dq) — pastille « ↓ nouvelle réponse » SUPPRIMÉE
+   Elle signalait les réponses IA arrivant hors écran quand le défilement auto
+   était désactivé ou pendant une remontée manuelle. Retirée à la demande.
+   Ce qui vient dessous (presDuBas / defilerSiBas) est conservé tel quel : c'est
+   lui qui fait défiler pendant la génération, et il est appelé ailleurs. */
 function presDuBas() {
   return msgsEl.scrollHeight - msgsEl.scrollTop - msgsEl.clientHeight < 80;
 }
 /* v20260926f (kimi, lags) : scroll en rAF, seulement si déjà en bas — fini
    les layouts synchrones (lecture scrollHeight + écriture) à chaque flush.
-   Si l'utilisateur a remonté, on ne le ramène pas de force (la pastille
-   « Nouvelle réponse » prend le relais via l'observateur). */
+   Si l'utilisateur a remonté, on ne le ramène pas de force. */
 let defilRaf = 0;
 function defilerSiBas() {
   if (defilRaf || !preferences.defilementAuto) return;
@@ -5606,43 +5570,18 @@ function defilerSiBas() {
     defilRaf = 0;
     try {
       if (presDuBas()) msgsEl.scrollTop = msgsEl.scrollHeight;
-      /* v20260926i : la pastille « Nouvelle réponse » doit VRAIMENT
-         apparaître quand l'utilisateur a remonté pendant un stream
-         (avant : rien ne l'actualisait hors ajout de rangée). */
-      else majPastilleReponse();
     } catch {}
   });
 }
-function majPastilleReponse() {
-  const enBas = presDuBas();
-  if (enBas) nbHorsVue = 0;
-  const badge = pastilleReponseEl.querySelector('.pastille-nouveau');
-  if (badge) { badge.textContent = String(nbHorsVue); badge.hidden = nbHorsVue === 0; }
-  pastilleReponseEl.classList.toggle('visible', !enBas && msgsEl.querySelector('.row') !== null);
-}
-pastilleReponseEl.addEventListener('click', () => {
-  nbHorsVue = 0;
-  msgsEl.scrollTo({ top: msgsEl.scrollHeight, behavior: preferences.animationsReduites ? 'auto' : 'smooth' });
-  majPastilleReponse();
-});
-msgsEl.addEventListener('scroll', majPastilleReponse, { passive: true });
+/* v20261007 (dq) : majPastilleReponse et son écouteur de défilement partent avec
+   la pastille. defilerSiBas() reste, et c'est lui qui porte le comportement. */
 /* v20260922l (21) : seules les BULLES IA réellement ajoutées comptent —
    l'ancien code comptait TOUTE mutation childList (retraits au changement de
    vue, re-rendus, bulles utilisateur) et gonflait le badge à chaque ouverture
    d'une autre conversation. Un re-rendu (renduVueEnCours) est ignoré. */
-new MutationObserver((mutations) => {
-  if (renduVueEnCours) return;
-  let nouveaux = 0;
-  for (const m of mutations) {
-    m.addedNodes.forEach((n) => {
-      if (n.nodeType === 1 && n.classList.contains('row') && n.classList.contains('bot')) nouveaux++;
-    });
-  }
-  if (!nouveaux) return;
-  if (!presDuBas()) nbHorsVue += nouveaux;
-  majPastilleReponse();
-}).observe(msgsEl, { childList: true, subtree: false });
-document.querySelector('.chat-shell').appendChild(pastilleReponseEl);
+/* v20261007 (dq) : l'observateur « pastille » part avec elle. Il ne comptait
+     que des réponses IA hors écran pour inciter à défiler ; la pastille et son
+     badge disparaissent, donc ce décompte n'a plus de destinataire. */
 
 function actionMessage(contenu, role) {
   const actions = document.createElement('div');
@@ -6805,8 +6744,6 @@ fichiersEl.addEventListener('change', () => {
 nouvelleDiscussionEl.addEventListener('click', () => nouvelleDiscussion());
 /* v20260926m : tuiles retirées du DOM — gardes nulles (pas de crash). */
 navProjetsEl?.addEventListener('click', () => afficherProjets());
-navArtefactsEl?.addEventListener('click', () => afficherVue('Artefacts', 'Les artefacts générés apparaîtront ici.'));
-navCodeEl?.addEventListener('click', () => afficherVue('Code', 'Les extraits et commandes exécutables apparaîtront ici.'));
 navPersonnaliserEl?.addEventListener('click', () => afficherParametres());
 $('telecharger-conversations')?.addEventListener('click', () => exporterToutesConversations());
 $('ouvrir-journal')?.addEventListener('click', () => afficherJournal());
@@ -6822,7 +6759,7 @@ $('filtre-discussions')?.addEventListener('click', () => {
   zone.classList.add('ouverte');
   rechercheConversationsEl?.focus();
 });
-ajouterProjetEl.addEventListener('click', ajouterProjet);
+/* v20261007 (dq) : l'écouteur #ajouter-projet part avec le bloc « Projets ». */
 ouvrirCompteEl.addEventListener('click', () => {
   const estOuvert = !menuCompteEl.hidden;
   menuCompteEl.hidden = estOuvert;
@@ -8051,25 +7988,25 @@ function rendreHudContexte() {
 })();
 
 /* ---------- v banc 20261006 — HUD journal debug (§3) ----------
-   Bouton en pied du composeur : dernière trace (modèle servi, fin, usage,
-   latence, payload) + journal des erreurs de cascade. Tout reste local. */
+   Le HUD lui-même est conservé : traces (modèle servi, fin, usage, latence,
+   payload) et erreurs de cascade, toujours local.
+   v20261007 (dq) : le badge #journal-actif-nom et le bouton #btn-journal du
+   pied du composeur sont retirés ; la fonction ne faisait QUE peindre ce badge
+   et mettre à jour son title. Le HUD s'ouvre désormais par #ouvrir-journal,
+   dans la barre latérale. */
 function majBadgeJournal() {
-  const el = document.getElementById('journal-actif-nom');
-  if (!el) return;
   const dbg = window.__athenaDebug || { traces: [], journal: [] };
+  const bouton = $('ouvrir-journal');
+  if (!bouton) return;
   const errN = dbg.journal.length;
-  el.textContent = String(dbg.traces.length);
-  const bouton = document.getElementById('btn-journal');
-  if (bouton) bouton.title = 'Journal debug : ' + dbg.traces.length + ' appel'
+  bouton.title = 'Journal debug : ' + dbg.traces.length + ' appel'
     + (dbg.traces.length > 1 ? 's' : '')
     + (errN ? ' · ' + errN + ' erreur' + (errN > 1 ? 's' : '') + ' de cascade' : '');
 }
 function fermerHudJournal() {
   const panneau = document.getElementById('hud-journal');
-  const bouton = document.getElementById('btn-journal');
   if (!panneau || panneau.hidden) return;
   panneau.hidden = true;
-  if (bouton) bouton.setAttribute('aria-expanded', 'false');
 }
 function rendreHudJournal() {
   const panneau = document.getElementById('hud-journal');
@@ -8129,7 +8066,9 @@ function rendreHudJournal() {
   });
 }
 (function initHudJournal() {
-  const bouton = document.getElementById('btn-journal');
+  /* v20261007 (dq) : #btn-journal retiré du pied du composeur. Le HUD se
+     déclenche désormais depuis #ouvrir-journal, seul point d'entrée restant. */
+  const bouton = $('ouvrir-journal');
   const panneau = document.getElementById('hud-journal');
   if (!bouton || !panneau) return;
   majBadgeJournal();
