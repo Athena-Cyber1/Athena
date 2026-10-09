@@ -6915,10 +6915,14 @@ function ajusterSaisie() {
      ~424 px puis scroll interne. Mesure explicite (scrollHeight) : robuste
      partout, sans dépendre de field-sizing. */
   saisieEl.style.height = 'auto';
-  /* v20260926i : boîte content-box (+10 px de padding) — on vise 24 de
-     contenu (34 de champ, 44 de carte), +24/ligne, plafond 404 (414 de
-     champ, 424 de carte). */
-  const h = Math.min(404, Math.max(24, saisieEl.scrollHeight - 10));
+  /* v20261007 (ep) : le calcul soustrait 10px, qui était le `padding` de la
+     boîte (contenu + 10 = boîte). Ce padding a été mis à zéro pour centrer le
+     texte : soustraire 10px retirait alors de la hauteur RÉELLEMENT VUE, et la
+     zone gardait 10px de vide sous le texte — que le CSS ne pouvait pas
+     corriger, la hauteur étant posée en ligne par cette fonction.
+     On mesure donc la boîte elle-même, sans soustraction : le plancher 24px et
+     le plafond 404px restent, seule la formule change. */
+  const h = Math.min(404, Math.max(24, saisieEl.scrollHeight));
   saisieEl.style.height = h + 'px';
   saisieEl.style.overflowY = saisieEl.scrollHeight > h + 1 ? 'auto' : 'hidden';
   /* v20260926l : le miroir suit le scroll du champ (au-delà de 424 px le

@@ -193,6 +193,40 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.4 Le composeur, trois géométries (`ep`)
+
+| Élément | Avant | Après |
+|---|---|---|
+| `.saisie-zone` / `.saisie` | zone 34px, `textarea` 24px → **10px de vide sous le texte** | les deux à **34px**, vide nul |
+| `.composeur-pied > span` | en haut du pied (`offset` 0px) | en bas (`offset` 34px), `margin-top: auto` |
+| bordure au repos | invisible (`border: none` du chantier `dx`) | `#e4e4e4` clair / `#3d3d3d` sombre |
+| bordure au focus | — | `#6b6b6b` clair / `#8a8a8a` sombre (`--bord-actif`) |
+
+**Le vide sous le texte n’était pas un problème de CSS.** La hauteur du
+`textarea` est posée **en ligne** par `ajusterSaisie()` en JavaScript
+(chat-demo.js), avec la formule `scrollHeight - 10`. Ce `- 10` compensait
+un `padding: 10px 0` qui avait été mis à zéro pour centrer le texte : le
+calcul retirait alors 10px de hauteur réellement vue. Cinq tentatives CSS
+(`align-items`, `align-self`, `height: 100%`, `flex: 1`, `padding`) ont
+échoué — aucune ne pouvait gagner contre un style en ligne. C’est la formule
+qui a été corrigée, pas la mise en page.
+
+**`margin-top: auto` ne fonctionnait pas en ligne.** `.composeur-pied` est un
+`display: flex` sur une rangée unique : la marge verticale d’un enfant y est
+ignorée. Le pied est devenu une colonne explicite, et la position de la
+mention vient d’un `order: 1` plus un `margin-top: auto` — qui, lui, fonctionne
+en colonne.
+
+**La bordure était annulée par `border: none`**, posé par le chantier `dx`
+avec le commentaire « le composeur n’est plus cadré ». Ce n’était pas une
+règle concurrente de plus : c’était la cause racine. Retiré.
+
+Piège de mesure : la page s’ouvre **avec le champ déjà focalisé**, donc lire
+« la bordure au repos » après un clic mesurait en réalité la bordure au focus.
+Les deux mesures se confondaient, et le jeton `--bord-actif` semblait
+s’appliquer en permanence. Il faut sortır le focus avant toute lecture du
+repos.
+
 ### 4.3 Carte de saisie et icônes (`eo`)
 
 | Élément | Règle | Mesure |

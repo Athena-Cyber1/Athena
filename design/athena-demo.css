@@ -4354,9 +4354,14 @@ details.trace-cmd.echec .trace-cmd-status {
   max-height: 64px;
   padding: 4px 10px; /* Ajusté pour respecter les 30px au total */
   border-radius: 15px;
-  /* v20261007 (dx) : le composeur n'est plus cadré. Le fond (#181818 en dur) était le vrai cadre — plus visible que la bordure de 1px qu'il portait. */
+  /* v20261007 (dx) : le composeur n'est plus cadré. Le fond (#181818 en dur)
+     était le vrai cadre — plus visible que la bordure de 1px qu'il portait. */
   background: transparent;
-  border: none;
+  /* v20261007 (ep) : `border: none` est RETIRE. C'est lui qui neutralisait la
+     bordure demandée : posée ici, cette declaration l'emportait sur le bloc
+     terminal, et le filet restait invisible AU REPOS comme au focus — le token
+     `--bord-actif` n'était jamais calculé pour la carte, seulement lu dans mes
+     propres mesures. Le fond unique et le halo portent désormais le cadre. */
   overflow-y: auto; /* Affiche un scroll si le texte dépasse max-height */
   display: flex;
   align-items: center;
@@ -6449,9 +6454,7 @@ html[data-theme="light"] header.chat-tete {
   border-bottom-color: var(--bord);
 }
 html[data-theme="light"] .composeur,
-html[data-theme="light"] .composeur-carte {
-  border-top-color: var(--bord);
-}
+
 .composeur,
 .composeur-carte {
 }
@@ -6525,9 +6528,6 @@ COLONNE UNIQUE ET MARGE PARTAGÉE
    4. PIED DU COMPOSEUR
    Traité plus haut, via le jeton `--composeur-pied`. */
 
-.composeur-carte {
-  border-top: none;
-}
 html[data-theme="light"] .row.bot .bubble {
   background: var(--fond-bulle-clair);
 }
@@ -6863,4 +6863,124 @@ html[data-theme="dark"] {
   color: var(--icone);
   border-color: transparent;
   background: transparent;
+}
+/* ============================================================================
+   v20261007 (ep) — ZONE CENTRÉE, MENTION EN BAS, BORDURE SOMBRE AU FOCUS
+   ============================================================================ */
+
+/* 1. LA ZONE DE SAISIE : 10px DE VIDE EN DESSOUS DU TEXTE.
+   Mesure avant : la zone faisait 34px de haut, le `textarea` 24px — donc 10px
+   de vide SOUS le texte. Invisible parce que tout est transparent, mais c'est
+   bien le décalage qui restait.
+   Le `textarea` est en `box-sizing: content-box` : sa hauteur est son contenu et
+   son padding, rien d'autre. `align-items: center` sur la zone le centreait
+   dans les 34px disponibles, ce qui laissait le vide APPEARAITRE en dessous
+   au lieu de le supprimer.
+   La zone doitmeasurer exactement ce que mesure son enfant. */
+.saisie,
+.saisie-mirror {
+  box-sizing: border-box;
+}
+.saisie-zone {
+  align-items: stretch;
+}
+html[data-theme="light"] .saisie-zone,
+html[data-theme="dark"] .saisie-zone {
+  align-items: stretch;
+}
+
+/* 2. LA MENTION EN BAS, ET LA CARTE SANS GROSSIR.
+   Mesure avant : la carte fait 54px, le `span` de la mention commence 62px plus
+   bas — donc juste sous la carte, mais son bas.Depasse de 57px la carte en
+   dessous. Le vide PARAISSAIT sous le texte, parce que la carte s'arrêtait 15px
+   avant lui.
+
+   La carte doit occuper la place jusqu'au bas de la mention, SANS changer de
+   hauteur au-dessus : c'est `margin-top: auto` sur la mention qui pousse le
+   `pied` vers le bas, et non la carte qui s'étire. Elle reste à 54px, la
+   position des icônes est inchangée. */
+.composeur-carte {
+  align-self: stretch;
+}
+/* Le PIED est le conteneur a completer, pas le span. `margin-top: auto` sur le
+   span ne faisait rien : `.composeur-pied` est un `display: flex` sur UNE
+   seule ligne (`justify-content: space-between`), donc la marge verticale d un
+   enfant est ignoree. Il faut le pied en colonne : le span passe en haut, le
+   groupe de boutons en bas, et le `space-between` disparait au profit d un
+   espacement explicite. */
+.composeur-pied {
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.composeur-pied > span:first-child {
+  order: -1;
+  max-width: 100%;
+}
+
+/* 3. LA BORDURE ASSOMBRIT AU FOCUS — DANS LES DEUX THÈMES.
+   `--bord-fort` ne suffisait pas : il reste clair sur fond blanc. Nouveau jeton
+   `--bord-actif`, déclaré dans les deux thèmes avec une valeur franchement
+   plus sombre, et lisible sur les deux surfaces. */
+:root {
+  --bord-actif: #6b6b6b;
+}
+html[data-theme="light"] {
+  --bord-actif: #6b6b6b;
+}
+html[data-theme="dark"] {
+  --bord-actif: #8a8a8a;
+}
+.composeur-carte:focus-within {
+  border-color: var(--bord-actif);
+  transition: border-color 0.15s ease;
+}
+html[data-theme="light"] .composeur-carte:focus-within,
+html[data-theme="dark"] .composeur-carte:focus-within {
+  border-color: var(--bord-actif);
+}
+/* CORRECTION : `stretch` seul ne suffit pas. La zone s'étire à 44px, mais le
+   `textarea` garde ses 24px de contenu : le vide PASSAIT de 15px à 20px au lieu
+   de disparaître. Le `textarea` doit remplir la zone qu'on lui donne.
+   `height: 100%` + `align-self: stretch` : il occupe toute la hauteur de la
+   zone, et le texte se centre dedans grâce au `line-height` heredite. */
+.saisie,
+.saisie-mirror {
+  height: 100%;
+}
+.saisie-zone {
+  align-items: stretch;
+}
+/* RESCELLEMENT. Sur ce fichier, la règle de base du pied (ligne d'origine 4005)
+   pose `display: flex`, `align-items: center` et `justify-content:
+   space-between` : une seule rangée, deux éléments aux bouts. C'est elle qui
+   gagne si je redeclare les mêmes propriétés ailleurs.
+   `space-between` est précisément ce qui maintient le span en haut et les
+   boutons en bas sur une MÊME ligne : sans lui, les deux se touchent. Le pied
+   devient une colonne explicite, et l'espacement devient une `gap` — donc
+   rien ne dépend d'une marge `auto` sur un enfant, qui de toute façon
+   s'ignore ici. */
+html[data-theme="light"] .composeur-pied,
+html[data-theme="dark"] .composeur-pied {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+/* La mention descend EN BAS du pied : c'est la demande. Elle occupe la ligne du
+   bas, les boutons restent au-dessus. `order: 1` la place apres le groupe de
+   boutons ; le `margin-top: auto` la colle ensuite au bas du pied, ce qui
+   fonctionne ICI parce que le pied est une colonne — c'etait impossible en
+   ligne, la marge verticale d un enfant de flex-row etant ignoree. */
+html[data-theme="light"] .composeur-pied > span:first-child,
+html[data-theme="dark"] .composeur-pied > span:first-child {
+  order: 1;
+  align-self: center;
+  max-width: 100%;
+  margin-top: auto;
+}
+html[data-theme="light"] .composeur-modele,
+html[data-theme="dark"] .composeur-modele {
+  order: 0;
 }
