@@ -33,6 +33,12 @@
   --code-fond: #0d0d0d;
   /* v20261007 (dz) : fond de bloc de code, SOMBRE dans les deux thèmes. */
   --fond-code-bloc: #0d0d0d;
+  /* v20261007 (eg) : bordure du code. Déclarée dans les DEUX thèmes — sinon,
+     en thème sombre, `border-color: var(--bord-code)` était un jeton non
+     défini, donc une déclaration invalide : la bordure retombait sur la
+     couleur du texte, ce qui est exactement le trait quasi noir qu'on
+     cherchait à supprimer. */
+  --bord-code: #2a2a2a;
   /* v20261007 (ea) : l'ENCADRAGE du code en ligne est distinct du fond des BLOCS. Un `code` posé dans une phrase est une marque en ligne ; un `pre` est une surface. Leur donner le même noir aplati faisait disparaître la différence entre « un mot en code » et «… */
   --fond-code-inline: #1a1818;
   --texte-code-bloc: #ea553c;
@@ -50,8 +56,10 @@
   --texte-plan-bloc: #ffffff;
   --ok: #111111;
   /* v20261007 (dx) — SURFACES DE ZONE, en variables. */
-  --fond-msgs: #211f1f;       /* le fil de discussion */
-  --fond-row: #1f1d1d;         /* une rangée, un cran au-dessus du fil */
+  /* v20261007 (eg) : un cran SOUS la zone, pour que la bulle du bot se voie.
+     --fond-row etait identique à --fond-chat : la bulle se fondait dans
+     le fil et ne se distinguait plus du tout. */
+  --fond-row: #242222;
   /* v20261007 (ea) : la zone de conversation et la barre latérale ont deux valeurs distinctes. `.chat-shell` est le conteneur de conversation ; il était resté sur `--fond`, si bien que la couleur demandée pour l'écran principal n'était appliquée nulle part. `--… */
   --fond-chat: #1f1d1d;
   --fond-side: #141414;        /* TOUTE la barre latérale */
@@ -1196,7 +1204,7 @@ button.dot:focus-visible,
   padding: 32px 14px 13px;
   margin: 0.65em 0;
   overflow-x: auto;
-  border: 1px solid var(--bord-fort);
+  border: 1px solid var(--bord-code);
 }
 /* v20261007 (ef) — LE CORAIL EST POUR LE MODÈLE, PAS POUR ATHENA.
    Tout ce que produit l'application elle-même — sortie de commande, lecture de
@@ -2169,7 +2177,7 @@ span.think:not(details .think) {
 /* ————— Composeur ————— */
 .composeur {
   padding: 6px 18px calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(to top, var(--fond) 78%, transparent);
+  background: linear-gradient(to top, var(--fond-chat) 78%, transparent);
 }
 .composeur-carte {
   min-height: 30px;
@@ -3431,7 +3439,6 @@ span.think:not(details .think) {
 
 .msgs {
   padding: 34px 28px 18px;
-  background: var(--fond);
 }
 
 .row {
@@ -3489,7 +3496,7 @@ details.raisonnement summary {
 
 .composeur {
   padding: 10px 58px;
-  background: linear-gradient(to top, var(--fond) 76%, transparent);
+  background: linear-gradient(to top, var(--fond-chat) 76%, transparent);
 }
 
 .composeur-carte {
@@ -3942,7 +3949,7 @@ details.raisonnement summary {
 
 .md code {
   /* v20261007 (dz) : fond SOMBRE et non plus rouge, texte #ea553c. */
-  border-color: #2a2a2a;
+  border-color: var(--bord-code);
   background: var(--fond-code-inline);
   color: var(--texte-code-bloc);
 }
@@ -5038,14 +5045,17 @@ html[data-theme="light"] {
   /* v20261007 (ef) : surfaces claires en blanc. Le gris tres clair qu il y avait
      (\#fafafa / \#f4f4f4 / \#f7f7f7) introduisait trois valeurs pour trois zones
      qu on veut lire comme UNE meme page. Blanc partout. */
-  --fond-msgs: #ffffff;
-  --fond-row: #ffffff;
+  --fond-row: #f4f2f2;
   --fond-chat: #ffffff;
   --fond-side: #ffffff;
   --fond-side-pied: #ffffff;
-  --fond-share: #454242;
-  --fond-share-survol: #555250;
---fond-partage-texte: #f2f2f2;
+--fond-share: transparent;
+  /* v20261007 (eg) : Partager est TRANSPARENT en thème clair, au texte noir.
+     Un aplat #454242 dans une page blanche était la seule tache sombre de
+     l'écran : il attirait l'œil plus que le contenu lui-même. C'était aussi le
+     seul bouton qui gardait un fond — tous les autres sont transparents. */
+  --fond-share-survol: color-mix(in srgb, var(--texte) 8%, transparent);
+  --fond-partage-texte: #141414;
   --fond: #ffffff;
   --carte: #ffffff;
   --carte-doux: #f4f4f4;
@@ -5096,6 +5106,12 @@ html[data-theme="light"] {
   --fond-code-inline: #ececec;
   --texte-code-bloc: #c81e1e;
   --texte-outil: #6b6b6b;
+  /* v20261007 (eg) : plus de bordure NOIRE autour du code en thème clair.
+     `border-color: #2a2a2a` sur fond #ececec, et `var(--bord-fort)` sur le bloc :
+     une bordure quasi noire encadre ce qui est précisément un texte posé sur un
+     aplat gris clair. Le trait disparaît — il n'avait plus de fonction, et il
+     rendait le code plus « encadré » que la bulle qui le contient. */
+  --bord-code: transparent;
 }
 html[data-theme="light"] * {
   scrollbar-color: #b5b5b5 #e8e8e8;
@@ -5256,7 +5272,7 @@ html[data-theme="light"] .md code {
      code, pas un texte courant. Seul le texte change, pour rester lisible.
      L'ancien fond #f6e9e4 avec #9c2b1e faisait un aplat rouge très clair dans
      une bulle claire : l'inverse du but recherché. */
-  border-color: #2a2a2a;
+  border-color: var(--bord-code);
   background: var(--fond-code-inline);
   color: var(--texte-code-bloc);
 }
@@ -5491,10 +5507,20 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 }
 /* v20261007 (dx) — le fond va sur .msgs et .side-pied, avec les jetons. */
 .msgs {
-  background: var(--fond-msgs);
+  /* v20261007 (eg) : le fond propre de .msgs est supprimé — il herite de
+     .chat-shell. Deux valeurs quasi identiques pour un seul bloc : c were
+     exactement la source des frontières visibles. */
 }
 .row.bot {
+  /* `--fond-row` reste pour les SEULES bulles du bot, à distinctions de vue. */
   background: var(--fond-row);
+}
+/* Les deux séparations VOLONTAIRES de la zone, en filet de 1px. */
+.chat-tete {
+  border-bottom: 1px solid var(--bord);
+}
+.composeur-carte {
+  border-top: 1px solid var(--bord);
 }
 /* v20261007 (dz) : la classe est `.sidebar` (l'élément est `<aside id="sidebar" class="sidebar">`), pas `.side`. J'avais écrit `.side`, un sélecteur qui ne désigne RIEN : la règle était inerte, et la mesure l'a montré — `.side` renvoyait « ABSENT » alors que… */
 .sidebar {
@@ -5505,6 +5531,37 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
    du document, ce qui se voyait aux jointures. */
 .chat-shell {
   background: var(--fond-chat);
+  border: none;
+  box-shadow: none;
+}
+/* v20261007 (eg) — UNE SEULE SURFACE POUR LA ZONE DE CONVERSATION.
+   `.chat-shell`, `.chat-tete`, `.msgs` et `.composeur` portent la MÊME valeur.
+   Avant, quatre conteneurs se partageaient entre `--fond`, `--fond-chat` et
+   `transparent` — des valeurs qui ne différaient que de quelques unités
+   (#0f0f0f, #1f1d1d, #211f1f). Le résultat n'était pas « une nuance » : c'était
+   des FRONTIÈRES visibles, exactement là où il n'y avait rien à séparer.
+
+   Règle, à retenir pour la suite : des fonds qui diffèrent de quelques unités
+   créent une frontière ; pour un seul bloc visuel, il faut UNE valeur ; pour une
+   séparation VOLONTAIRE, il faut une LIGNE. D'où les deux filets de 1px : au
+   bas de l'en-tête, et au-dessus du composeur. */
+.chat-shell,
+.chat-tete,
+.msgs,
+.composeur {
+  background: var(--fond-chat);
+}
+/* Le plan appartient à l'en-tête : même fond, même trait. Traité à part, il
+   flottait sur la frontière — une carte posée sur une couture. */
+.hud-plan {
+  background: var(--fond-chat);
+  border-color: var(--bord);
+  border-left: 3px solid var(--primaire);
+}
+/* `--fond-row` reste pour les SEULES bulles du bot, quand il faut les
+   distinguer du fil. Jamais pour un conteneur. */
+.row.bot {
+  background: var(--fond-row);
 }
 .side-pied {
   background: var(--fond-side-pied);
@@ -6322,4 +6379,55 @@ html[data-theme="light"] .interpreteur-code {
 }
 .md pre.plan-bloc .code-lang {
   color: var(--primaire);
+}
+
+/* ============================================================================
+   v20261007 (eg) — ZONE DE CONVERSATION : RÈGLE FINALE, EN DERNIER
+   ============================================================================
+   Ce bloc est placé EN FIN de fichier, volontairement. Le même fichier déclare
+   `.chat-tete` trois fois et `.composeur-carte` trois fois, à des milliers de
+   lignes d'écart, certaines remettant `background: transparent` après avoir posé
+   une valeur. Se battre sélecteur par sélecteur n'est pas tenable : le relevé
+   ci-dessous est la règle qui fait autorité, et elle est terminale.
+
+   Les quatre conteneurs portent UNE seule valeur. Les deux séparations
+   VOLONTAIRES sont des lignes de 1px, parce qu'une bordure se lit mieux qu'un
+   écart de teinte et qu'elle reste cohérente entre les deux thèmes. */
+.chat-shell,
+.chat-tete,
+header.chat-tete,
+.msgs,
+.composeur,
+.composeur-carte,
+.hud-plan {
+  background: var(--fond-chat);
+}
+.chat-tete,
+header.chat-tete {
+  border-bottom: 1px solid var(--bord);
+}
+/* Les mêmes règles, qualifiées par le thème. `html[data-theme="light"] .chat-tete`
+   a une SPÉCIFICITÉ plus grande que `.chat-tete` : la cascade le désigne
+   d'abord, et l'ordre du fichier n'y change rien. C'est ce qui faisait que la
+   règle en dernier ne s'appliquait pas en thème clair. */
+html[data-theme="light"] .chat-shell,
+html[data-theme="light"] .chat-tete,
+html[data-theme="light"] header.chat-tete,
+html[data-theme="light"] .msgs,
+html[data-theme="light"] .composeur,
+html[data-theme="light"] .composeur-carte,
+html[data-theme="light"] .hud-plan {
+  background: var(--fond-chat);
+}
+html[data-theme="light"] .chat-tete,
+html[data-theme="light"] header.chat-tete {
+  border-bottom-color: var(--bord);
+}
+html[data-theme="light"] .composeur,
+html[data-theme="light"] .composeur-carte {
+  border-top-color: var(--bord);
+}
+.composeur,
+.composeur-carte {
+  border-top: 1px solid var(--bord);
 }
