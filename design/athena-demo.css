@@ -80,6 +80,13 @@
    sur .row.bot/.row.user. Six nombres pour un seul et meme cadre.
    Une valeur unique, réutilisable partout. */
 --colonne: 780px;
+/* v20261007 (ej) : le pied du composeur garde SA propre largeur.
+   `--colonne` (780px) avait ete applique au pied comme a la carte du champ, ce
+   qui a deplace ses deux boutons de 18px vers la gauche (mesure : x=503 puis
+   x=719 avant, x=485 puis x=701 apres). C est une exception DELIBEREE a la
+   regle "une seule largeur" : le pied est une barre d'outils, pas le cadre de
+   redaction, et son contenu est plus etroit que la carte. */
+--composeur-pied: 744px;
 /* Marge horizontale de la zone de conversation. .chat-tete, .msgs et
    .composeur portaient chacun leur propre paire (24px, 32px, 58px) : le fil,
    son en-tete et son composeur ne partageaient pas le meme bord gauche. */
@@ -4000,7 +4007,7 @@ details.raisonnement li.doute {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  max-width: var(--colonne);
+  max-width: var(--composeur-pied);
   margin: 8px auto 0;
   padding: 0 4px;
   color: #8f8f8f;
@@ -4383,7 +4390,7 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 .composeur-pied {
-  max-width: var(--colonne);
+  max-width: var(--composeur-pied);
 }
 
 @media (max-width: 940px) {
@@ -4973,7 +4980,7 @@ header.chat-tete {
     max-width: var(--colonne);
   }
   .composeur-pied {
-    max-width: var(--colonne);
+    max-width: var(--composeur-pied);
     box-sizing: border-box;
   }
   /* v20260926i : .chat-tete transparent (des règles plus spécifiques
@@ -5066,6 +5073,10 @@ html[data-theme="light"] {
      (\#fafafa / \#f4f4f4 / \#f7f7f7) introduisait trois valeurs pour trois zones
      qu on veut lire comme UNE meme page. Blanc partout. */
   --fond-row: #f4f2f2;
+  /* v20261007 (ej) : la bulle du modele passe en blanc PUR en theme clair.
+     `#f4f2f2` dessinait un rectangle sans jamais le remplir : sur une page
+     blanche, un fond qui n'est pas blanc se voit par son contour. Blanc. */
+  --fond-bulle-clair: #ffffff;
   --fond-chat: #ffffff;
   --fond-side: #ffffff;
   --fond-side-pied: #ffffff;
@@ -6483,10 +6494,16 @@ COLONNE UNIQUE ET MARGE PARTAGÉE
   max-width: var(--colonne);
 }
 .composeur-carte,
-.composeur-pied,
 .composeur-modele {
   width: min(var(--colonne), 100%);
   max-width: var(--colonne);
+  box-sizing: border-box;
+}
+/* v20261007 (ej) : le pied sort de ce groupe. Il garde --composeur-pied, sa
+   largeur propre, pour que ses boutons restent a leur place. */
+.composeur-pied {
+  width: min(var(--composeur-pied), 100%);
+  max-width: var(--composeur-pied);
   box-sizing: border-box;
 }
 .hud-plan {
@@ -6502,4 +6519,38 @@ COLONNE UNIQUE ET MARGE PARTAGÉE
    marge, la zone de defilement reste elargie d'autant. */
 .msgs {
   padding-inline: var(--marge-page);
+}
+/* ============================================================================
+   v20261007 (ej) — PARTAGER, COMPOSEUR, BULLES
+   ============================================================================
+   Quatre décisions prises explicitement, après consultation. Terminal, comme
+   les blocs précédents : ce fichier redéclare `.composeur-carte` huit fois et
+   `.btn-partager` six fois.
+
+   1. PARTAGER : BORDURE NOIRE EN THÈME CLAIR
+   Fond transparent et texte noir étaient leftovers du précédent chantier ; la
+   bordure, elle, n'avait jamais été demandée. Elle est ici explicite.
+   En thème sombre, la bordure suit le fond du bouton : elle ne change pas.
+
+   2. COMPOSEUR : PLUS DE BORDURE NOIRE
+   `.composeur-carte` gardait un `border-top: 1px solid var(--bord)` issu de la
+   séparation volontaire de zone. Sur un champ de saisie, ce trait se lisait
+   comme un encadrement, pas comme une séparation. Supprimé dans les deux
+   thèmes : le composeur n'est plus encadré.
+
+   3. BULLE : FOND BLANC EN THÈME CLAIR
+   `--fond-row` valait `#f4f2f2` en clair, un gris si proche du blanc qu'il
+   dessinait un rectangle sans jamais le remplir. Blanc sur blanc.
+   En thème SOMBRE, aucun changement : `--fond-row` y reste `#242222`.
+
+   4. PIED DU COMPOSEUR
+   Traité plus haut, via le jeton `--composeur-pied`. */
+html[data-theme="light"] .btn-partager {
+  border: 1px solid var(--texte);
+}
+.composeur-carte {
+  border-top: none;
+}
+html[data-theme="light"] .row.bot .bubble {
+  background: var(--fond-bulle-clair);
 }
