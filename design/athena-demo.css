@@ -1210,22 +1210,6 @@ button.dot:focus-visible,
   overflow-x: auto;
   border: 1px solid var(--bord-code);
 }
-/* v20261007 (ef) — LE CORAIL EST POUR LE MODÈLE, PAS POUR ATHENA.
-   Tout ce que produit l'application elle-même — sortie de commande, lecture de
-   fichier, plan, exécution — sort du corail. Ces blocs sont de l'OUTIL :
-   les peindre comme la prose du modèle mettait sur le même plan une réponse et
-   un `dir`. Ils gardent la couleur du texte courant et leur propre fond.
-   La cascade compte : `.md pre` porte le corail, ces règles en sortent. */
-.md pre.exec-bloc,
-.md pre.exec-bloc code,
-.exec-bloc,
-.exec-sortie,
-.exec-terminal,
-.exec-terminal-tete,
-details.trace-cmd pre,
-details.raisonnement pre {
-  color: var(--texte-outil);
-}
 .exec-bloc {
   border-color: var(--bord-fort);
 }
@@ -1306,22 +1290,6 @@ details.raisonnement pre {
   opacity: 0.55;
   cursor: wait;
 }
-/* Repli : conservé pour tout appelant qui écrirait encore du texte brut
-   dans .exec-sortie plutôt que d'utiliser details.trace-cmd ci-dessous. */
-/* v20261007 : détail de cascade affiché sous un échec — « #1 gemma ⅒ HTTP 429
-   en 2 s, #2 nemotron ⅒ timeout 300 s… ». Replié par défaut (ce n'est qu'un
-   diagnostic), lisible d'un coup d'œil sur la chronologie réelle. */
-.chain-detail {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--bord);
-  border-radius: 6px;
-  /* v20261007 (U1) : fond dérivé d'une variable et non blanc translucide fixe —
-     `rgba(255,255,255,.03)` sur fond blanc rendait le cadre invisible en thème
-     clair (le texte, lui, était en #d8d8d8 quasi blanc). */
-  background: var(--carte-doux, rgba(255, 255, 255, 0.03));
-  font-size: 0.8rem;
-}
 .chain-detail summary {
   cursor: pointer;
   color: var(--texte-doux, #b9b9b9);
@@ -1352,90 +1320,6 @@ details.raisonnement pre {
   border-left-color: #9e9e9e;
   color: #f2f2f2;
   background: rgba(255, 255, 255, 0.09);
-}
-/* ————— Trace de commande — compte-rendu repliable d'une commande exécutée
-   (commande + code de sortie + durée + stdout/stderr), même langage visuel
-   que details.raisonnement : replié par défaut, forme distincte pour
-   l'échec (icône alerte + fond marqué), jamais de rouge/vert en dur. */
-details.trace-cmd {
-  margin-top: 8px;
-  background: var(--code-fond);
-  border: 1px solid var(--bord-fort);
-  border-radius: 10px;
-  font-size: 0.82rem;
-  overflow: hidden;
-}
-details.trace-cmd + details.trace-cmd {
-  margin-top: 6px;
-}
-details.trace-cmd summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 11px;
-  min-height: 34px;
-  color: #d8d8d8;
-  user-select: none;
-}
-details.trace-cmd summary::-webkit-details-marker {
-  display: none;
-}
-details.trace-cmd summary .ico {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 auto;
-  color: #9e9e9e;
-}
-details.trace-cmd.echec summary .ico {
-  color: #f2f2f2;
-}
-details.trace-cmd summary .trace-cmd-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-}
-details.trace-cmd summary .trace-cmd-meta {
-  flex: 0 0 auto;
-  font-size: 0.68rem;
-  color: #9e9e9e;
-  font-variant-numeric: tabular-nums;
-}
-details.trace-cmd summary .chev {
-  color: #9e9e9e;
-}
-details.trace-cmd .trace-cmd-corps {
-  padding: 0 11px 11px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-details.trace-cmd .trace-cmd-sortie-label {
-  font-size: 0.64rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #9e9e9e;
-  margin: 9px 0 4px;
-}
-details.trace-cmd pre {
-  margin: 0;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 7px;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: #e8e8e8;
-}
-details.trace-cmd pre.trace-cmd-err {
-  background: rgba(255, 255, 255, 0.09);
-  color: #f2f2f2;
 }
 /* ————— Marqueur de statut inline (remplace ✄/⚠️ générés par le modèle) —
    « Zéro émoji » vaut aussi pour le texte que le modèle produit lui-même :
@@ -3510,37 +3394,6 @@ details.raisonnement summary {
   padding: 0 0 4px;
   border-top: 0;
 }
-.activity-group .trace-cmd {
-  margin: 4px 0 0;
-  border-color: var(--bord);
-  background: transparent;
-  color: var(--texte);
-}
-.activity-group .trace-cmd summary {
-  color: var(--texte-doux);
-  min-height: 28px;
-  padding: 6px 2px;
-}
-.activity-group .trace-cmd summary .ico,
-.activity-group .trace-cmd summary .chev,
-.activity-group .trace-cmd summary .trace-cmd-meta {
-  color: var(--texte-doux);
-}
-.activity-group .trace-cmd summary .trace-cmd-label {
-  color: var(--texte);
-}
-.activity-group .trace-cmd .trace-cmd-corps {
-  border-top-color: var(--bord);
-  padding: 0 2px 8px;
-}
-.activity-group .trace-cmd pre {
-  background: var(--carte-doux);
-  color: var(--texte);
-}
-.activity-group .trace-cmd pre.trace-cmd-err {
-  background: var(--gris-fond);
-  color: var(--texte);
-}
 @media (max-width: 940px) {
   .sidebar {
     width: min(var(--pos-sidebar-largeur), 88vw);
@@ -3982,15 +3835,6 @@ details.raisonnement li.doute {
   flex-direction: column;
   align-items: flex-end;
 }
-.trace-cmd-status {
-  flex: 0 0 auto;
-  color: #79d39b;
-  font-family: var(--mono);
-  font-size: 0.66rem;
-}
-details.trace-cmd.echec .trace-cmd-status {
-  color: #e1b45c;
-}
 .row.user .message-actions {
   display: none;
 }
@@ -4363,33 +4207,6 @@ html[data-theme="light"] .nav-capture {
   .msgs {
     scroll-behavior: auto;
   }
-}
-.exec-terminal {
-  margin-top: 6px;
-  border: 1px solid var(--bord);
-  border-radius: 6px;
-  background: #111;
-  color: #e8e8e8;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  max-height: 240px;
-  overflow: auto;
-}
-.exec-terminal-tete {
-  padding: 4px 8px;
-  border-bottom: 1px solid #2c2c2c;
-  color: #a9a9a9;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.exec-terminal-corps {
-  margin: 0;
-  padding: 6px 8px;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.exec-terminal-corps .term-err {
-  color: #f0b429;
 }
 .file-bloc {
   margin: 8px 0;
@@ -4796,6 +4613,13 @@ html[data-theme="light"] {
   /* v20261007 (em) : surface claire et halo clair. */
   --surface: #ffffff;
   --halo: 0 10px 30px -10px rgba(0, 0, 0, 0.14), 0 0 1px rgba(0, 0, 0, 0.06);
+  /* v20261007 (es) : le fond des blocs de code manquait ICI. Il n était déclaré
+     que dans `:root` (sombre, #0d0d0d) : en thème clair il héritait de cette
+     valeur, donc la sortie de commande était un aplat quasi noir sur une page
+     blanche. Un jeton absent d'un thème hérite de l'autre et se trompe sans
+     bruit — c'est exactement le cas que la règle « chaque jeton dans les deux
+     thèmes » cherche à empêcher. */
+  --fond-code-bloc: #f6f6f6;
   /* BUG INTRODUIT EN e21ca90, CORRIGÉ ICI. */
   --texte: #171717;
   --texte-doux: #616161;
@@ -5038,8 +4862,6 @@ html[data-theme="light"] .md code {
 html[data-theme="light"] .md pre a {
   color: var(--lien-clair);
 }
-html[data-theme="light"] .activity-group .trace-cmd {
-}
 html[data-theme="light"] .message-actions button:hover {
   background: #e2e2e2;
 }
@@ -5047,18 +4869,6 @@ html[data-theme="light"] .row.user .bubble {
   background: #e8e8e8;
   color: var(--texte);
   border-color: #e8e8e8;
-}
-html[data-theme="light"] .exec-terminal {
-  background: #f2f2f2;
-  color: var(--texte);
-  border-color: var(--bord-fort);
-}
-html[data-theme="light"] .exec-terminal-tete {
-  border-bottom-color: var(--bord);
-  color: var(--texte-doux);
-}
-html[data-theme="light"] .exec-terminal-corps .term-err {
-  color: #8a6d1a;
 }
 html[data-theme="light"] .file-tete {
   background: #efefef;
@@ -6847,4 +6657,149 @@ html[data-theme="dark"] .composeur-modele {
   margin-left: 0;
   width: auto;
   max-width: none;
+}
+
+/* --- LE RYTHME VERTICAL DU FIL.
+   Un seul rythme entre blocs de même nature : `.bubble > * + *`. La carte
+   d'action est un cas particulier — elle respire moins, parce qu'elle encadre
+   le texte au lieu d'en être un morceau. */
+.bubble > * + * {
+  margin-top: var(--espace-3);
+}
+.bubble > p + .action,
+.action + .bubble > * {
+  margin-top: var(--espace-2);
+}
+.bubble > p + ul,
+.bubble > p + ol,
+.bubble > ul + *,
+.bubble > ol + * {
+  margin-top: var(--espace-3);
+}
+
+/* --- LA CARTE D'ACTION.
+   Une seule classe. Le `details` reste replié par défaut : le fil se lit de haut
+   en bas (texte court, cartes, synthèse) sans être coupé par des blocs de code
+   déroulés. */
+.action {
+  margin: 0;
+  border: 1px solid var(--bord);
+  border-left: 2px solid var(--bord-fort);
+  border-radius: var(--rayon-s);
+  background: var(--fond-chat);
+  font-size: 0.8125rem;
+  overflow: hidden;
+}
+.action > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--texte-doux);
+}
+.action > summary::-webkit-details-marker {
+  display: none;
+}
+.action-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--texte);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+.action-etat {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--texte-doux);
+}
+/* Une seule couleur de TEXTE pour les états — jamais un fond plein. */
+.action.etat-echec .action-etat {
+  color: var(--danger-texte);
+}
+.action.etat-cours .action-etat {
+  color: var(--texte-doux);
+}
+.action-corps {
+  border-top: 1px solid var(--bord);
+  padding: var(--espace-2) 10px;
+}
+
+/* --- LA SORTIE : police mono, une seule taille, un seul fond.
+   Hauteur maximale FIXE avec défilement interne : une sortie de 300 lignes ne
+   doit pas dérouler le fil sur trois écrans. */
+.action-sortie {
+  margin: var(--espace-2) 0 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: var(--espace-2) 10px;
+  background: var(--fond-code-bloc);
+  border-radius: var(--rayon-s);
+  color: var(--texte);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* La sortie est un `<pre>` à l'intérieur de `.md` : `.md pre` a une
+   SPÉCIFICITÉ plus grande (0,1,1) que `.action-sortie` (0,1,0), et sa couleur
+   — le corail réservé au modèle, posé en `ef` — écrasait `--texte`.
+   Mesure : sortie « Réussi » en `rgb(200,30,30)` en clair et `rgb(234,85,60)`
+   en sombre. Le sélecteur est donc qualifié `.md .action-sortie` (0,2,0).
+   Même raison pour le fond : `.md pre` porte aussi le fond du bloc de code. */
+.md .action-sortie {
+  color: var(--texte);
+  background: var(--fond-code-bloc);
+}
+.md .action.etat-echec .action-sortie,
+.md .action-sortie.est-err {
+  color: var(--danger-texte);
+  background: var(--fond-code-bloc);
+}
+html[data-theme="light"] .md .action-sortie,
+html[data-theme="dark"] .md .action-sortie {
+  color: var(--texte);
+}
+html[data-theme="light"] .md .action.etat-echec .action-sortie {
+  color: var(--danger-texte);
+}
+/* En thème SOMBRE, `--danger-texte` vaut `#f1f1f1` — IDENTIQUE à `--texte`
+   (17,21:1 sur le fond des blocs). L'erreur n'avait donc aucun signal : elle
+   s'affichait comme une sortie réussie.
+   Le fichier déclare DEUX blocs `:root` qui se disputent les mêmes jetons, et
+   le second écrase `--danger-texte`. Plutôt que de restructurer tout le
+   fichier pour ça, la valeur d'état est écrite ici, une fois, par thème. */
+html[data-theme="dark"] .md .action.etat-echec .action-sortie {
+  color: var(--lien-sombre);
+}
+
+/* L'erreur est signalée par le TEXTE, pas par un aplat : le fond reste celui de
+   la sortie normale, seule la couleur du texte change. */
+.action.etat-echec .action-sortie,
+.action-sortie.est-err {
+  color: var(--danger-texte);
+}
+/* Le marqueur de troncature reste discret : une ligne, pas un bandeau. */
+.action-tronquee {
+  display: block;
+  padding: 2px 0 0;
+  color: var(--texte-doux);
+  font-size: 0.75rem;
+  font-family: inherit;
+}
+/* ============================================================================
+   v20261007 (es) — ÉCHELLE D'ESPACEMENT
+   ============================================================================
+   Base de 4px, quatre pas. Toute marge de flux passe par un de ces jetons ;
+   plus aucune valeur isolée en `margin-top` dans le fil. */
+:root {
+  --espace-1: 4px;
+  --espace-2: 8px;
+  --espace-3: 12px;
+  --espace-4: 16px;
 }

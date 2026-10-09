@@ -3305,112 +3305,174 @@ function telechargerFichier(chemin, texte, bouton) {
   }
 }
 
-/* Compte-rendu repliable d'une commande exécutée. `donnees` reprend le
-   format exact renvoyé par local-agent POST /exec :
-   { commande, ok, code, stdout, stderr, duree_ms }.
-   Replié par défaut (cohérent avec details.raisonnement) ; l'échec se
-   distingue par la FORME (icône alerte + fond de sortie marqué), jamais
-   par une teinte rouge seule — le design reste monochrome. */
-function creerBlocTraceCommande(donnees) {
+/* v20261007 (es) — CARTE D'ACTION UNIFIÉE.
+ *
+ * Remplace `creerBlocTraceCommande` (.trace-cmd*) et `creerTerminalExec`
+ * (.exec-terminal*). Les deux décrivaient le MÊME événement — une commande
+ * exécutée — avec deux formes et deux vocabulaires : le bloc de code
+ * ```athena-exec restait affiché ET la carte apparaissait à côté, donc
+ * l'événement apparaissait deux fois.
+ *
+ * Une seule classe `.action`, trois sous-éléments : `.action-tete`,
+ * `.action-sortie`, `.action-etat`. Le `details` est replié par défaut.
+ *
+ * VOCABULAIRE D'ÉTATS : une seule série de libellés. Auparavant coexistaient
+ * « succès », « code=0 », « ok » et « ✓ » — quatre façons de dire la même
+ * chose, donc quatre façons de se tromper. Les trois états sont nommés une
+ * fois, ici, et rien d'autre n'écrit ces mots.
+ */
+const ETATS_ACTION = { encours: 'En cours', reussi: 'Réussi', echec: 'Échec' };
+
+/* Un seul endroit décide du libellé ET de la classe d'un état. Tout l'appel
+   passe par ici : c'est ce qui empêche « code=0 » ou « ok » de réapparaître
+   à côté. La couleur, elle, ne dépend que de la classe `etat-*`. */
+function classerEtatAction(d) {
+  if (!d || typeof d !== 'object') return { cle: 'encours', libelle: ETATS_ACTION.encours };
+  if (d.ok === false) return { cle: 'echec', libelle: ETATS_ACTION.echec };
+  if (d.ok === true) return { cle: 'reussi', libelle: ETATS_ACTION.reussi };
+  if (typeof d.code === 'number' && d.code !== 0) return { cle: 'echec', libelle: ETATS_ACTION.echec };
+  return { cle: 'encours', libelle: ETATS_ACTION.encours };
+}
+
+/* La fin d'une sortie est plus utile que son milieu : c'est là que sont
+   l'erreur et le verdict. `couperTeteQueue` gardait début ET fin, mais son
+   marqueur comptait des CARACTÈRES. Ici on compte des LIGNES, parce que
+   c'est l'unité que compte une personne qui lit une sortie. */
+function tronquerSortie(t, nLignes) {
+  const lignes = String(t || '').split('\n');
+  if (lignes.length <= nLignes) return lignes.join('\n');
+  const tete = Math.max(1, Math.floor(nLignes * 0.4));
+  const queue = Math.max(1, nLignes - tete);
+  const masquees = lignes.length - nLignes;
+  return lignes.slice(0, tete)
+    .concat(['… ' + masquees + ' lignes masquées'])
+    .concat(lignes.slice(-queue))
+    .join('\n');
+}
+
+/* `donnees` reprend le format exact renvoyé par local-agent POST /exec :
+   { commande, ok, code, stdout, stderr, duree_ms }. */
+function genererBlocAction(donnees) {
   const d = donnees || {};
+  const etat = classerEtatAction(d);
   const det = document.createElement('details');
-  det.className = 'trace-cmd' + (d.ok === false ? ' echec' : '');
+  det.className = 'action etat-' + etat.cle;
 
   const sum = document.createElement('summary');
-  sum.appendChild(icoSvg(d.ok === false ? 'alert' : 'terminal'));
+  sum.appendChild(icoSvg(etat.cle === 'echec' ? 'alert' : 'terminal'));
   const label = document.createElement('span');
-  label.className = 'trace-cmd-label';
+  label.className = 'action-label';
   label.textContent = String(d.commande || '').trim() || '(commande)';
-  const status = document.createElement('span');
-  status.className = 'trace-cmd-status';
-  status.textContent = d.ok === false ? 'échec' : 'succès';
-  const meta = document.createElement('span');
-  meta.className = 'trace-cmd-meta';
-  const bits = [];
-  if (typeof d.code === 'number') bits.push('code=' + d.code);
-  if (typeof d.duree_ms === 'number') bits.push(Math.round(d.duree_ms) + ' ms');
-  meta.textContent = bits.join(' · ');
+  const etatEl = document.createElement('span');
+  etatEl.className = 'action-etat';
+  etatEl.textContent = etat.libelle;
   const chev = document.createElement('span');
   chev.className = 'chev';
   chev.appendChild(icoSvg('chevron'));
-  sum.append(label, status, meta, chev);
+  sum.append(label, etatEl, chev);
   det.appendChild(sum);
 
   const corps = document.createElement('div');
-  corps.className = 'trace-cmd-corps';
-  const preCmd = document.createElement('pre');
-  const codeCmd = document.createElement('code');
-  codeCmd.textContent = '$ ' + String(d.commande || '');
-  preCmd.appendChild(codeCmd);
-  corps.appendChild(preCmd);
-  if (d.stdout) {
-    const l = document.createElement('div');
-    l.className = 'trace-cmd-sortie-label';
-    l.textContent = 'Sortie';
-    corps.appendChild(l);
-    const pre = document.createElement('pre');
-    const c = document.createElement('code');
-    /* §8.7-1 : affichage tête+queue — un slice têle seul masquait la fin
-       (erreur, verdict) dans le panneau d'activité humain. */
-    c.textContent = couperTeteQueue(String(d.stdout), 8000);
-    pre.appendChild(c);
-    corps.appendChild(pre);
-  }
-  if (d.stderr) {
-    const l = document.createElement('div');
-    l.className = 'trace-cmd-sortie-label';
-    l.textContent = 'Erreur';
-    corps.appendChild(l);
-    const pre = document.createElement('pre');
-    pre.className = 'trace-cmd-err';
-    const c = document.createElement('code');
-    c.textContent = couperTeteQueue(String(d.stderr), 8000);
-    pre.appendChild(c);
-    corps.appendChild(pre);
-  }
+  corps.className = 'action-corps';
+  const sortie = document.createElement('pre');
+  sortie.className = 'action-sortie' + (d.stderr ? ' est-err' : '');
+  const brut = d.stderr ? String(d.stderr) : String(d.stdout || '');
+  sortie.textContent = tronquerSortie(brut, 200) || '(vide)';
+  corps.appendChild(sortie);
   det.appendChild(corps);
   return det;
 }
 
+/* Compte-rendu repliable d'une commande exécutée. `donnees` reprend le
+   format exact renvoyé par local-agent POST /exec :
+   { commande, ok, code, stdout, stderr, duree_ms }.
+   v20261007 (es) : cette fonction est SUPPRIMÉE. Elle produisait `.trace-cmd*`,
+   un composant distinct de `.exec-terminal*` alors que les deux décrivaient la
+   même chose — une commande exécutée. `genererBlocAction` les remplace toutes
+   les deux, avec un vocabulaire d'états unique. */
+function creerBlocTraceCommande(donnees) {
+  return genererBlocAction(donnees);
+}
+
+
 /* v20260926b (direct) : terminal de sortie EN DIRECT — les paquets stdout /
    stderr s'ajoutent au fil de l'exécution (autoscroll), au lieu d'attendre
-   la fin. Borné à 16 000 caractères affichés. */
+   la fin. Borné à 16 000 caractères affichés.
+   v20261007 (es) : la carte ne s'insère PLUS dans le `<pre>` du bloc
+   ```athena-exec. Elle y vivait, donc le bloc de code et la carte
+   s'affichaient côte à côte : le même événement d'exécution, deux fois.
+   `codeEl.parentNode` est le conteneur du bloc, hors du `<pre>`. */
 function creerTerminalExec(codeEl, commande) {
-  const pre = codeEl ? codeEl.closest('pre') : null;
-  if (!pre) return { el: null, ajouter: () => {}, texte: () => '' };
-  const term = document.createElement('div');
-  term.className = 'exec-terminal';
-  const tete = document.createElement('div');
-  tete.className = 'exec-terminal-tete';
-  tete.textContent = '$ ' + String(commande || '').slice(0, 200);
-  const corps = document.createElement('pre');
-  corps.className = 'exec-terminal-corps';
-  term.append(tete, corps);
-  pre.appendChild(term);
+  const conteneur = codeEl ? codeEl.closest('.md') || codeEl.parentNode : null;
+  if (!conteneur) return { el: null, ajouter: () => {}, texte: () => '' };
+  const term = document.createElement('details');
+  term.className = 'action etat-encours';
+  const sum = document.createElement('summary');
+  const tete = document.createElement('span');
+  tete.className = 'action-tete';
+  tete.appendChild(icoSvg('terminal'));
+  const label = document.createElement('span');
+  label.className = 'action-label';
+  label.textContent = String(commande || '').slice(0, 200);
+  const etat = document.createElement('span');
+  etat.className = 'action-etat';
+  etat.textContent = ETATS_ACTION.encours;
+  const chev = document.createElement('span');
+  chev.className = 'chev';
+  chev.appendChild(icoSvg('chevron'));
+  sum.append(tete, label, etat, chev);
+  term.appendChild(sum);
+  const corps = document.createElement('div');
+  corps.className = 'action-corps';
+  const sortie = document.createElement('pre');
+  sortie.className = 'action-sortie';
+  corps.appendChild(sortie);
+  term.appendChild(corps);
+  /* Le bloc ```athena-exec est MASQUÉ : son contenu est dans la carte. Le
+     laisser affiché donnait deux fois la même commande à l'écran. */
+  const bloc = codeEl.closest('.bloc-code, .exec-bloc, pre');
+  if (bloc) bloc.style.display = 'none';
+  conteneur.appendChild(term);
   let total = 0;
   let rafTerm = 0;
+  /* La sortie est son propre élément : le `div.action-corps` ne reçoit que le
+     `pre`, sinon le texte de sortie se mêlait au conteneur et le défilement
+     interne ne s'appliquait qu'à une partie. */
   function ajouter(canal, texte) {
     const t = String(texte || '');
     if (!t) return;
     /* v20260926f (kimi, lags) : on ne suit que si déjà en bas. */
     const presBas = term.scrollHeight - term.scrollTop - term.clientHeight < 40;
     const span = document.createElement('span');
-    if (canal === 'stderr') span.className = 'term-err';
+    if (canal === 'stderr') span.className = 'est-err';
     span.textContent = t.slice(0, 8000);
-    corps.appendChild(span);
+    sortie.appendChild(span);
     total += t.length;
-    while (total > 16000 && corps.firstChild) {
-      total -= (corps.firstChild.textContent || '').length;
-      corps.removeChild(corps.firstChild);
+    while (total > 16000 && sortie.firstChild) {
+      total -= (sortie.firstChild.textContent || '').length;
+      sortie.removeChild(sortie.firstChild);
     }
     if (presBas && !rafTerm) {
       rafTerm = requestAnimationFrame(() => {
         rafTerm = 0;
-        try { term.scrollTop = term.scrollHeight; } catch {}
+        try { sortie.scrollTop = sortie.scrollHeight; } catch {}
       });
     }
   }
-  return { el: term, ajouter, texte: () => corps.textContent || '' };
+  /* Bascule « En cours » vers l'état final, avec le MÊME libellé partout
+     (ETATS_ACTION). La classe `etat-*` est le seul endroit qui décide de la
+     couleur. */
+  function terminer(fin) {
+    const e = classerEtatAction(fin || {});
+    term.className = 'action etat-' + e.cle;
+    etat.textContent = e.libelle;
+  }
+  return {
+    el: term,
+    ajouter,
+    terminer,
+    texte: () => sortie.textContent || '',
+  };
 }
 /* Lit un flux NDJSON d'exécution : {type:'sortie'}* puis {type:'fin'}.
    Retourne l'objet 'fin', ou un objet {interrompu:true, stdout, stderr} si
@@ -3434,6 +3496,10 @@ async function lireFluxExec(corpsFlux, terminal) {
         if (canal === 'stderr') stderr += txt;
         else stdout += txt;
       } else if (ev && ev.type === 'fin') {
+        /* v20261007 (es) : la carte bascule de « En cours » vers son état
+           final au moment exact où le flux le déclare. Sans cet appel, la
+           carte restait « En cours » après une commande terminée. */
+        if (terminal && typeof terminal.terminer === 'function') terminal.terminer(ev);
         return ev;
       }
     } catch (e) { /* ligne partielle -> ignorée */ }
@@ -4649,7 +4715,7 @@ function creerGroupeActivite() {
 function ajouterTraceAuGroupe(groupe, donnees) {
   const body = groupe.querySelector('.activity-body');
   body.appendChild(creerBlocTraceCommande({ ...donnees, ok: donnees.ok !== false }));
-  const n = body.querySelectorAll('.trace-cmd').length;
+  const n = body.querySelectorAll('.action').length;
   groupe.querySelector('.activity-count').textContent = n + ' commande' + (n > 1 ? 's' : '');
 }
 function ajouterTraceActivite(codeEl, donnees) {

@@ -193,6 +193,52 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.6 Espacement et carte d’action (`es`)
+
+**Une seule échelle d’espaces**, base 4px : `--espace-1` (4px),
+`--espace-2` (8px), `--espace-3` (12px), `--espace-4` (16px). Plus aucune
+marge de flux écrite en valeur isolée.
+
+| Rythme | Règle |
+|---|---|
+| entre deux blocs de même nature | `.bubble > * + *` → `--espace-3` |
+| autour d’une carte d’action | `--espace-2` (elle encadre le texte, elle n’en est pas un morceau) |
+
+**Une seule carte d’action.** `.trace-cmd*` et `.exec-terminal*` décrivaient
+le même événement — une commande exécutée — avec deux formes. La carte ne
+s’insère plus dans le `<pre>` du bloc `athena-exec`, et ce bloc est masqué :
+l’événement apparaissait deux fois à l’écran.
+
+Sous-éléments : `.action-tete`, `.action-sortie`, `.action-etat`. La carte
+est un `details` replié par défaut, en retrait d’une colonne, bordure gauche
+fine — elle ne se mélange pas au texte, elle s’y rattache.
+
+**La sortie** : mono 0.8rem, fond unique `--fond-code-bloc`, un seul padding,
+hauteur maximale 180px avec défilement interne. La troncature compte des
+**lignes**, pas des caractères, et marque « … N lignes masquées ».
+
+**Un seul vocabulaire d’états** : `En cours`, `Réussi`, `Échec`, écrits une
+fois (`ETATS_ACTION`). Auparavant coexistaient « succès », « code=0 », « ok »
+et « ✓ » — quatre façons de dire la même chose.
+
+**Trois pièges de cascade rencontrés sur la sortie :**
+
+1. `.md pre` a une spécificité (0,1,1) supérieure à `.action-sortie` (0,1,0) :
+   le corail réservé au modèle écrasait `--texte`. Le sélecteur est qualifié
+   `.md .action-sortie` (0,2,0).
+2. `--fond-code-bloc` n’était déclaré QUE dans `:root` (sombre). En thème clair
+   il héritait de `#0d0d0d` — un aplat quasi noir sur une page blanche. C’est
+   exactement le piège « un jeton absent d’un thème hérite de l’autre et se
+   trompe sans bruit ».
+3. `--danger-texte` vaut `#f1f1f1` en thème sombre, **identique à `--texte`**
+   (17,21:1). L’erreur n’avait donc aucun signal : elle s’affichait comme une
+   sortie réussie. Le fichier déclare deux blocs `:root` qui se disputent les
+   mêmes jetons ; le second écrase la valeur.
+
+Mesures : sortie réussie `#171717` sur `#f6f6f6` (16,59:1) en clair, `#f1f1f1`
+sur `#0d0d0d` (17,21:1) en sombre. Erreur `#8f1d1d` sur `#f6f6f6` (8,23:1) en
+clair, `#ff756a` sur `#0d0d0d` (7,41:1) en sombre.
+
 ### 4.5 Bordure de focus et mention (`eq`)
 
 | Élément | Règle | Mesure |
