@@ -85,9 +85,8 @@ bloc 1 seulement reste sombre en thème clair, et c'est arrivé (§11, §5).
 
 | Jeton | Sombre | Clair | Zone |
 |---|---|---|---|
-| `--fond-chat` | `#1f1d1d` | `#ffffff` | `.chat-shell`, toute la conversation |
-| `--fond-msgs` | `#211f1f` | `#fafafa` | `.msgs`, le fil défilant |
-| `--fond-row` | `#1f1d1d` | `#f4f4f4` | `.row.bot`, un cran au-dessus |
+| `--fond-chat` | `#1f1d1d` | `#ffffff` | `.chat-shell` **et** toute la zone de conversation : `.chat-tete`, `.msgs`, `.composeur`, `.composeur-carte`, `.hud-plan` |
+| `--fond-row` | `#242222` | `#f4f2f2` | **`.row.bot .bubble` uniquement** — la bulle du modèle, jamais la rangée |
 | `--fond-side` | `#141414` | `#f7f7f7` | `.sidebar` entière |
 | `--fond-side-pied` | `#141414` | `#f2f1f0` | `.side-pied` |
 | `--fond-share` | `#454242` | `#454242` | bouton Partager |
@@ -96,6 +95,15 @@ bloc 1 seulement reste sombre en thème clair, et c'est arrivé (§11, §5).
 
 Ces huit-là sont les seuls à porter une valeur identique dans les deux thèmes :
 le bouton Partager doit rester lisible sur les deux (§11).
+
+**Aucun conteneur ne porte de fond propre.** `.msgs`, `.composeur` et
+`.chat-shell` partagent `--fond-chat` : c'est la règle. Un fond distinct sur un
+conteneur crée une frontière visible là où il n'y a rien à séparer. Le jeton
+`--fond-msgs` a été supprimé : deux valeurs quasi identiques pour un seul bloc.
+
+Les séparations volontaires sont des **filets de 1px** (`--bord`) : en bas de
+l'en-tête et au-dessus du composeur. Une bordure se lit mieux qu'un écart de
+teinte, et elle reste cohérente entre les deux thèmes.
 
 ### 3.3 Accent
 
@@ -233,6 +241,21 @@ Media sans largeur : `prefers-color-scheme: dark` (inerte, §2) et
 `--pos-sidebar-largeur: 300px` — **écart notable** : la largeur réelle de la
 barre latérale est de 280px, la variable en annonce 300.
 
+### 7.1 Cadre de la conversation — deux jetons, pas des mesures
+
+| Jeton | Valeur | Ce qu'il règle |
+|---|---|---|
+| `--colonne` | `780px` | la largeur du **cadre** : `.row.bot`, `.row.user`, `.composeur-carte`, `.composeur-pied`, `.composeur-modele`, `.hud-plan` |
+| `--marge-page` | `24px` | le retrait horizontal **partagé** de `.chat-tete`, `.msgs` et `.composeur` |
+
+Le fichier portait six largeurs concurrentes pour une seule zone — `880px`,
+`900px`, `920px`, `744px`, et `780px` en dur à deux endroits — plus trois paires
+de marges différentes (`24px`, `32px`, `58px`). Le composeur et le fil
+partageaient le même cadre mais ne s'alignaient pas dessus.
+
+Une seule largeur, un seul retrait : c'est la règle. Un nombre écrit en dur dans
+une règle de composant est un défaut, pas une variante.
+
 ---
 
 ## 8. Mouvement
@@ -366,9 +389,20 @@ classes qu'aucun élément ne porte plus.
 
 ## Annexe — décisions en attente
 
-1. Quelle palette pour `.row.bot` : `--fond-row` (`#1f1d1d`) ou aucun fond ?
-2. `--code-fond` s'inverse entre les thèmes : le garder pour quoi ?
-3. Faut-il conserver la media query sombre, ou tout porter dans les blocs 3 et 5 ?
-4. Réduire les 37 tailles de police à une échelle de 6 à 8 ?
-5. Regrouper les 15 rayons littéraux sur les 3 jetons ?
-6. Nettoyer les règles mortes et contradictoires du §11.4 et §11.5 ?
+Aucune de ces décisions n'a été tranchée. Les corrections du 2026-10-07
+(`ei`) ont été limitées aux défauts qui étaient **mesurables**, et ont laissé
+de côté tout ce qui relevait d'un choix.
+
+1. Le bouton **Partager** garde son fond `#454242` dans les deux thèmes, alors
+   que c'est la seule surface identique des deux côtés. En clair il forme une
+   tache sombre sur une page blanche. Non tranché : à consulter.
+2. Le **contour du champ de saisie** (`.composeur-carte:focus-within`,
+   2px `--primaire`) n'a pas été touché. Non tranché : à consulter.
+3. Quelle largeur de **bulle** : `--bubble-max` (576px) est une valeur distincte
+   de `--colonne` (780px). Volontaire — la bulle est plus étroite que le cadre
+   pour que les lignes restent courtes — mais c'est un choix à confirmer.
+4. `--code-fond` s'inverse entre les thèmes : le garder pour quoi ?
+5. Faut-il conserver la media query sombre, ou tout porter dans les blocs 3 et 5 ?
+6. Réduire les 37 tailles de police à une échelle de 6 à 8 ?
+7. Regrouper les 15 rayons littéraux sur les 3 jetons ?
+8. Nettoyer les règles mortes et contradictoires du §11.4 et §11.5 ?

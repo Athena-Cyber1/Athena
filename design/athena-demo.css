@@ -73,6 +73,17 @@
 --rayon-s: 8px;
 --rayon: 12px;
 --rayon-l: 16px;
+/* v20261007 (ei) — LARGEUR ET MARGE DE LA COLONNE DE CONVERSATION.
+   Le fichier portait quatre largeurs concurrentes pour la meme zone : 880px
+   (.row), 900px (media 600px), 920px (media 720px et 480px), 744px
+   (.composeur-carte / .composeur-pied) — et meme 780px pose deux fois en dur
+   sur .row.bot/.row.user. Six nombres pour un seul et meme cadre.
+   Une valeur unique, réutilisable partout. */
+--colonne: 780px;
+/* Marge horizontale de la zone de conversation. .chat-tete, .msgs et
+   .composeur portaient chacun leur propre paire (24px, 32px, 58px) : le fil,
+   son en-tete et son composeur ne partageaient pas le meme bord gauche. */
+--marge-page: 24px;
 /* v20261007 (dh) — ÈCHELLE DE Z-INDEX NOMMÈE. */
 --z-base: 0;          /* saisie, mirror */
 --z-dans: 1;          /* .saisie, au-dessus de son mirror */
@@ -857,7 +868,7 @@ button.dot:focus-visible,
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  max-width: 880px;
+  max-width: var(--colonne);
   margin: calc(14px * var(--dens)) auto;
   width: 100%;
 }
@@ -1132,10 +1143,19 @@ button.dot:focus-visible,
 .md ul,
 .md ol {
   margin: 0.4em 0;
-  padding-left: 1.35em;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25em;
+  /* v20261007 (ei) : la liste redevient un BLOC, plus un conteneur flex.
+     C etait la cause du marqueur rogne : un `ol` en `display:flex` perd sa
+     boite de marqueur, le contenu du `li` deborde a gauche de sa propre boite,
+     et le premier chiffre part sous le `padding-left` du parent. Mesure :
+     `10.` s'affichait `.0.`, `11.` -> `.1.`, `12.` -> `.2.`
+     L espacement passe de `gap` a `margin` sur les `li`, valeur identique
+     (0.25em), pour ne rien changer d'autre. */
+  padding-left: 1.9em;
+  display: block;
+}
+.md ul li,
+.md ol li {
+  margin: 0.25em 0;
 }
 .md blockquote {
   margin: 0.6em 0;
@@ -2182,7 +2202,7 @@ span.think:not(details .think) {
 .composeur-carte {
   min-height: 30px;
   height: 30px;
-  max-width: 880px;
+  max-width: var(--colonne);
   margin: 0 auto;
   display: flex;
   align-items: center;
@@ -3500,7 +3520,7 @@ details.raisonnement summary {
 }
 
 .composeur-carte {
-  max-width: 920px;
+  max-width: var(--colonne);
   align-items: flex-end;
   gap: 8px;
   min-height: 64px;
@@ -3933,7 +3953,7 @@ details.raisonnement summary {
 }
 
 .row {
-  max-width: 920px;
+  max-width: var(--colonne);
 }
 
 .md {
@@ -3980,7 +4000,7 @@ details.raisonnement li.doute {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  max-width: 920px;
+  max-width: var(--colonne);
   margin: 8px auto 0;
   padding: 0 4px;
   color: #8f8f8f;
@@ -4288,12 +4308,12 @@ details.trace-cmd.echec .trace-cmd-status {
 
 .row.bot,
 .row.user {
-  width: min(780px, calc(100% - 48px));
-  max-width: 780px;
+  width: min(var(--colonne), calc(100% - 48px));
+  max-width: var(--colonne);
 }
 
 .row.bot {
-  margin-left: max(24px, calc((100% - 780px) / 2 + 64px));
+  margin-left: max(var(--marge-page), calc((100% - var(--colonne)) / 2 + 64px));
   margin-right: auto;
 }
 
@@ -4321,8 +4341,8 @@ details.trace-cmd.echec .trace-cmd-status {
 
 .composeur-carte {
   box-sizing: border-box;
-  width: min(900px, 100%);
-  max-width: 900px;
+  width: min(var(--colonne), 100%);
+  max-width: var(--colonne);
   min-height: 30px;
   height: 44px;
   max-height: 64px;
@@ -4363,7 +4383,7 @@ details.trace-cmd.echec .trace-cmd-status {
 }
 
 .composeur-pied {
-  max-width: 900px;
+  max-width: var(--colonne);
 }
 
 @media (max-width: 940px) {
@@ -4373,7 +4393,7 @@ details.trace-cmd.echec .trace-cmd-status {
 
   .row.bot,
   .row.user {
-    width: min(780px, calc(100% - 28px));
+    width: min(var(--colonne), calc(100% - 28px));
   }
 
   .row.bot {
@@ -4950,10 +4970,10 @@ header.chat-tete {
     max-width: min(576px, 100%);
   }
   .composeur-carte {
-    max-width: 744px;
+    max-width: var(--colonne);
   }
   .composeur-pied {
-    max-width: 744px;
+    max-width: var(--colonne);
     box-sizing: border-box;
   }
   /* v20260926i : .chat-tete transparent (des règles plus spécifiques
@@ -5511,8 +5531,15 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
      .chat-shell. Deux valeurs quasi identiques pour un seul bloc : c were
      exactement la source des frontières visibles. */
 }
+/* v20261007 (ei) : le fond revient sur la BULLE. Il etait pose sur `.row.bot`,
+   la rangee entiere : un bloc gris de pleine largeur autour de chaque reponse du
+   modele, alors que la bulle elle-meme restait transparente. Le fond n'a de sens
+   que sur l'element qui contient le texte - la bulle, dont la largeur est
+   contrainte. */
 .row.bot {
-  /* `--fond-row` reste pour les SEULES bulles du bot, à distinctions de vue. */
+  background: transparent;
+}
+.row.bot .bubble {
   background: var(--fond-row);
 }
 /* Les deux séparations VOLONTAIRES de la zone, en filet de 1px. */
@@ -5556,12 +5583,18 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 .hud-plan {
   background: var(--fond-chat);
   border-color: var(--bord);
-  border-left: 3px solid var(--primaire);
+  /* v20261007 (ei) : la bordure gauche de 3px est SUPPRIMEE. Elle etait le
+     caractere parasite a gauche de la pilule : un trait de 3px, deux fois et
+     demie plus epais que les trois autres cotes (mesure : bordG 3px contre
+     1px partout ailleurs). La forme n'etait pas symetrique, et dans un theme
+     ou `--primaire` s'assombrit, ce trait se lisait comme une accidental.
+     Les quatre cotes font maintenant 1px : meme jeton, meme couleur. */
+  border-left-width: 1px;
 }
-/* `--fond-row` reste pour les SEULES bulles du bot, quand il faut les
-   distinguer du fil. Jamais pour un conteneur. */
+/* v20261007 (ei) : deuxieme declaration identique de `.row.bot`, traitee comme
+   la premiere : le fond va sur la bulle, pas sur la rangee. */
 .row.bot {
-  background: var(--fond-row);
+  background: transparent;
 }
 .side-pied {
   background: var(--fond-side-pied);
@@ -6247,7 +6280,8 @@ html[data-theme="light"] .interpreteur-code {
   padding: 4px 10px 5px;
   background: var(--carte);
   border: 1px solid var(--bord);
-  border-left: 3px solid var(--primaire);
+  /* v20261007 (ei) : voir la regle terminale - les quatre cotes sont a 1px. */
+  border-left-width: 1px;
   border-radius: var(--rayon);
   box-shadow: var(--ombre);
 /* v20261007 (dw) : largeur FIXE 450px et CENTRÈ. Le plan était calé à gauche (768px + marge), ce qui le décentrait par rapport au fil de discussion et le faisait lire comme un encart. Centré, il redevient un bandeau de contexte. */
@@ -6430,4 +6464,42 @@ html[data-theme="light"] .composeur-carte {
 .composeur,
 .composeur-carte {
   border-top: 1px solid var(--bord);
+}
+/* ============================================================================
+   v20261007 (ei) — 
+COLONNE UNIQUE ET MARGE PARTAGÉE
+   ============================================================================
+   Règle terminale, pour la même raison que le bloc précédent : ce fichier
+   redéclare `.row`, `.composeur-carte` et `.composeur-pied` à des milliers de
+   lignes d'écart, avec des largeurs différentes. Ces règles ci-dessous
+   remplacent les mesures, elles ne les commentent pas.
+
+   --colonne : UNE largeur pour le composeur, les bulles et le titre.
+   --marge-page : UN retrait horizontal pour l'en-tête, le fil et le composeur,
+   de sorte que les trois partagent le même bord gauche. */
+.row.bot,
+.row.user {
+  width: min(var(--colonne), 100%);
+  max-width: var(--colonne);
+}
+.composeur-carte,
+.composeur-pied,
+.composeur-modele {
+  width: min(var(--colonne), 100%);
+  max-width: var(--colonne);
+  box-sizing: border-box;
+}
+.hud-plan {
+  max-width: var(--colonne);
+}
+.chat-tete,
+.msgs,
+.composeur {
+  padding-left: var(--marge-page);
+  padding-right: var(--marge-page);
+}
+/* Le retrait ne doit jamais rogner le marqueur de liste : le fil garde sa
+   marge, la zone de defilement reste elargie d'autant. */
+.msgs {
+  padding-inline: var(--marge-page);
 }
