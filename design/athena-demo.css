@@ -1,5 +1,4 @@
 /* ========================================================================== Athéna — design MONOCHROME (demande explicite de l'utilisateur) : */
-
 :root {
   --primaire: #111111;
   --primaire-fort: #000000;
@@ -48,7 +47,6 @@
      fichier, le plan, un bloc d'exécution. Ces blocs sont de l'OUTIL, pas de
      la prose du modèle — les peindre comme elle revenait à mettre sur le même
      plan une réponse et une sortie de `dir`.
-
      Ils gardent donc la couleur du texte courant, et leur fond reste le leur. */
   --texte-outil: #b0b0b0;
   /* v20261007 (ea) : texte du plan en blanc, par jeton. Il était figé en dur,
@@ -121,7 +119,6 @@
   --pos-sidebar-ouverte: translateX(0);
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
 }
-
 /* ————— Base ————— */
 html,
 body {
@@ -133,16 +130,13 @@ body {
      voiles) — avant : Times New Roman par défaut du navigateur. */
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
 }
-
 /* v20260926h : Inter auto-hébergée — les @font-face sont dans le <head>
    (docs/index.html + src/app/page.tsx) car le bundler Next ne résout pas
    les url() relatives du CSS partagé. Inter = plus proche équivalent libre
    de Styrene, la police de Claude (commerciale, non embarquable). */
-
 [hidden] {
   display: none !important;
 }
-
 .page-demo {
   height: 100dvh; /* shell borné SANS pied de page (demande utilisateur) :
                      le fil de discussion scrolle en interne */
@@ -155,7 +149,6 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-
 html.reduce-animation *,
 html.reduce-animation *::before,
 html.reduce-animation *::after {
@@ -163,18 +156,15 @@ html.reduce-animation *::after {
   transition: none !important;
   scroll-behavior: auto !important;
 }
-
 :root {
   --dens: 1;
 }
 html.compact-density {
   --dens: 0.72;
 }
-
 button {
   font-family: inherit;
 }
-
 /* Jeu d'icônes SVG inline (stroke hérite de currentColor). */
 .ico {
   width: 16px;
@@ -188,12 +178,10 @@ button {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-
 :focus-visible {
   outline: 2px solid var(--primaire);
   outline-offset: 2px;
 }
-
 /* Le ROUGE est réservé aux liens (demande explicite de l'utilisateur). */
 a {
   color: var(--lien);
@@ -201,7 +189,6 @@ a {
 a:hover {
   color: color-mix(in srgb, var(--lien) 78%, var(--texte));
 }
-
 /* ————— Structure ————— */
 #app {
   flex: 1 1 auto;
@@ -211,7 +198,6 @@ a:hover {
   margin: 0 auto;
   display: flex;
 }
-
 .sidebar {
   flex: 0 0 var(--pos-sidebar-largeur);
   width: var(--pos-sidebar-largeur);
@@ -227,7 +213,6 @@ a:hover {
   opacity: 0;
   pointer-events: none;
 }
-
 .chat-shell {
   flex: 1 1 auto;
   min-width: 0;
@@ -236,7 +221,6 @@ a:hover {
   flex-direction: column;
   position: relative;
 }
-
 /* ————— Barre latérale ————— */
 .side-corps {
   flex: 1 1 auto;
@@ -247,7 +231,6 @@ a:hover {
   padding: 14px 12px 2px;
   overflow: hidden;
 }
-
 /* Bloc « Conversations » : titre de section + recherche + liste (flex:1). */
 .side-bloc {
   flex: 1 1 auto;
@@ -267,7 +250,6 @@ a:hover {
   color: var(--texte-doux);
   padding: 0 4px;
 }
-
 .btn-nouvelle {
   display: flex;
   align-items: center;
@@ -294,7 +276,6 @@ a:hover {
 .btn-nouvelle:active {
   transform: scale(0.985);
 }
-
 .side-recherche {
   display: flex;
   gap: 6px;
@@ -364,7 +345,6 @@ a:hover {
   color: var(--primaire);
   border-color: var(--primaire);
 }
-
 .liste-conversations {
   flex: 1 1 auto;
   min-height: 70px;
@@ -390,7 +370,6 @@ a:hover {
   outline-offset: -4px;
   background: var(--primaire-doux);
 }
-
 .aucun-resultat {
   font-size: 0.8rem;
   color: var(--texte-doux);
@@ -398,7 +377,6 @@ a:hover {
   padding: 6px 4px;
   margin: 0;
 }
-
 .convo-ligne,
 .projet-ligne {
   display: flex;
@@ -626,7 +604,6 @@ a:hover {
   color: var(--texte);
   margin: 2px 4px;
 }
-
 .side-section {
   flex: 0 0 auto;
   max-height: 30%;
@@ -681,7 +658,6 @@ a:hover {
   margin: 2px 4px 4px;
   font-style: italic;
 }
-
 .side-pied {
   border-top: 1px solid var(--bord);
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
@@ -689,7 +665,6 @@ a:hover {
   flex-direction: column;
   gap: 10px;
 }
-
 /* v20260926n (audit) : tuiles .side-actions/.side-onglet supprimées du DOM
    avec leurs boutons — règles purgées. */
 .compte-wrap {
@@ -776,7 +751,6 @@ a:hover {
 .menu-compte button:hover {
   background: var(--gris-fond);
 }
-
 /* ————— En-tête de discussion ————— */
 .chat-tete {
   display: flex;
@@ -861,7 +835,6 @@ button.dot:focus-visible,
   outline: 2px solid var(--primaire);
   outline-offset: 3px;
 }
-
 /* ————— Fil de discussion ————— */
 .msgs {
   flex: 1 1 auto;
@@ -880,7 +853,6 @@ button.dot:focus-visible,
   border-radius: var(--rayon-s);
   border: 2px solid var(--fond);
 }
-
 .row {
   display: flex;
   align-items: flex-end;
@@ -895,7 +867,6 @@ button.dot:focus-visible,
 .row.bot {
   justify-content: flex-start;
 }
-
 .bubble {
   box-sizing: border-box;
   max-width: min(576px, 100%);
@@ -921,7 +892,6 @@ button.dot:focus-visible,
 .row.bot .bubble {
   border-bottom-left-radius: 4px;
 }
-
 .copier {
   flex: 0 0 auto;
   width: 30px;
@@ -949,7 +919,6 @@ button.dot:focus-visible,
   width: 15px;
   height: 15px;
 }
-
 .fichier-joint {
   display: flex;
   flex-direction: column;
@@ -1125,7 +1094,6 @@ button.dot:focus-visible,
   background: color-mix(in srgb, var(--sur-primaire) 16%, transparent);
   color: var(--sur-primaire);
 }
-
 /* Rendu Markdown (.md) */
 .md > :first-child {
   margin-top: 0;
@@ -1310,7 +1278,6 @@ details.raisonnement pre {
 .code-copier.copie-ok {
   background: rgba(255, 255, 255, 0.3);
 }
-
 /* Bloc ```athena-exec — commande locale via agent :3020.
    v-next : violet/vert/rouge codés en dur retirés — cette zone était la
    seule à sortir du système de tokens (voir ARCHITECTURE.md, revue design).
@@ -1386,7 +1353,6 @@ details.raisonnement pre {
   color: #f2f2f2;
   background: rgba(255, 255, 255, 0.09);
 }
-
 /* ————— Trace de commande — compte-rendu repliable d'une commande exécutée
    (commande + code de sortie + durée + stdout/stderr), même langage visuel
    que details.raisonnement : replié par défaut, forme distincte pour
@@ -1471,7 +1437,6 @@ details.trace-cmd pre.trace-cmd-err {
   background: rgba(255, 255, 255, 0.09);
   color: #f2f2f2;
 }
-
 /* ————— Marqueur de statut inline (remplace ✄/⚠️ générés par le modèle) —
    « Zéro émoji » vaut aussi pour le texte que le modèle produit lui-même :
    on substitue les deux glyphes les plus fréquents par l'icône SVG du
@@ -1493,7 +1458,6 @@ details.trace-cmd pre.trace-cmd-err {
 .statut-ligne.doute .ico {
   color: var(--texte-doux);
 }
-
 /* ————— Panneau de raisonnement (type « réflexion » des IA classiques) ————
    En direct : déplié, spinner + dernière étape, frise des étapes.
    À la réponse : replié, « Raisonnement · N étapes · Xs » (clic = détail). */
@@ -1584,7 +1548,6 @@ details.raisonnement.vivant .think::before {
 span.think:not(details .think) {
   font-size: 0.8rem;
 }
-
 /* Ècran d'accueil (.examples) */
 .examples {
   max-width: 620px;
@@ -1626,7 +1589,6 @@ span.think:not(details .think) {
   justify-content: center;
   gap: 8px;
 }
-
 /* Vue plein écran (Projets / Paramètres / Compte / Aide) */
 .workspace-view {
   max-width: 880px;
@@ -1644,7 +1606,6 @@ span.think:not(details .think) {
   color: var(--texte-doux);
   font-size: 0.92rem;
 }
-
 /* ---------- v20261007 (dy) — HUD DES PARAMÇTRES ---------- Les paramètres étaient une VUE : ils remplaçaient le fil (msgsEl.replaceChildren). */
 .hud-voile {
   position: absolute;
@@ -1768,7 +1729,6 @@ span.think:not(details .think) {
 .journal-table tbody tr:last-child td {
   border-bottom: none;
 }
-
 /* Projets (vue) */
 .projets-liste {
   display: flex;
@@ -1839,7 +1799,6 @@ span.think:not(details .think) {
   color: var(--texte-doux);
   padding: 12px 2px 2px;
 }
-
 /* Paramètres (vue) */
 .settings-head h2 {
   margin: 6px 0 4px;
@@ -1917,7 +1876,6 @@ span.think:not(details .think) {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
 .setting-row {
   display: flex;
   align-items: center;
@@ -1973,7 +1931,6 @@ span.think:not(details .think) {
 .setting-row input[type="checkbox"]:checked::after {
   left: 21px;
 }
-
 .shortcut-list {
   display: flex;
   flex-direction: column;
@@ -2001,7 +1958,6 @@ span.think:not(details .think) {
   color: var(--texte);
   white-space: nowrap;
 }
-
 /* Entraînement (onglet) */
 .ex-carte {
   border: 1px solid var(--bord);
@@ -2099,7 +2055,6 @@ span.think:not(details .think) {
 #entrainement-exemples {
   margin-top: 10px;
 }
-
 /* ————— Pièces jointes ————— */
 .file-preview {
   max-width: 880px;
@@ -2185,7 +2140,6 @@ span.think:not(details .think) {
    le contenu ne sera pas lu par le modèle. Le confondre avec « indexé »
    revenait à annoncer du vide comme du plein. Le liseré `--ambre-bord` le
    distingue du badge d'état sans introduire de couleur concurrente. */
-
 .file-chip-remove {
   border: none;
   background: transparent;
@@ -2207,7 +2161,6 @@ span.think:not(details .think) {
   width: 13px;
   height: 13px;
 }
-
 /* ————— Composeur ————— */
 .composeur {
   padding: 6px 18px calc(12px + env(safe-area-inset-bottom));
@@ -2226,10 +2179,6 @@ span.think:not(details .think) {
   padding: 2px 8px;
   position: relative;
   transition: border-color 0.15s, box-shadow 0.15s;
-}
-.composeur-carte:focus-within {
-  border-color: var(--primaire);
-  box-shadow: 0 0 0 1px var(--primaire);
 }
 .saisie {
   flex: 1 1 auto;
@@ -2307,32 +2256,26 @@ span.think:not(details .think) {
   place-items: center;
   transition: background-color 0.15s, transform 0.1s, opacity 0.15s;
 }
-
 /* Background gris clair au survol uniquement */
 .btn-envoyer:hover:not(:disabled) {
   background: #545353;       /* Gris clair (utilisez rgba(255, 255, 255, 0.1) si vous êtes en thème sombre) */
 }
-
 .btn-envoyer:active:not(:disabled) {
   transform: scale(0.94);
 }
-
 .btn-envoyer:disabled {
   opacity: 1.0;
   cursor: not-allowed;
 }
-
 .btn-envoyer .ico {
   width: 17px;
   height: 17px;
 }
-
 .btn-envoyer.en-cours {
   background: var(--texte);
   color: var(--fond);
   animation: pulse 1.8s ease-in-out infinite;
 }
-
 /* ————— Pastille « nouvelle réponse » ————— */
 .pastille-reponse {
   position: absolute;
@@ -2384,7 +2327,6 @@ span.think:not(details .think) {
   font-weight: 700;
   padding: 0 5px;
 }
-
 /* ————— Toast ————— */
 .toast-notice {
   position: absolute;
@@ -2427,7 +2369,6 @@ span.think:not(details .think) {
 .toast-action:hover {
   border-color: var(--primaire);
 }
-
 /* ————— Modale ————— */
 .voile-modale {
   position: fixed;
@@ -2560,7 +2501,6 @@ span.think:not(details .think) {
 .bandeau-persistant button:hover {
   border-color: var(--danger-texte);
 }
-
 /* ————— Animations ————— */
 @keyframes apparait {
   from {
@@ -2604,7 +2544,6 @@ span.think:not(details .think) {
     opacity: 0.55;
   }
 }
-
 /* ————— Responsive ————— */
 @media (max-width: 940px) {
   .sidebar {
@@ -2664,7 +2603,6 @@ span.think:not(details .think) {
     bottom: 96px;
   }
 }
-
 /* Très petits écrans */
 @media (max-width: 480px) {
   .examples {
@@ -2681,7 +2619,6 @@ span.think:not(details .think) {
     justify-content: flex-end;
   }
 }
-
 /* Impression : le fil seul */
 @media print {
   .sidebar,
@@ -2700,7 +2637,6 @@ span.think:not(details .think) {
     overflow: visible;
   }
 }
-
 /* ————— v10.9.4 — HUD sélecteur de modèle (badge header + panneau overlay) —————
    Sobre, monochrome, cohérent avec la coquille : mêmes tokens, mêmes rayons.
    Le ROUGE reste réservé aux liens ; l'état up/down = point plein (--ok) /
@@ -2709,7 +2645,6 @@ span.think:not(details .think) {
   position: relative;
   flex: 0 0 auto;
 }
-
 .btn-modele {
   display: inline-flex;
   align-items: center;
@@ -2730,13 +2665,11 @@ span.think:not(details .think) {
   max-width: 180px;
   transition: color 0.15s, background 0.15s, transform 0.1s;
 }
-
 .btn-modele:hover {
   border-color: transparent;
   background: color-mix(in srgb, var(--texte) 8%, transparent);
   color: var(--texte);
 }
-
 .modele-actif-nom {
   font-family: var(--mono);
   font-size: 0.72rem;
@@ -2744,7 +2677,6 @@ span.think:not(details .think) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .modele-ico {
   color: var(--texte-doux);
   display: grid;
@@ -2758,7 +2690,6 @@ span.think:not(details .think) {
 .btn-modele[aria-expanded="true"] .modele-ico {
   transform: rotate(180deg);
 }
-
 .hud-modeles {
   /* v20260926c (affichage) : les boutons sont dans le composeur (bas d'écran)
      ⅒ le panneau s'ouvre VERS LE HAUT, sinon il dépassait sous le viewport. */
@@ -2777,7 +2708,6 @@ span.think:not(details .think) {
   padding: 6px;
   z-index: var(--z-hud);
 }
-
 .hud-section-titre {
   font-size: 0.66rem;
   letter-spacing: 0.09em;
@@ -2785,7 +2715,6 @@ span.think:not(details .think) {
   color: var(--texte-doux);
   padding: 8px 10px 4px;
 }
-
 .hud-item {
   display: flex;
   align-items: center;
@@ -2813,7 +2742,6 @@ span.think:not(details .think) {
   cursor: not-allowed;
   opacity: 0.45;
 }
-
 .hud-point {
   flex: 0 0 auto;
   width: 8px;
@@ -2824,7 +2752,6 @@ span.think:not(details .think) {
 .hud-item.down .hud-point {
   background: var(--gris-bord);
 }
-
 .hud-item-infos {
   flex: 1 1 auto;
   min-width: 0;
@@ -2846,7 +2773,6 @@ span.think:not(details .think) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .hud-badge {
   flex: 0 0 auto;
   font-size: 0.6rem;
@@ -2862,13 +2788,11 @@ span.think:not(details .think) {
   border-color: var(--primaire);
   color: var(--sur-primaire);
 }
-
 .hud-vide {
   padding: 8px 10px;
   font-size: 0.74rem;
   color: var(--texte-doux);
 }
-
 .hud-actions {
   display: flex;
   align-items: center;
@@ -2905,7 +2829,6 @@ span.think:not(details .think) {
   opacity: 0.5;
   cursor: wait;
 }
-
 /* ————— HUD navigateur (v1.5) : DOCKÈ À DROITE, coquille du rendu ————— Même mécanique que .interpreteur (L.~5034) : position fixed à droite, largeur --hud-largeur réservée en padding par .page-demo.hud-ouvert (la conversation se rétracte, jamais recouverte),… */
 .navigateur-hud {
   position: fixed;
@@ -3193,7 +3116,6 @@ span.think:not(details .think) {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
-
 @media (max-width: 720px) {
   .btn-modele {
     max-width: 110px;
@@ -3212,7 +3134,6 @@ span.think:not(details .think) {
     bottom: 150px;
   }
 }
-
 :root {
   color-scheme: dark;
   --primaire: #f1f1f1;
@@ -3250,27 +3171,22 @@ span.think:not(details .think) {
   --ombre: 0 8px 24px rgba(0, 0, 0, 0.28);
   --rayon: 12px;
 }
-
 #app {
   max-width: none;
 }
-
 .sidebar {
   flex-basis: var(--pos-sidebar-largeur);
   width: var(--pos-sidebar-largeur);
   background: var(--sidebar);
   border-right-color: var(--bord-fort);
 }
-
 #app.sidebar-fermee .sidebar {
   margin-left: calc(-1 * (var(--pos-sidebar-largeur) + 1px));
 }
-
 .side-corps {
   gap: 12px;
   padding: 16px 14px 4px;
 }
-
 .side-brand {
   display: flex;
   align-items: center;
@@ -3282,7 +3198,6 @@ span.think:not(details .think) {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-
 .brand-mark {
   display: grid;
   place-items: center;
@@ -3290,14 +3205,12 @@ span.think:not(details .think) {
   height: 24px;
   color: #f1f1f1;
 }
-
 .brand-mark svg {
   width: 23px;
   height: 23px;
   fill: currentColor;
   stroke: none;
 }
-
 .btn-nouvelle {
   justify-content: flex-start;
   min-height: 38px;
@@ -3308,12 +3221,10 @@ span.think:not(details .think) {
   font-size: 0.86rem;
   font-weight: 500;
 }
-
 .btn-nouvelle:hover {
   border-color: transparent;
   background: #3a3a3a;
 }
-
 .side-bloc-titre {
   padding: 0 8px 3px;
   color: #a7a7a7;
@@ -3322,11 +3233,9 @@ span.think:not(details .think) {
   letter-spacing: 0;
   text-transform: none;
 }
-
 .side-recherche {
   gap: 4px;
 }
-
 .recherche {
   min-height: 34px;
   border-color: var(--bord-fort);
@@ -3334,73 +3243,59 @@ span.think:not(details .think) {
   background-color: #262626;
   font-size: 0.82rem;
 }
-
 .plier {
   border-color: transparent;
 }
-
 .liste-conversations {
   gap: 3px;
   padding: 2px 0;
 }
-
 .side-item {
   min-height: 52px;
   padding: 9px 10px;
   border-radius: 10px;
   font-size: 0.86rem;
 }
-
 .side-item:hover,
 .side-item.active {
   background: #414141;
 }
-
 .side-item-l1 .ico {
   color: #bdbdbd;
 }
-
 .convo-extrait {
   color: #9e9e9e;
   font-size: 0.7rem;
 }
-
 .side-pied {
   border-top-color: var(--bord-fort);
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
 }
-
 /* v20260926n (audit) : règles des tuiles supprimées (voir plus haut). */
-
 .compte-bouton {
   min-height: 42px;
   border-color: transparent;
   background: transparent;
   padding: 5px 7px;
 }
-
 .compte-bouton:hover {
   border-color: transparent;
   background: #3a3a3a;
 }
-
 .avatar {
   background: #ededed;
   color: #202020;
 }
-
 .chat-tete {
   min-height: 68px;
   padding: 12px 24px;
   /* v20261007 (dx) : cette règle remettait un fond opaque et une bordure basse, plus bas dans le fichier que la règle qui les avait supprimées — donc prioritaire, et annulant purement et simplement la demande. Deux règles qui se contredisent sur le même sélecte… */
   border-bottom: none;
 }
-
 .chat-marque {
   min-width: 0;
   flex: 1 1 auto;
 }
-
 .chat-marque h1 {
   overflow: hidden;
   color: #e8e8e8;
@@ -3409,29 +3304,24 @@ span.think:not(details .think) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .bascule {
   border-color: transparent;
   background: transparent;
   color: #b8b8b8;
 }
-
 .bascule:hover {
   border-color: transparent;
   background: #3a3a3a;
   color: #f1f1f1;
 }
-
 .etat-moteur {
   margin-left: 0;
   color: #a7a7a7;
   font-size: 0.75rem;
 }
-
 .hud-modele-wrap {
   margin-left: 8px;
 }
-
 .btn-modele {
   min-height: 34px;
   padding: 0 12px;
@@ -3440,7 +3330,6 @@ span.think:not(details .think) {
   background: #3a3a3a;
   color: #ededed;
 }
-
 .btn-partager {
   display: inline-flex;
   align-items: center;
@@ -3457,26 +3346,21 @@ span.think:not(details .think) {
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-
 .btn-partager:hover {
   border-color: var(--fond-share-survol);
   background: var(--fond-share-survol);
 }
-
 .btn-partager .ico {
   width: 15px;
   height: 15px;
 }
-
 .msgs {
   padding: 34px 28px 18px;
 }
-
 .row {
   max-width: 1000px;
   margin: 22px auto;
 }
-
 .row.bot .bubble {
   max-width: min(92%, 576px);
   padding: 0 4px;
@@ -3485,7 +3369,6 @@ span.think:not(details .think) {
   background: transparent;
   box-shadow: none;
 }
-
 .row.user .bubble {
   max-width: min(78%, 576px);
   padding: 12px 17px;
@@ -3495,39 +3378,32 @@ span.think:not(details .think) {
   color: #202020;
   box-shadow: none;
 }
-
 .row.bot .copier {
   border-color: transparent;
   background: transparent;
   color: #8e8e8e;
 }
-
 .row.user .copier {
   border-color: transparent;
   background: transparent;
   color: #5e5e5e;
 }
-
 .md {
   font-size: 0.96rem;
   line-height: 1.55;
 }
-
 details.raisonnement {
   margin: 0 0 20px;
   border-color: transparent;
   border-radius: 0;
 }
-
 details.raisonnement summary {
   min-height: 42px;
   padding: 10px 13px;
 }
-
 .composeur {
   padding: 10px 58px;
 }
-
 .composeur-carte {
   max-width: var(--colonne);
   align-items: flex-end;
@@ -3541,12 +3417,6 @@ details.raisonnement summary {
   background: var(--carte);
   box-shadow: var(--ombre);
 }
-
-.composeur-carte:focus-within {
-  border-color: var(--primaire);
-  box-shadow: 0 0 0 1px var(--primaire);
-}
-
 .saisie {
   min-height: 46px;
   max-height: 170px;
@@ -3556,7 +3426,6 @@ details.raisonnement summary {
   line-height: 1.45;
   font-size: 0.94rem;
 }
-
 .btn-attacher {
   width: 24px;
   height: 24px;
@@ -3564,13 +3433,11 @@ details.raisonnement summary {
   background: transparent;
   color: #bdbdbd;
 }
-
 .btn-attacher:hover {
   border-color: transparent;
   background: #3d3d3d;
   color: #f1f1f1;
 }
-
 .btn-envoyer {
   width: 24px;
   height: 24px;
@@ -3578,18 +3445,15 @@ details.raisonnement summary {
   background: #ededed;
   color: #202020;
 }
-
 .btn-envoyer:hover:not(:disabled) {
   background: #ffffff;
 }
-
 .compteur-saisie {
   top: -27px;
   right: 12px;
   border-color: var(--bord-fort);
   background: #2b2b2b;
 }
-
 /* v1.2 (allègement) : plus de carte encadrée sombre autour des commandes —
    le groupe est une simple règle typographique. Le contraste vient du
    contenu (la trace), pas d'un cadre épais qui vole la lecture. */
@@ -3600,7 +3464,6 @@ details.raisonnement summary {
   border-top: 1px solid var(--bord);
   border-radius: 0;
 }
-
 .activity-group > summary {
   display: flex;
   align-items: center;
@@ -3612,41 +3475,34 @@ details.raisonnement summary {
   list-style: none;
   user-select: none;
 }
-
 .activity-group > summary::-webkit-details-marker {
   display: none;
 }
-
 .activity-group > summary .ico {
   width: 13px;
   height: 13px;
   color: inherit;
   opacity: 0.7;
 }
-
 .activity-label {
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
-
 .activity-count {
   color: inherit;
   opacity: 0.7;
   font-size: 0.72rem;
   font-weight: 400;
 }
-
 .activity-group > summary .chev {
   margin-left: auto;
 }
-
 .activity-group > summary .chev .ico {
   width: 12px;
   height: 12px;
   opacity: 0.5;
 }
-
 .activity-body {
   display: flex;
   flex-direction: column;
@@ -3654,101 +3510,81 @@ details.raisonnement summary {
   padding: 0 0 4px;
   border-top: 0;
 }
-
 .activity-group .trace-cmd {
   margin: 4px 0 0;
   border-color: var(--bord);
   background: transparent;
   color: var(--texte);
 }
-
 .activity-group .trace-cmd summary {
   color: var(--texte-doux);
   min-height: 28px;
   padding: 6px 2px;
 }
-
 .activity-group .trace-cmd summary .ico,
 .activity-group .trace-cmd summary .chev,
 .activity-group .trace-cmd summary .trace-cmd-meta {
   color: var(--texte-doux);
 }
-
 .activity-group .trace-cmd summary .trace-cmd-label {
   color: var(--texte);
 }
-
 .activity-group .trace-cmd .trace-cmd-corps {
   border-top-color: var(--bord);
   padding: 0 2px 8px;
 }
-
 .activity-group .trace-cmd pre {
   background: var(--carte-doux);
   color: var(--texte);
 }
-
 .activity-group .trace-cmd pre.trace-cmd-err {
   background: var(--gris-fond);
   color: var(--texte);
 }
-
 @media (max-width: 940px) {
   .sidebar {
     width: min(var(--pos-sidebar-largeur), 88vw);
   }
-
   .chat-tete {
     padding: 10px 14px;
   }
-
   .msgs {
     padding: 24px 14px 12px;
   }
-
   .composeur {
     padding: 8px 12px 14px;
   }
-
   .btn-partager span {
     display: none;
   }
-
   .btn-nav .hnav-lbl {
     display: none;
   }
-
   .btn-partager {
     width: 34px;
     padding: 0;
     justify-content: center;
   }
 }
-
 @media (max-width: 480px) {
   .chat-marque h1 {
     max-width: 42vw;
   }
-
   .etat-moteur {
     display: none;
   }
-
   .row {
     margin-top: 18px;
     margin-bottom: 18px;
   }
-
   .row.user .bubble {
     max-width: 90%;
   }
-
   .composeur-carte {
     min-height: 58px;
     border-radius: 20px;
   }
 }
-
 :root {
   /* ============================================================================
    IDENTITÉ — UN SEUL ACCENT, LE ROUGE
@@ -3757,27 +3593,20 @@ details.raisonnement summary {
    annonçait « ROUGE réservé aux liens » pendant que le bleu `#76a9ff`, déclaré
    plus bas, l'emportait. L'identité n'était pas une question de contraste :
    c'est la couleur d'accent elle-même qui n'était pas décidée.
-
    DÉCISION : l'accent est le ROUGE, et il n'y en a qu'un. Le bleu, l'orange et
    le rouge-orangé du code ne sont plus des accidents de réglage : ils sont
    supprimés ou ramenés dans la famille rouge.
-
    La couleur ne peut pas être IDENTIQUE dans les deux thèmes — mesuré :
-
      #ff756a sur #1f1d1d → 6,39:1   sur #ffffff → 2,62:1
      #c81e1e sur #ffffff → 5,74:1   sur #1f1d1d → 2,92:1
-
    Aucune valeur ne tient 4,5:1 des deux côtés. Garder `#ff756a` partout, comme
    envisagé, laisserait les liens à 2,62:1 en thème clair : illisible, et
    l'en-tête aurait menti sur l'accessibilité autant que sur la couleur.
    On garde donc UNE identité de teinte — le rouge — avec deux valeurs :
-
      --lien-sombre  #ff756a   6,39:1 sur la conversation, 7,02:1 sur la barre
      --lien-clair   #c81e1e   5,74:1 sur le blanc,        5,36:1 sur la barre claire
-
    C'est la seule solution qui tienne les deux contraintes à la fois : une
    seule famille de couleur, et un contraste vérifié dans chaque thème. */
-
   --lien-sombre: #ff756a;
   --lien-clair: #c81e1e;
   /* `--lien` est le jeton CONSOMMÉ par les règles ; il pointe sur la valeur du
@@ -3787,13 +3616,11 @@ details.raisonnement summary {
      Le fichier annonce « monochrome » en tête ; il code pourtant deux jeux de
      couleurs en dur — huit valeurs, vert, bleu, orange, brun — qui
      contredisent cette annonce. C'était le mensonge le plus visible du CSS.
-
      DÉCISION : gris + UN SEUL accent, celui du fichier. Une coloration
      entièrement grise se lit (c'est ce que font plusieurs thèmes known), mais
      ici le corail sert déjà à marquer le texte de code (`--texte-code-bloc`) :
      le garder comme accent unique rend le code lisible ET cohérent avec le
      reste, sans introduire de nouvelle couleur.
-
      Ces quatre jetons sont donc l'exception documentée : du gris, plus
      l'accent. Toute couleur supplémentaire doit passer par un jeton nommé,
      jamais par un littéral. */
@@ -3806,7 +3633,6 @@ details.raisonnement summary {
   --code-mot-clair: #171717;
   --code-nombre-clair: var(--lien-clair);
   --lien: var(--lien-sombre);
-
   /* La marque n'est PAS une deuxième couleur : c'est l'accent lui-même. Un
      orange à côté d'un rouge fait deux couleurs, et le choix de l'un plutôt
      que l'autre devient arbitraire. */
@@ -3818,7 +3644,6 @@ details.raisonnement summary {
   --ok: #f1f1f1;
   --ambre-texte: #e1b45c;
 }
-
 .side-brand {
   color: #f0e9e2;
   font-family: Georgia, "Times New Roman", serif;
@@ -3826,11 +3651,9 @@ details.raisonnement summary {
   font-weight: 600;
   letter-spacing: -0.035em;
 }
-
 .brand-mark {
   color: var(--marque);
 }
-
 .btn-nouvelle > .ico {
   width: 11px;
   height: 11px;
@@ -3839,14 +3662,12 @@ details.raisonnement summary {
   border-radius: 50%;
   background: #3a3a3a;
 }
-
 .side-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin: 1px 0 5px;
 }
-
 .side-nav-item {
   display: flex;
   align-items: center;
@@ -3864,18 +3685,15 @@ details.raisonnement summary {
   cursor: pointer;
   transition: background 0.14s, color 0.14s;
 }
-
 .side-nav-item:hover {
   background: #3a3a3a;
   color: #f1f1f1;
 }
-
 .side-nav-item .ico {
   width: 16px;
   height: 16px;
   color: #a9a9a9;
 }
-
 .nav-badge {
   margin-left: auto;
   padding: 2px 7px;
@@ -3887,7 +3705,6 @@ details.raisonnement summary {
   line-height: 1.2;
   white-space: nowrap;
 }
-
 .filtre-discussions {
   display: grid;
   place-items: center;
@@ -3900,24 +3717,20 @@ details.raisonnement summary {
   color: #999;
   cursor: pointer;
 }
-
 .filtre-discussions:hover {
   background: #3a3a3a;
   color: #e5e5e5;
 }
-
 .filtre-discussions .ico {
   width: 15px;
   height: 15px;
 }
-
 .side-utilitaires {
   display: flex;
   justify-content: flex-end;
   gap: 3px;
   margin-top: 1px;
 }
-
 .side-utilitaires > button {
   display: grid;
   place-items: center;
@@ -3930,23 +3743,19 @@ details.raisonnement summary {
   color: #999;
   cursor: pointer;
 }
-
 .side-utilitaires > button:hover {
   background: #3a3a3a;
   color: #ededed;
 }
-
 .side-utilitaires > button .ico {
   width: 15px;
   height: 15px;
 }
-
 .chat-marque h1 {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-
 .chat-marque h1::after {
   content: "";
   width: 6px;
@@ -3955,53 +3764,42 @@ details.raisonnement summary {
   border-bottom: 1px solid #a7a7a7;
   transform: rotate(45deg) translateY(-2px);
 }
-
 .msgs {
   padding-bottom: 150px;
 }
-
 .row {
   max-width: var(--colonne);
 }
-
 .md {
   font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   font-size: 1.2rem;
   line-height: 1.68;
 }
-
 .row.user .bubble {
   font-size: 1rem;
   line-height: 1.55;
 }
-
 .md code {
   /* v20261007 (dz) : fond SOMBRE et non plus rouge, texte #ea553c. */
   border-color: var(--bord-code);
   background: var(--fond-code-inline);
   color: var(--texte-code-bloc);
 }
-
 .md pre a {
   color: var(--lien-sombre);
 }
-
 .statut-ligne.ok .ico {
   color: #79d39b;
 }
-
 .statut-ligne.doute .ico {
   color: #e1b45c;
 }
-
 details.raisonnement {
   border-color: transparent;
 }
-
 details.raisonnement li.doute {
   color: #e1b45c;
 }
-
 .composeur-pied {
   display: flex;
   align-items: center;
@@ -4014,7 +3812,6 @@ details.raisonnement li.doute {
   font-size: 0.7rem;
   line-height: 1.35;
 }
-
 /* v20261007 (dh) — BOUTON UNIQUE modèle + effort + température. */
 .hud-reglages-wrap {
   position: relative;
@@ -4062,7 +3859,6 @@ details.raisonnement li.doute {
   margin-top: 6px;
   padding-top: 6px;
 }
-
 .composeur-niveau {
   display: inline-flex;
   align-items: center;
@@ -4070,21 +3866,18 @@ details.raisonnement li.doute {
   flex: 0 0 auto;
   color: #a8a8a8;
 }
-
 .composeur-niveau strong {
   color: #d8d8d8;
   font-family: var(--mono);
   font-size: 0.7rem;
   font-weight: 500;
 }
-
 .saisie-zone {
   position: relative;
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
 }
-
 .saisie-mirror,
 .saisie {
   width: 100%;
@@ -4099,7 +3892,6 @@ details.raisonnement li.doute {
   resize: none;
   field-sizing: content; /* Fait varier la hauteur selon le nombre de lignes */
 }
-
 .saisie-mirror {
   position: absolute;
   inset: 0;
@@ -4113,11 +3905,9 @@ details.raisonnement li.doute {
   word-break: break-word;
   overflow-wrap: break-word;
 }
-
 .saisie-mirror .commande {
   color: var(--lien-sombre);
 }
-
 .saisie {
   position: relative;
   z-index: var(--z-dans);
@@ -4129,12 +3919,10 @@ details.raisonnement li.doute {
   caret-color: #eeeeee;
   outline: none;
 }
-
 .saisie::placeholder {
   color: #9a9a9a;
   opacity: 1;
 }
-
 .message-actions {
   display: flex;
   align-items: center;
@@ -4142,7 +3930,6 @@ details.raisonnement li.doute {
   align-self: flex-end;
   margin: 0 0 3px 2px;
 }
-
 .message-actions button {
   display: grid;
   place-items: center;
@@ -4155,94 +3942,76 @@ details.raisonnement li.doute {
   color: #8f8f8f;
   cursor: pointer;
 }
-
 .message-actions button:hover {
   border-color: var(--bord-fort);
   background: #303030;
   color: #e8e8e8;
 }
-
 .message-actions .ico {
   width: 15px;
   height: 15px;
 }
-
 @media (max-width: 720px) {
   .composeur-pied {
     align-items: flex-start;
     font-size: 0.64rem;
   }
-
   .composeur-niveau {
     gap: 6px;
   }
-
   .nav-badge {
     max-width: 82px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 }
-
 .message-actions button.actif {
   border-color: #5b8d6c;
   background: #294333;
   color: #9de0b3;
 }
-
 .row.bot {
   flex-direction: column;
   align-items: flex-start;
 }
-
 .row.bot .message-actions {
   align-self: flex-start;
   margin-left: 4px;
 }
-
 .row.user {
   flex-direction: column;
   align-items: flex-end;
 }
-
 .trace-cmd-status {
   flex: 0 0 auto;
   color: #79d39b;
   font-family: var(--mono);
   font-size: 0.66rem;
 }
-
 details.trace-cmd.echec .trace-cmd-status {
   color: #e1b45c;
 }
-
 .row.user .message-actions {
   display: none;
 }
-
 @media (max-width: 600px) {
   .btn-partager {
     display: none;
   }
-
   .etat-moteur {
     display: none;
   }
-
   .hud-modele-wrap {
     margin-left: auto;
   }
-
   .chat-marque h1 {
     max-width: 55vw;
   }
-
   .composeur-carte,
   .composeur-pied {
     width: 100%;
     box-sizing: border-box;
   }
-
   .composeur-pied > span:first-child {
     min-width: 0;
     max-width: 68%;
@@ -4250,34 +4019,27 @@ details.trace-cmd.echec .trace-cmd-status {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
   .composeur-pied,
   .composeur-niveau {
     font-size: 0.58rem;
   }
-
   .composeur-niveau {
     gap: 4px;
   }
 }
-
 .sidebar {
   flex-basis: var(--pos-sidebar-largeur);
   width: var(--pos-sidebar-largeur);
 }
-
 #app.sidebar-fermee .sidebar {
   margin-left: calc(-1 * (var(--pos-sidebar-largeur) + 1px));
 }
-
 .side-recherche {
   display: none;
 }
-
 .side-recherche.ouverte {
   display: flex;
 }
-
 .chat-tete {
   min-height: 64px;
   height: 64px;
@@ -4288,50 +4050,41 @@ details.trace-cmd.echec .trace-cmd-status {
   background: transparent;
   border-bottom: none;
 }
-
 .etat-moteur {
   opacity: 0.65;
   font-size: 0.68rem;
 }
-
 .btn-modele {
   min-height: 28px;
   height: 28px;
   padding: 0 9px;
   font-size: 0.7rem;
 }
-
 .btn-partager {
   min-height: 30px;
   height: 30px;
   padding: 0 10px;
   font-size: 0.72rem;
 }
-
 .msgs {
   padding: 38px 32px 168px;
 }
-
 .row.bot,
 .row.user {
   width: min(var(--colonne), calc(100% - 48px));
   max-width: var(--colonne);
 }
-
 .row.bot {
   margin-left: max(var(--marge-page), calc((100% - var(--colonne)) / 2 + 64px));
   margin-right: auto;
 }
-
 .row.user {
   margin-left: auto;
   margin-right: 0;
 }
-
 .row.bot .bubble {
   max-width: min(576px, 100%);
 }
-
 .row.user .bubble {
   max-width: min(576px, 90%);
   padding: 10px 14px;
@@ -4344,7 +4097,6 @@ details.trace-cmd.echec .trace-cmd-status {
 /* v20260926e : règle héritée de de4eada (« simplify ») SUPPRIMÈE — elle
    masquait TOUS les panneaux de raisonnement dans le fil, rendant la
    préférence « Raisonnement visible » sans effet. */
-
 .composeur-carte {
   box-sizing: border-box;
   width: min(var(--colonne), 100%);
@@ -4366,7 +4118,6 @@ details.trace-cmd.echec .trace-cmd-status {
   display: flex;
   align-items: center;
 }
-
 .saisie-zone,
 .saisie-mirror,
 .saisie {
@@ -4374,7 +4125,6 @@ details.trace-cmd.echec .trace-cmd-status {
   height: 35px;
   max-height: 40px;
 }
-
 .saisie {
   overflow: hidden;
   overflow-y: auto !important;
@@ -4384,61 +4134,49 @@ details.trace-cmd.echec .trace-cmd-status {
   color: #eeeeee;
   scrollbar-width: none;
 }
-
 .saisie::-webkit-scrollbar {
   display: none;
 }
-
 .saisie-mirror {
   display: none;
 }
-
 .composeur-pied {
   max-width: var(--composeur-pied);
 }
-
 @media (max-width: 940px) {
   .sidebar {
     width: min(var(--pos-sidebar-largeur), 88vw);
   }
-
   .row.bot,
   .row.user {
     width: min(var(--colonne), calc(100% - 28px));
   }
-
   .row.bot {
     margin-left: 14px;
   }
 }
-
 .btn-attacher,
 .btn-envoyer {
   width: 28px;
   height: 28px;
 }
-
 .btn-modele {
   font-family: inherit;
   font-size: 0.88rem;
   background: transparent; /* Aligné avec la surcharge de .btn-attacher */
   transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
-
 .btn-modele .modele-actif-nom {
   font-family: inherit;
   font-size: inherit;
 }
-
 .btn-modele:active {
   transform: scale(0.94); /* Effet d'enfoncement identique à .btn-attacher */
 }
-
 .hud-modeles {
   top: auto;
   bottom: calc(100% + 8px);
 }
-
 .btn-envoyer {
   width: 28px;
   height: 28px;
@@ -4448,22 +4186,18 @@ details.trace-cmd.echec .trace-cmd-status {
   color: #bdbdbd;
   transition: color 0.15s, border-color 0.15s, transform 0.1s;
 }
-
 .btn-envoyer:hover:not(:disabled) {
   border-color: transparent;
   background: #3d3d3d;
   color: #f1f1f1;
 }
-
 .btn-envoyer:active:not(:disabled) {
   transform: scale(0.94);
 }
-
 .btn-envoyer .ico {
   width: 16px;
   height: 16px;
 }
-
 /* ---------- Effort de raisonnement ----------
    Sélecteur posé à droite du bouton modèle : celui-ci est ainsi poussé un
    peu vers la gauche et l'espace libéré à sa droite reçoit le nouvel
@@ -4473,33 +4207,27 @@ details.trace-cmd.echec .trace-cmd-status {
   align-items: center;
   gap: 6px;
 }
-
 .hud-effort-wrap {
   position: relative;
   flex: 0 0 auto;
 }
-
 .btn-effort {
   gap: 5px;
 }
-
 .btn-effort .effort-ico .ico {
   width: 13px;
   height: 13px;
   color: #a9a9a9;
 }
-
 .btn-effort .effort-valeur {
   font-family: var(--mono);
   font-size: 0.72rem;
   min-width: 3em;
   text-align: left;
 }
-
 .hud-efforts {
   width: 268px;
 }
-
 /* v20260926g : texte de réflexion regroupé + phases — jamais de frise. */
 .raisonnement-texte {
   color: var(--texte-doux);
@@ -4943,7 +4671,6 @@ header.chat-tete {
     display: none;
   }
 }
-
 /* ============ v20260926i (UI) : métriques demandées ============ */
 /* Inter dans TOUTE l'UI, y compris le markdown (fini le serif). */
 .md {
@@ -5036,7 +4763,6 @@ header.chat-tete {
 .saisie-mirror {
   height: auto;
 }
-
 /* ============ v20260926l : barres de défilement UNIFORMES ============
    Piste #292929 en thème sombre (demande UI) ; claire en thème clair.
    Les règles spécifiques existantes (msgs…) restent, mêmes teintes. */
@@ -5059,7 +4785,6 @@ header.chat-tete {
 *::-webkit-scrollbar-corner {
   background: #292929;
 }
-
 /* ============ v20260926l : thème clair / sombre (toute la page) ============
    Le sombre reste le défaut (bloc :root existant). Le clair surcharge les
    variables PUIS chaque surface codée en dur encore sombre. */
@@ -5203,7 +4928,6 @@ html[data-theme="light"] .btn-attacher:hover,
 html[data-theme="light"] .side-nav-item:hover,
 html[data-theme="light"] .filtre-discussions:hover,
 html[data-theme="light"] .side-utilitaires button:hover,
-
 /* v20261007 (dx) : #partager sort de ces surcharges de thème clair. */
 html[data-theme="light"] .side-nav-item {
   color: #333333;
@@ -5365,7 +5089,6 @@ html[data-theme="light"] .hudf-editer {
   color: inherit;
   font-family: var(--mono);
 }
-
 /* ————— Focus clavier ————— Audit : `outline: none` supprimait le repère de focus sur des zones clés. */
 .hudf-edition:focus-visible,
 .hnav-url:focus-visible {
@@ -5405,7 +5128,6 @@ html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
    thèmes. Il sortait de la règle ci-dessus et passait au gris clair : le
    bouton changeait de couleur au survol alors qu'il n'a pas d'état autre que
    survol — et le contraste du texte changeait avec lui. */
-
 html[data-theme="light"] .side-item.active,
 html[data-theme="light"] .side-item:hover {
   background: #dcdcdc;
@@ -5458,7 +5180,6 @@ html[data-theme="light"] .code-lang {
   color: var(--fond);
   font-weight: 600;
 }
-
 /* ============ v20260926n : compte en icône utilitaire ============
    #ouvrir-compte vit dans .side-utilitaires : avatar seul (nom masqué),
    même gabarit que les icônes voisines ; le menu s'ancre à droite. */
@@ -5516,7 +5237,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   background: #e2e2e2;
   color: #111111;
 }
-
 /* v20260926o (kimi) : tactile sans hover — les actions des conversations
    restent accessibles (avant : invisibles, opacity 0). */
 @media (hover: none) {
@@ -5572,7 +5292,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
    `transparent` — des valeurs qui ne différaient que de quelques unités
    (#0f0f0f, #1f1d1d, #211f1f). Le résultat n'était pas « une nuance » : c'était
    des FRONTIÈRES visibles, exactement là où il n'y avait rien à séparer.
-
    Règle, à retenir pour la suite : des fonds qui diffèrent de quelques unités
    créent une frontière ; pour un seul bloc visuel, il faut UNE valeur ; pour une
    séparation VOLONTAIRE, il faut une LIGNE. D'où les deux filets de 1px : au
@@ -5603,7 +5322,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 .side-pied {
   background: var(--fond-side-pied);
 }
-
 /* v20260926n : sidebar compacte et uniforme ============
    L'espace libre vit dans la liste des discussions (flex:1) — le reste
    est resserré : marque, bouton, nav, section projets et pied. */
@@ -5636,7 +5354,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   gap: 6px;
   padding-top: 6px;
 }
-
 /* ============ v20261001 : liste des fichiers + interpréteur HTML ============
    Bouton en haut à droite, à gauche de « Partager » : liste les fichiers de
    la conversation (cartes athena-file + pièces jointes analysées). Un clic
@@ -6047,7 +5764,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
     border-bottom: 1px solid var(--bord);
   }
 }
-
 html[data-theme="light"] .btn-interpreteur-plein {
   background: var(--texte);
   color: #ffffff;
@@ -6061,7 +5777,6 @@ html[data-theme="light"] .btn-interpreteur-plein:hover {
 html[data-theme="light"] .interpreteur-code {
   color: var(--texte);
 }
-
 /* ————— Menu « / » : skills du moteur (docs/chat-demo.js) ————— */
 .menu-skills {
   position: absolute;
@@ -6120,7 +5835,6 @@ html[data-theme="light"] .interpreteur-code {
   font-size: 0.8rem;
   color: var(--texte-doux);
 }
-
 /* ————— Pastille du skill forcé (au-dessus du composeur) ————— */
 .chip-skill {
   display: flex;
@@ -6160,7 +5874,6 @@ html[data-theme="light"] .interpreteur-code {
   color: var(--danger-texte);
   background: var(--danger-fond);
 }
-
 /* ————— Panneau /mcp : serveurs MCP branchés ————— */
 .panneau-mcp {
   position: absolute;
@@ -6266,7 +5979,6 @@ html[data-theme="light"] .interpreteur-code {
   font-size: 0.8rem;
   color: var(--texte-doux);
 }
-
 /* §8.7-4 — plan de travail visible (HUD « Plan ») : alimenté par le bloc
    ```athena-plan (majPlan), persisté par conversation (_plan), réinjecté à
    chaque tour (body.plan ⅒ consigne système). Le JS pose/masque l'attribut
@@ -6410,7 +6122,6 @@ html[data-theme="light"] .interpreteur-code {
 .md pre.plan-bloc .code-lang {
   color: var(--primaire);
 }
-
 /* ============================================================================
    v20261007 (eg) — ZONE DE CONVERSATION : RÈGLE FINALE, EN DERNIER
    ============================================================================
@@ -6419,7 +6130,6 @@ html[data-theme="light"] .interpreteur-code {
    lignes d'écart, certaines remettant `background: transparent` après avoir posé
    une valeur. Se battre sélecteur par sélecteur n'est pas tenable : le relevé
    ci-dessous est la règle qui fait autorité, et elle est terminale.
-
    Les quatre conteneurs portent UNE seule valeur. Les deux séparations
    VOLONTAIRES sont des lignes de 1px, parce qu'une bordure se lit mieux qu'un
    écart de teinte et qu'elle reste cohérente entre les deux thèmes. */
@@ -6454,7 +6164,6 @@ html[data-theme="light"] header.chat-tete {
   border-bottom-color: var(--bord);
 }
 html[data-theme="light"] .composeur,
-
 .composeur,
 .composeur-carte {
 }
@@ -6466,7 +6175,6 @@ COLONNE UNIQUE ET MARGE PARTAGÉE
    redéclare `.row`, `.composeur-carte` et `.composeur-pied` à des milliers de
    lignes d'écart, avec des largeurs différentes. Ces règles ci-dessous
    remplacent les mesures, elles ne les commentent pas.
-
    --colonne : UNE largeur pour le composeur, les bulles et le titre.
    --marge-page : UN retrait horizontal pour l'en-tête, le fil et le composeur,
    de sorte que les trois partagent le même bord gauche. */
@@ -6508,26 +6216,21 @@ COLONNE UNIQUE ET MARGE PARTAGÉE
    Quatre décisions prises explicitement, après consultation. Terminal, comme
    les blocs précédents : ce fichier redéclare `.composeur-carte` huit fois et
    `.btn-partager` six fois.
-
    1. PARTAGER : BORDURE NOIRE EN THÈME CLAIR
    Fond transparent et texte noir étaient leftovers du précédent chantier ; la
    bordure, elle, n'avait jamais été demandée. Elle est ici explicite.
    En thème sombre, la bordure suit le fond du bouton : elle ne change pas.
-
    2. COMPOSEUR : PLUS DE BORDURE NOIRE
    `.composeur-carte` gardait un `border-top: 1px solid var(--bord)` issu de la
    séparation volontaire de zone. Sur un champ de saisie, ce trait se lisait
    comme un encadrement, pas comme une séparation. Supprimé dans les deux
    thèmes : le composeur n'est plus encadré.
-
    3. BULLE : FOND BLANC EN THÈME CLAIR
    `--fond-row` valait `#f4f2f2` en clair, un gris si proche du blanc qu'il
    dessinait un rectangle sans jamais le remplir. Blanc sur blanc.
    En thème SOMBRE, aucun changement : `--fond-row` y reste `#242222`.
-
    4. PIED DU COMPOSEUR
    Traité plus haut, via le jeton `--composeur-pied`. */
-
 html[data-theme="light"] .row.bot .bubble {
   background: var(--fond-bulle-clair);
 }
@@ -6797,7 +6500,6 @@ header.chat-tete {
 html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
   color: var(--texte);
 }
-
 /* 1. CENTRER `.saisie`.
    Mesure avant : la zone, le bouton d'attache et le bouton d'envoi étaient tous
    à 10px du bord haut de la carte — donc alignés entre eux. Le TEXTE, lui, était
@@ -7035,4 +6737,114 @@ html[data-theme="dark"] .composeur-carte:focus-within {
   text-align: center;
   order: 1;
   margin-top: auto;
+}
+/* ============================================================================
+   v20261007 (er) — FOCUS UNIQUE, MENTION SUR LA LIGNE DES BOUTONS
+   ============================================================================ */
+
+/* 2. LA MENTION SUR LA MÊME LIGNE QUE LES BOUTONS.
+   Mesure avant : mention à y=874, boutons à y=840 — 34px d'écart, donc deux
+   lignes distinctes. Le pied était en colonne depuis `ep`.
+   Retour à une rangée unique : `justify-content: space-between` met la mention
+   à gauche et les boutons à droite, sur la MÊME ligne.
+   La mention reprend toute la place disponible à gauche (`flex: 1`), et son
+   texte est centré verticalement comme les boutons : sans ça, une mention de
+   15px et un bouton de 28px sont décalés. */
+html[data-theme="light"] .composeur-pied,
+html[data-theme="dark"] .composeur-pied {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  /* `flex-wrap: wrap` (règle d'origine 5799) faisait passer la mention SUR UNE
+     SECONDE LIGNE. Mesure : pied de 57px de haut, span en haut (top 0),
+     boutons en bas (top 29) — deux lignes, pas un décalage.
+     Et `align-items: center` ne s'applique qu'À L'INTÉRIEUR de chaque ligne
+     d'un conteneur qui wrappe : les deux enfants étaient chacun centrés dans
+     leur propre ligne, donc visuellement décalés. D'où un écart de 35px alors
+     que les deux déclaraient `align-self: center`.
+     `flex-wrap: nowrap` remet les deux sur UNE ligne, et l'écart tombe à 0. */
+  flex-wrap: nowrap;
+}
+html[data-theme="light"] .composeur-pied > span:first-child,
+html[data-theme="dark"] .composeur-pied > span:first-child {
+  order: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: center;
+  text-align: center;
+  margin-top: 0;
+  max-width: 100%;
+}
+/* Mesure avant : le span sortait à y=832 et le groupe de boutons à y=861 —
+   35px d'écart, deux lignes décalées. Aucune règle ne posait de marge : c'est
+   `justify-content: space-between` qui partage le conteneur, et le `gap: 14px` de
+   la rangée qui s'ajoutait par-dessus. La mention occupe toute la largeur
+   restante (`flex: 1`), les boutons restent à leur largeur naturelle, et le
+   centrage vertical est porté par `align-items: center` sur le pied.
+   Le groupe de boutons garde une largeur fixe : c'est lui qui doit tomber à
+   droite, pas le texte. */
+html[data-theme="light"] .composeur-modele,
+html[data-theme="dark"] .composeur-modele {
+  order: 0;
+  flex: 0 0 auto;
+  align-self: center;
+  margin-top: 0;
+  margin-left: 0;
+}
+/* ============================================================================
+   v20261007 (er) — MENTION ET BOUTONS SUR LA MÊME LIGNE
+   ============================================================================
+   Deux corrections, plus une qui était invisible et qu'il a fallu débusquer.
+
+   `flex-wrap: wrap` (règle d'origine 5799) faisait passer la mention sur une
+   SECONDE LIGNE. Mesure : pied de 57px, span en haut (top 0), boutons en bas
+   (top 29). Et `align-items: center` ne s'applique qu'à L'INTÉRIEUR de chaque
+   ligne d'un conteneur qui wrappe — les deux enfants étaient chacun centrés dans
+   leur propre ligne, donc visuellement décalés de 35px alors qu'ils déclaraient
+   tous deux `align-self: center`. `flex-wrap: nowrap` remet tout sur une ligne.
+
+   La mention occupait ensuite 0px de large, INVISIBLE. Deux plafonds se
+   disputaient un pied de 744px : `max-width: 68%` (≈505px) pour le span, et
+   `max-width: var(--colonne)` (780px) pour le groupe de boutons — plus grand
+   que son conteneur. Le second prenait toute la rangée, le premier tombait à
+   zéro. Les parts sont explicites : boutons à leur largeur naturelle, mention
+   sur le reste.
+
+   Les deux règles de focus-within d'origine (lignes 2230 et 3545) sont
+   SUPPRIMÉES : elles posaient `border-color: var(--primaire)` et un halo
+   `0 0 0 1px var(--primaire)`. Elles cohabitaient avec la règle de focus en
+   `#c7c7c7` du tour précédent — deux focus, un seul état. */
+html[data-theme="light"] .composeur-pied,
+html[data-theme="dark"] .composeur-pied {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+html[data-theme="light"] .composeur-pied > span:first-child,
+html[data-theme="dark"] .composeur-pied > span:first-child {
+  order: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+  align-self: center;
+  text-align: center;
+  margin-top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-theme="light"] .composeur-modele,
+html[data-theme="dark"] .composeur-modele {
+  order: 0;
+  flex: 0 0 auto;
+  align-self: center;
+  margin-top: 0;
+  margin-left: 0;
+  width: auto;
+  max-width: none;
 }
