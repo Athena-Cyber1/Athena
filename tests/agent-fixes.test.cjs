@@ -163,14 +163,18 @@ async function main() {
     && gGrep.j.occurrences[0].n >= 1 && typeof gGrep.j.occurrences[0].fichier === 'string',
     'grep: occurrence racine trouvee (fichier:ligne)', JSON.stringify(gGrep.j.occurrences || []).slice(0, 140));
   const gPlat = await post('/grep', { motif: 'hud-plan', chemin: repo, sous: false });
-  V(gPlat.st === 200 && Array.isArray(gPlat.j.occurrences) && gPlat.j.occurrences.length === 0,
-    'grep: sous=false -> platt sans descente (match seulement dans docs/ ignore)',
-    'occ=' + (gPlat.j.occurrences || []).length);
-  const gRec = await post('/grep', { motif: 'id="hud-plan"', chemin: repo, sous: true });
-  V(gRec.st === 200 && (gGrep.j.occurrences || []).length >= 0
-    && (gRec.j.occurrences || []).length >= 1,
-    'grep: sous=true -> descente recurse (match dans docs/index.html)',
-    'occ=' + (gRec.j.occurrences || []).length);
+  const fPlat = (gPlat.j.occurrences || []).map((o) => String(o.fichier || ''));
+  V(gPlat.st === 200 && fPlat.every((f) => !f.includes('/') && !f.includes('\\')),
+    'grep: sous=false -> plat sans descente (aucun fichier de sous-dossier)',
+    'occ=' + fPlat.length + ' fichiers=' + fPlat.join(','));
+  /* La descente est verifiee sur UN sous-dossier nomme, pas sur tout le depot :
+     un parcours global bute sur son plafond (300 fichiers / 5 s) et depend de ce
+     qu il y a autour, donc l assertion devenait fausse sans que le grep change. */
+  const gRec = await post('/grep', { motif: 'hud-plan', chemin: path.join(repo, 'design'), sous: true });
+  const fRec = (gRec.j.occurrences || []).map((o) => String(o.fichier || ''));
+  V(gRec.st === 200 && fRec.length >= 1 && fRec.some((f) => f.includes('athena-demo.css')),
+    'grep: sous=true -> descente recurse (design/athena-demo.css)',
+    'occ=' + fRec.length + ' fichiers=' + fRec.join(','));
   const gGrepSans = await post('/grep', { chemin: repo });
   V(gGrepSans.st === 400, 'grep: motif absent -> 400', 'st=' + gGrepSans.st);
 
