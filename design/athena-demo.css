@@ -5401,9 +5401,6 @@ html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
    bouton changeait de couleur au survol alors qu'il n'a pas d'état autre que
    survol — et le contraste du texte changeait avec lui. */
 
-html[data-theme="light"] .btn-envoyer {
-  color: #666666;
-}
 html[data-theme="light"] .side-item.active,
 html[data-theme="light"] .side-item:hover {
   background: #dcdcdc;
@@ -6787,4 +6784,83 @@ header.chat-tete {
 }
 .btn-modele {
   margin-left: auto;
+}
+/* ============================================================================
+   v20261007 (eo) — SAISIE CENTRÉE, CARTE BORDÉE, PLAN DESCENDU, ICONES
+   ============================================================================ */
+
+/* `html[data-theme="light"] .btn-envoyer { color: #666666 }` (ligne d'origine
+   5404) est SUPPRIMEE : sa specificite (0,2,0) battait la regle de base (0,1,0),
+   et l'icone d'envoi restait grise en clair alors que celle d'attacher
+   devenait noire. Deux icones, meme etat, meme couleur : c'etait l'effet voulu.
+   Le survol garde sa regle propre, il est un etat different. */
+html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
+  color: var(--texte);
+}
+
+/* 1. CENTRER `.saisie`.
+   Mesure avant : la zone, le bouton d'attache et le bouton d'envoi étaient tous
+   à 10px du bord haut de la carte — donc alignés entre eux. Le TEXTE, lui, était
+   décalé : `.saisie` portait `padding: 10px 4px 0`, donc son texte partait 10px
+   plus bas et 4px plus à droite que le centre géométrique de la zone.
+   Résultat à l'écran : le texte collait au haut-gauche pendant que les deux
+   boutons restaient centrés verticalement.
+
+   `padding: 0` rend la zone de texte exactement superposable à la zone, et
+   `align-items: center` centre le bloc de lignes. Le miroir reçoit la MÊME
+   correction : il sert à afficher le texte en surimpression, un pixel de
+   décalage entre les deux se voit. */
+.saisie,
+.saisie-mirror {
+  padding: 0;
+  text-align: left;
+}
+.saisie-zone {
+  align-items: center;
+}
+/* La regle d'origine 5026 remettait `align-items: flex-start` et le gagnait sur
+   la ligne ci-dessus, par ordre de cascade. On la rescelle explicitement. */
+html[data-theme="light"] .saisie-zone,
+html[data-theme="dark"] .saisie-zone {
+  align-items: center;
+}
+
+/* 2. CARTE BORDÉE, ET UN PEU PLUS SOMBRE AU FOCUS.
+   Le point 4 de `en` avait posé `border: 0`. Ici la bordure revient, en
+   gris clair (1px), et s'assombrit légèrement quand on appuie.
+   `--bord` et `--bord-fort` sont déjà déclarés dans les DEUX thèmes : aucun
+   littéral ajouté. Le passage au survol utilise le même couple, ce qui garde
+   le contraste du texte constant entre les deux états. */
+.composeur-carte {
+  border: 1px solid var(--bord);
+}
+.composeur-carte:focus-within {
+  border-color: var(--bord-fort);
+}
+
+/* 3. LE PLAN DESCEND SOUS L'EN-TÊTE.
+   Il était à `top: var(--header-h)`, donc collé au bord bas de l'en-tête
+   (écart mesuré : 0px). On lui laisse une respiration. */
+.hud-plan {
+  top: calc(var(--header-h) + 10px);
+}
+
+/* 4. ICONES D'ENVOI ET D'ATTACHE : NOIR EN CLAIR, BLANC EN SOMBRE.
+   Elles étaient `#666666` en clair et une teinte grise dérivée en sombre, avec
+   quatre déclarations concurrentes. Deux jetons, déclarés dans les deux
+   thèmes, et une seule règle par état. */
+:root {
+  --icone: #000000;
+}
+html[data-theme="light"] {
+  --icone: #000000;
+}
+html[data-theme="dark"] {
+  --icone: #ffffff;
+}
+.btn-attacher,
+.btn-envoyer {
+  color: var(--icone);
+  border-color: transparent;
+  background: transparent;
 }

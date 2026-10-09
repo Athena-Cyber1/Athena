@@ -193,6 +193,29 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.3 Carte de saisie et icônes (`eo`)
+
+| Élément | Règle | Mesure |
+|---|---|---|
+| `.composeur-carte` | `border: 1px solid var(--bord)`, `:focus-within` → `var(--bord-fort)` | `rgb(228,228,228)` clair / `rgb(80,80,80)` sombre |
+| `.saisie` | `padding: 0`, zone en `align-items: center` | texte aligné sur les deux icônes |
+| `.hud-plan` | `top: calc(var(--header-h) + 10px)` | écart de 10px sous l’en-tête |
+| `.btn-attacher`, `.btn-envoyer` | `color: var(--icone)` | noir en clair (21:1), blanc en sombre (16,78:1) |
+
+Le jeton `--icone` est déclaré dans les **deux thèmes** : `#000000` en clair,
+`#ffffff` en sombre.
+
+Il n’existe **plus** de règle `html[data-theme="light"] .btn-envoyer`.
+Sa spécificité (0,2,0) battait la règle de base (0,1,0) : l’icône d’envoi
+restait grise en clair pendant que celle d’attacher devenait noire. Deux
+icônes, même état, même couleur.
+
+Le centrage de `.saisie` ne portait pas sur le `textarea` : la zone, le bouton
+d’attache et le bouton d’envoi étaient déjà alignés à 10px du bord haut. C’est
+le **texte** qui était décalé, par son propre `padding: 10px 4px 0`. Le
+padding à zéro rend le bloc de texte superposable à la zone ; le miroir reçoit
+la même correction, sinon un pixel d’écart se voit en surimpression.
+
 ### 4.2 Hauteurs et rayons fluides
 
 | Jeton | Valeur | Rôle |
