@@ -122,8 +122,6 @@
   --mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", "DejaVu Sans Mono", monospace;
 }
 
-
-
 /* ————— Base ————— */
 html,
 body {
@@ -5200,9 +5198,7 @@ html[data-theme="light"] .btn-attacher:hover,
 html[data-theme="light"] .side-nav-item:hover,
 html[data-theme="light"] .filtre-discussions:hover,
 html[data-theme="light"] .side-utilitaires button:hover,
-html[data-theme="light"] .btn-partager:hover {
-  color: #111111;
-}
+
 /* v20261007 (dx) : #partager sort de ces surcharges de thème clair. */
 html[data-theme="light"] .side-nav-item {
   color: #333333;
@@ -5404,11 +5400,7 @@ html[data-theme="light"] .btn-envoyer:hover:not(:disabled) {
    thèmes. Il sortait de la règle ci-dessus et passait au gris clair : le
    bouton changeait de couleur au survol alors qu'il n'a pas d'état autre que
    survol — et le contraste du texte changeait avec lui. */
-html[data-theme="light"] .btn-partager:hover {
-  background: var(--fond-share-survol);
-  color: var(--fond-partage-texte);
-  border-color: var(--fond-share-survol);
-}
+
 html[data-theme="light"] .btn-envoyer {
   color: #666666;
 }
@@ -6053,14 +6045,7 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
     border-bottom: 1px solid var(--bord);
   }
 }
-html[data-theme="light"] .btn-fichiers {
-  background: #fff;
-  color: #1c1a1a;
-  border-color: var(--bord);
-}
-html[data-theme="light"] .btn-fichiers:hover {
-  background: var(--gris-fond);
-}
+
 html[data-theme="light"] .btn-interpreteur-plein {
   background: var(--texte);
   color: #ffffff;
@@ -6542,9 +6527,7 @@ COLONNE UNIQUE ET MARGE PARTAGÉE
 
    4. PIED DU COMPOSEUR
    Traité plus haut, via le jeton `--composeur-pied`. */
-html[data-theme="light"] .btn-partager {
-  border: 1px solid var(--texte);
-}
+
 .composeur-carte {
   border-top: none;
 }
@@ -6663,4 +6646,145 @@ html[data-theme="dark"] .hud-plan {
    parent, on le fixe explicitement. */
 .hud-plan {
   margin-top: clamp(10px, 1.6vh, 18px);
+}
+/* ============================================================================
+   v20261007 (en) — BASE PARTAGÉE DES BOUTONS DE LA BARRE D'OUTILS
+   ============================================================================
+   Fichiers, Navigateur (`.btn-nav`) et Partager partageaient trois définitions
+   concurrentes. Mesure avant : hauteurs 34 / 34 / 30px, fonds et bordures
+   divergents dans les DEUX thèmes. Trois boutons côte à côte, lus comme trois
+   niveaux différents.
+
+   Une seule base. La bordure vient du jeton `--bord`, donc elle est visible
+   dans les deux thèmes : c'est la demande, et cela contredit la règle
+   historique de la charte (§9) qui interdisait la bordure à un bouton sans
+   fond. La règle est révisée, pas contournée — voir la note plus bas.
+
+   Le survol passe par `--primaire-doux`, pas par une couleur littérale. */
+.btn-fichiers,
+.btn-nav,
+.btn-partager {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-s);
+  background: var(--surface);
+  color: var(--texte-doux);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.btn-fichiers:hover,
+.btn-nav:hover,
+.btn-partager:hover {
+  background: var(--primaire-doux);
+  border-color: var(--bord-fort);
+  color: var(--texte);
+}
+
+/* CHARTE §9, RÉVISÉE : « un bouton sans fond n'a pas de bordure » ne tient plus.
+   Les boutons de la barre d'outils portent une bordure VISIBLE dans les deux
+   thèmes, posée par la base partagée ci-dessus. Un bouton transparent à bord
+   invisible disparaissait dans le fond blanc. La distinction se fait désormais
+   par la surface de survol, pas par l'absence de filet. */
+/* ============================================================================
+   v20261007 (en) — POINTS 2, 4, 5, 6
+   ============================================================================ */
+
+/* 2. LE FOND DE LA BULLE DU MODÈLE, EN SOMBRE : `--fond-row` = `--surface`.
+   C'est ce que demandait le point 2. Mesure avant : `--fond-row` valait
+   #242222 sur `--surface` #1f1d1d — deux valeurs a trois unites d'ecart, ce
+   qui dessinait un rectangle gris de 576px a gauche de chaque reponse.
+   Le fond reste sur `.bubble`, PAS sur `.row.bot` : pose sur la rangee entiere,
+   il peindrait toute la largeur. C'etait le bloc gris du defaut n°1. */
+:root {
+  --fond-row: #1f1d1d;
+}
+html[data-theme="light"] .row.bot .bubble {
+  background: var(--fond-bulle-clair);
+}
+
+/* 4. COMPOSEUR RÉDUIT, EN FLUIDE.
+   Mesure avant : carte de 57px de haut a padding fixe. La carte passe a un
+   `min-height` fluide et un padding fluide ; `.saisie` est plafonnee a six
+   lignes avec `max-height: 6lh`, ce qui remplace l'ancienne valeur en px
+   (404px) et le calcule donc vraiment depuis la police reellement employee. */
+.composeur-carte {
+  min-height: clamp(44px, 6vh, 56px);
+  padding: clamp(6px, 1vh, 10px) clamp(10px, 1.4vw, 14px);
+}
+.saisie {
+  font-size: clamp(0.9rem, 0.85rem + 0.2vw, 1rem);
+  max-height: 6lh;
+}
+/* Les trois controles de la carte suivent la meme echelle. */
+.btn-attacher,
+.btn-envoyer,
+.saisie-zone {
+  min-height: clamp(28px, 4vh, 34px);
+}
+
+/* 5. LE FLOU NOIE LA BORDURE.
+   Une bordure dure se voit parce qu'elle est OPAQUE sur un fond uni. Un halo
+   de la meme couleur que la surface la noie : c'est `box-shadow` en couleur de
+   fond, pas une ombre. Le flou ne sert QUE si du contenu defile sous la zone ;
+   l'en-tete etant `position: sticky` au-dessus du fil, c'est le cas. */
+.chat-tete,
+.composeur {
+  background: var(--surface);
+  box-shadow: 0 0 14px 6px var(--surface);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.chat-tete,
+header.chat-tete {
+  border-bottom: 0;
+}
+
+/* 6. LE PLAN FLOTTE, IL NE POUSSE PLUS LE FIL.
+   Mesure avant : le plan prenait de la place dans le flux, et son
+   `margin-top` le collait a l'en-tete (ecart mesure : 9px, porte a 14px).
+   En `position: absolute`, il ne deplace plus une seule ligne du fil.
+   `.chat-shell` est deja en `position: relative` : c'est le referent. */
+.hud-plan {
+  position: absolute;
+  top: var(--header-h);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(var(--colonne-max), calc(100% - 2 * var(--marge-page)));
+  max-width: none;
+  max-height: clamp(44px, 14vh, 180px);
+  margin: 0;
+  overflow: auto;
+  padding: clamp(4px, 0.8vh, 8px) clamp(10px, 1.4vw, 14px);
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-l);
+  background: var(--surface);
+  box-shadow: var(--halo);
+  pointer-events: auto;
+  z-index: var(--z-menu);
+}
+/* Le plan est absolu : le fil n'a plus de place reservee en haut pour lui. */
+.msgs {
+  padding-top: clamp(12px, 1.6vh, 20px);
+}
+
+/* 3. LES DEUX BOUTONS `.btn-modele` A DROITE.
+   `btn-reglages` et `btn-contexte` sont deux `.btn-modele` distincts dans
+   `.composeur-modele` : il n'y a pas de deuxieme conteneur `topbar-modele`
+   (0 occurrence dans le fichier). Un seul `justify-content: flex-end` suffit,
+   plus `margin-left: auto` qui vient a bout de toute regle de flux. */
+.composeur-modele {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn-modele {
+  margin-left: auto;
 }

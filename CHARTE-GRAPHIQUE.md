@@ -312,9 +312,27 @@ animation explicitement, pas seulement deux d'entre elles.
 
 ## 9. Contrôle et survol
 
-Règle issue de corrections réelles : **un contrôle sans dossier n'est pas un
-bouton.** `#btn-fichiers`, `#btn-navigateur`, `#btn-reglages`, `#btn-contexte`
-sont transparents ; la surface n'apparaît qu'au survol et au focus.
+**RÉVISÉE le 2026-10-07 (`en`).** La règle d'origine disait : *un contrôle
+sans dossier n'est pas un bouton* — `#btn-fichiers`, `#btn-navigateur`,
+`#btn-reglages`, `#btn-contexte` étaient transparents, la surface
+n'apparaissant qu'au survol.
+
+**Elle ne tient plus.** Les trois boutons de la barre d'outils (Fichiers,
+Navigateur, Partager) partagent une base unique :
+
+| Propriété | Valeur |
+|---|---|
+| `border` | `1px solid var(--bord)` — **visible dans les deux thèmes** |
+| `background` | `var(--surface)` |
+| `color` | `var(--texte-doux)` |
+| survol | fond `--primaire-doux`, filet `--bord-fort`, texte `--texte` |
+
+Un bouton transparent à filet invisible disparaissait dans le fond blanc.
+La distinction se fait désormais par la **surface de survol**, pas par
+l'absence de filet. Mesure : 6,19:1 le texte en clair, 7,74:1 en sombre.
+
+Les zones qui gardent un fond nul et aucune bordure : `.saisie-zone`,
+`.chat-tete`, `.composeur-carte`, `.hud-plan`, `.file-preview`.
 
 Les zones sans fond, par décision : `.saisie-zone`, `.chat-tete`,
 `.composeur-carte`, `.hud-plan`, `.file-preview`. Bordures conservées.
