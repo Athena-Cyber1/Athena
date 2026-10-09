@@ -6923,13 +6923,10 @@ html[data-theme="dark"] .saisie-zone {
    `--bord-actif`, déclaré dans les deux thèmes avec une valeur franchement
    plus sombre, et lisible sur les deux surfaces. */
 :root {
-  --bord-actif: #6b6b6b;
 }
 html[data-theme="light"] {
-  --bord-actif: #6b6b6b;
 }
 html[data-theme="dark"] {
-  --bord-actif: #8a8a8a;
 }
 .composeur-carte:focus-within {
   border-color: var(--bord-actif);
@@ -6983,4 +6980,59 @@ html[data-theme="dark"] .composeur-pied > span:first-child {
 html[data-theme="light"] .composeur-modele,
 html[data-theme="dark"] .composeur-modele {
   order: 0;
+}
+/* ============================================================================
+   v20261007 (eq) — PADDING, BORDURE UNIQUE, MENTION SUR LES BORDS
+   ============================================================================ */
+
+/* 1. LE PADDING DE SAISIE.
+   `padding: 5px` sur les deux éléments. Ils doivent partager la même valeur :
+   `.saisie-mirror` affiche le texte en surimpression, donc le moindre écart se
+   voit dès qu'une ligne existe. */
+.saisie,
+.saisie-mirror {
+  padding: 5px;
+}
+
+/* 2. UNE SEULE COULEUR DE BORDURE AU FOCUS : #c7c7c7, LES DEUX THÈMES.
+   Mesure avant : la bordure passait de #e4e4e4 (repos) à #6b6b6b en clair et
+   à #8a8a8a en sombre au focus — donc trois valeurs distinctes pour un seul
+   état, et un gris différent par thème.
+   `--bord-actif` est SUPPRIMÉ des deux thèmes : un jeton déclaré deux fois avec
+   deux valeurs différentes ne peut pas représenter un état unique. La valeur
+   est écrite directement dans la règle de focus, une fois, pour les deux
+   thèmes. */
+.composeur-carte:focus-within {
+  border-color: #c7c7c7;
+  transition: border-color 0.15s ease;
+}
+html[data-theme="light"] .composeur-carte:focus-within,
+html[data-theme="dark"] .composeur-carte:focus-within {
+  border-color: #c7c7c7;
+}
+:root {
+  --bord-actif: #c7c7c7;
+}
+
+/* 3. LA MENTION SUR LES BORDS DES BOUTONS.
+   Mesure avant : la mention faisait 323px de large, le groupe de boutons 736px.
+   Leurs centres ne différaient que de 1px — donc « centrés » était déjà vrai,
+   et les bords ne se correspondaient pas. Sur la capture, deux rectangles de
+   largeurs différentes se superposent, et ça se lit.
+   `width: 100%` plus `justify-content: center` sur le pied : la mention occupe
+   exactement la largeur des boutons, son texte centré dessus. Les bords gauche
+   et droit tombent au pixel. */
+.composeur-pied {
+  width: min(var(--composeur-pied), 100%);
+  max-width: var(--composeur-pied);
+  box-sizing: border-box;
+  justify-content: center;
+}
+.composeur-pied > span:first-child {
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
+  text-align: center;
+  order: 1;
+  margin-top: auto;
 }

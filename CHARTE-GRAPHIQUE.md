@@ -193,6 +193,26 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.5 Bordure de focus et mention (`eq`)
+
+| Élément | Règle | Mesure |
+|---|---|---|
+| `.saisie`, `.saisie-mirror` | `padding: 5px` — valeur identique sur les deux | `5px` mesuré sur les deux |
+| `.composeur-carte:focus-within` | `border-color: #c7c7c7` — **une seule valeur, les deux thèmes** | repos `#e4e4e4` / `#3d3d3d`, focus `#c7c7c7` partout |
+| `.composeur-pied > span` | `width: 100%`, `text-align: center` | mention `503..1239`, boutons `503..1239` — bords au pixel |
+
+**Le jeton `--bord-actif` a été supprimé des deux thèmes.** Il était déclaré
+avec deux valeurs différentes (`#6b6b6b` clair, `#8a8a8a` sombre) alors qu’il
+ne représente qu’un seul état : la bordure au focus. Un jeton décliné par thème
+ne peut pas désigner un état commun. La valeur est écrite une fois dans la règle
+de focus.
+
+**« Centré » et « aligné » ne sont pas la même chose.** Les centres de la
+mention et du groupe de boutons ne différaient que de 1px : ils étaient déjà
+centrés. Ce qui se voyait, c’était que la mention faisait 323px et les boutons
+736px — deux rectangles de largeurs différentes se superposent, et ça se lit
+même quand leurs centres coïncident. L’alignement se juge aux bords.
+
 ### 4.4 Le composeur, trois géométries (`ep`)
 
 | Élément | Avant | Après |
