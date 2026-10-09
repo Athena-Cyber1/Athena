@@ -73,6 +73,18 @@
 --rayon-s: 8px;
 --rayon: 12px;
 --rayon-l: 16px;
+/* v20261007 (em) — SURFACE UNIQUE ET HALO.
+   Une seule surface par theme, portee par l en-tete, le fil, le composeur et
+   le plan. Le halo remplace le filet de 1px : une bordure nette coupe
+   l'ecran, une ombre tres diffuse s'y dissout. */
+--surface: #1f1d1d;
+--halo: 0 10px 30px -10px rgba(0, 0, 0, 0.55), 0 0 1px rgba(255, 255, 255, 0.04);
+/* Tailles fluides : des clamp() evitent les paliers et gardent les proportions
+   quand la fenetre change. */
+--header-h: clamp(48px, 6vh, 64px);
+--composeur-pad: clamp(8px, 1.2vh, 14px);
+--rayon-fluide: clamp(14px, 1.2vw, 20px);
+--colonne-max: 780px;
 /* v20261007 (ei) — LARGEUR ET MARGE DE LA COLONNE DE CONVERSATION.
    Le fichier portait quatre largeurs concurrentes pour la meme zone : 880px
    (.row), 900px (media 600px), 920px (media 720px et 480px), 744px
@@ -1192,7 +1204,6 @@ button.dot:focus-visible,
   border-radius: 4px;
   vertical-align: -0.15em;
   color: var(--texte);
-  background: transparent;
 }
 .md-check svg {
   width: 0.72em;
@@ -1829,7 +1840,6 @@ span.think:not(details .think) {
   letter-spacing: 0.09em;
   color: var(--texte-doux);
   padding: 12px 2px 2px;
-  border-top: 1px solid var(--bord);
 }
 
 /* Paramètres (vue) */
@@ -2104,7 +2114,6 @@ span.think:not(details .think) {
   /* v20261007 (dx) : transparent. La zone des pièces jointes se collait au
      composeur — et le composeur venant de perdre son cadre, elle en gardait
      un à sa place. */
-  background: transparent;
 }
 .file-preview:empty {
   display: none;
@@ -2204,7 +2213,6 @@ span.think:not(details .think) {
 /* ————— Composeur ————— */
 .composeur {
   padding: 6px 18px calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(to top, var(--fond-chat) 78%, transparent);
 }
 .composeur-carte {
   min-height: 30px;
@@ -3331,7 +3339,6 @@ span.think:not(details .think) {
 
 .plier {
   border-color: transparent;
-  background: transparent;
 }
 
 .liste-conversations {
@@ -3389,7 +3396,6 @@ span.think:not(details .think) {
   padding: 12px 24px;
   /* v20261007 (dx) : cette règle remettait un fond opaque et une bordure basse, plus bas dans le fichier que la règle qui les avait supprimées — donc prioritaire, et annulant purement et simplement la demande. Deux règles qui se contredisent sur le même sélecte… */
   border-bottom: none;
-  background: transparent;
 }
 
 .chat-marque {
@@ -3513,7 +3519,6 @@ details.raisonnement {
   margin: 0 0 20px;
   border-color: transparent;
   border-radius: 0;
-  background: transparent;
 }
 
 details.raisonnement summary {
@@ -3523,7 +3528,6 @@ details.raisonnement summary {
 
 .composeur {
   padding: 10px 58px;
-  background: linear-gradient(to top, var(--fond-chat) 76%, transparent);
 }
 
 .composeur-carte {
@@ -3597,7 +3601,6 @@ details.raisonnement summary {
   border: 0;
   border-top: 1px solid var(--bord);
   border-radius: 0;
-  background: transparent;
 }
 
 .activity-group > summary {
@@ -3995,7 +3998,6 @@ details.raisonnement summary {
 
 details.raisonnement {
   border-color: transparent;
-  background: transparent;
 }
 
 details.raisonnement li.doute {
@@ -4061,7 +4063,6 @@ details.raisonnement li.doute {
 .hud-reglage-section + .hud-reglage-section {
   margin-top: 6px;
   padding-top: 6px;
-  border-top: 1px solid var(--bord);
 }
 
 .composeur-niveau {
@@ -4986,7 +4987,6 @@ header.chat-tete {
   /* v20260926i : .chat-tete transparent (des règles plus spécifiques
      remettaient un fond opaque plus bas dans la cascade). */
   .chat-tete {
-    background: transparent;
   }
 }
 /* Compositeur : départ 44 px, +24 px par ligne (line-height 24), plafond
@@ -5065,6 +5065,9 @@ html {
 }
 html[data-theme="light"] {
   color-scheme: light;
+  /* v20261007 (em) : surface claire et halo clair. */
+  --surface: #ffffff;
+  --halo: 0 10px 30px -10px rgba(0, 0, 0, 0.14), 0 0 1px rgba(0, 0, 0, 0.06);
   /* BUG INTRODUIT EN e21ca90, CORRIGÉ ICI. */
   --texte: #171717;
   --texte-doux: #616161;
@@ -5311,7 +5314,6 @@ html[data-theme="light"] .md pre a {
   color: var(--lien-clair);
 }
 html[data-theme="light"] .activity-group .trace-cmd {
-  background: transparent;
 }
 html[data-theme="light"] .message-actions button:hover {
   background: #e2e2e2;
@@ -5548,7 +5550,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
    que sur l'element qui contient le texte - la bulle, dont la largeur est
    contrainte. */
 .row.bot {
-  background: transparent;
 }
 .row.bot .bubble {
   background: var(--fond-row);
@@ -5558,7 +5559,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
   border-bottom: 1px solid var(--bord);
 }
 .composeur-carte {
-  border-top: 1px solid var(--bord);
 }
 /* v20261007 (dz) : la classe est `.sidebar` (l'élément est `<aside id="sidebar" class="sidebar">`), pas `.side`. J'avais écrit `.side`, un sélecteur qui ne désigne RIEN : la règle était inerte, et la mesure l'a montré — `.side` renvoyait « ABSENT » alors que… */
 .sidebar {
@@ -5605,7 +5605,6 @@ html[data-theme="light"] .side-utilitaires .compte-bouton:hover {
 /* v20261007 (ei) : deuxieme declaration identique de `.row.bot`, traitee comme
    la premiere : le fond va sur la bulle, pas sur la rangee. */
 .row.bot {
-  background: transparent;
 }
 .side-pied {
   background: var(--fond-side-pied);
@@ -6420,7 +6419,6 @@ html[data-theme="light"] .interpreteur-code {
    l'en-tête : pas de fond, la bordure et le liseré gauche suffisent à le
    délimiter. */
 .hud-plan {
-  background: transparent;
 }
 .md pre.plan-bloc .code-lang {
   color: var(--primaire);
@@ -6474,7 +6472,6 @@ html[data-theme="light"] .composeur-carte {
 }
 .composeur,
 .composeur-carte {
-  border-top: 1px solid var(--bord);
 }
 /* ============================================================================
    v20261007 (ei) — 
@@ -6553,4 +6550,117 @@ html[data-theme="light"] .btn-partager {
 }
 html[data-theme="light"] .row.bot .bubble {
   background: var(--fond-bulle-clair);
+}
+/* ============================================================================
+   v20261007 (em) — SURFACE UNIE, HALO, TAILLES FLUIDES
+   ============================================================================
+   En tete, composeur et plan partagent `--surface`. Plus de degrade, plus de
+   filet de 1px : un halo tres diffuse remplace la bordure, qui coupait
+   l'ecran. Le plan de travail rejoint la meme famille que la carte de saisie.
+
+   Regle terminale, comme les blocs precedents : ce fichier redéclare
+   `.composeur-carte` huit fois, `.hud-plan` cinq fois et `.composeur` cinq fois.
+   Les declarations concurrentes ont ete retirees en amont ; ce qui reste ici
+   fait autorite. */
+
+/* --- En-tete : surface unie, hauteur fluide, halo au lieu du filet --- */
+.chat-tete,
+header.chat-tete {
+  height: var(--header-h);
+  min-height: 0;
+  /* v20261007 (em) : `flex-shrink: 0` INDISPENSABLE. `.chat-shell` est un
+     `flex-direction: column` : sans cela, un fil long (une liste de 12 elements)
+     comprime l en-tete jusqu a ~20px au lieu des 52px demandes. La mesure le
+     montre : `height` calcule 21,6px alors que le jeton vaut 54px. */
+  flex-shrink: 0;
+  padding: 0 var(--marge-page);
+  background: var(--surface);
+  border-bottom: none;
+  box-shadow: 0 6px 18px -12px rgba(0, 0, 0, 0.4);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+html[data-theme="light"] .chat-tete,
+html[data-theme="light"] header.chat-tete,
+html[data-theme="dark"] .chat-tete,
+html[data-theme="dark"] header.chat-tete {
+  background: var(--surface);
+  border-bottom: none;
+}
+
+/* --- Composeur : pas de degrade, pas de fond concurrent --- */
+.composeur {
+  background: var(--surface);
+  padding: var(--composeur-pad) var(--marge-page);
+  border-top: none;
+  box-shadow: none;
+}
+
+/* --- Carte de saisie : le seul element qui porte un halo --- */
+.composeur-carte {
+  width: min(var(--colonne-max), calc(100% - 2 * var(--marge-page)));
+  max-width: none;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--rayon-fluide);
+  box-shadow: var(--halo);
+  padding: clamp(8px, 1.2vh, 12px) clamp(12px, 1.6vw, 16px);
+}
+
+/* --- Plan de travail : meme langage que la carte --- */
+.hud-plan {
+  width: min(var(--colonne-max), calc(100% - 2 * var(--marge-page)));
+  max-width: none;
+  margin: clamp(6px, 1vh, 10px) auto 0;
+  padding: clamp(4px, 0.8vh, 8px) clamp(10px, 1.4vw, 14px);
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--rayon-fluide);
+  box-shadow: var(--halo);
+  max-height: clamp(44px, 14vh, 180px);
+  overflow: auto;
+}
+html[data-theme="light"] .hud-plan,
+html[data-theme="dark"] .hud-plan {
+  background: var(--surface);
+  border: 0;
+  box-shadow: var(--halo);
+}
+
+/* Le compteur du plan ne doit pas danser quand le chiffre change. */
+.plan-suivi {
+  font-variant-numeric: tabular-nums;
+}
+/* v20261007 (em) — PIED SUR LA MEME LARGEUR QUE LA CARTE.
+   `--composeur-pied` (744px) etait mesure a 499..1243 pendant que la carte
+   occupait 481..1261 : 18px de debord de chaque cote. Il herite de la meme
+   formule, avec le meme `--composeur-pied` conserve pour la position des
+   boutons a leur place. */
+.composeur-pied,
+.composeur-mention {
+  width: min(var(--composeur-pied), calc(100% - 2 * var(--marge-page)));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* v20261007 (em) — A 720px ET 390px, LA CARTE ETAIT PLUS ETROITE QUE LES
+   MESSAGES. Mesure : carte 48..672 (624px) contre rangee 38..710 (672px).
+   La carte se calait sur `100% - 2 * --marge-page`, donc sur la largeur du
+   COMPOSEUR (moins les marges du bloc), la ou les messages se calent sur la
+   largeur de la ZONE. Il faut la meme reference des deux cotes.
+   `--colonne-max` sert de reference commune : c'est le cadre, et la carte comme
+   les messages s'y alignent. */
+.composeur-carte {
+  width: min(var(--colonne-max), calc(100% - 2 * var(--marge-page)));
+}
+.row.bot,
+.row.user {
+  width: min(var(--colonne-max), calc(100% - 2 * var(--marge-page)));
+}
+
+/* Le plan ne colle plus a l'en-tete : l'ecart vient de la marge du bloc
+   parent, on le fixe explicitement. */
+.hud-plan {
+  margin-top: clamp(10px, 1.6vh, 18px);
 }

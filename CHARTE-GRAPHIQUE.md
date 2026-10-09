@@ -175,6 +175,39 @@ arrondies), 4–11px (puces et badges).
 
 ---
 
+### 4.1 Surface et halo — plus de filet
+
+| Jeton | Sombre | Clair | Rôle |
+|---|---|---|---|
+| `--surface` | `#1f1d1d` | `#ffffff` | l'unique fond : en-tête, fil, composeur, carte, plan |
+| `--halo` | `0 10px 30px -10px rgba(0,0,0,.55), 0 0 1px rgba(255,255,255,.04)` | `0 10px 30px -10px rgba(0,0,0,.14), 0 0 1px rgba(0,0,0,.06)` | la carte de saisie et le plan |
+
+Un filet de 1px **coupe** l'écran : c'est une ligne nette, elle ne se laisse pas
+ignorer. Un halo très diffus se dissout dans le fond. Les deux cartes portent
+désormais le même halo — en-tête, plan et composeur forment une famille.
+
+Le second terme du halo sombre (`rgba(255,255,255,.04)`) est indispensable :
+sur fond noir, une ombre noire ne se voit pas du tout. C'est cette lumière
+blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vérifié.
+
+Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
+45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
+
+### 4.2 Hauteurs et rayons fluides
+
+| Jeton | Valeur | Rôle |
+|---|---|---|
+| `--header-h` | `clamp(48px, 6vh, 64px)` | hauteur de l'en-tête |
+| `--composeur-pad` | `clamp(8px, 1.2vh, 14px)` | respiration verticale du composeur |
+| `--rayon-fluide` | `clamp(14px, 1.2vw, 20px)` | rayon de la carte et du plan |
+| `--colonne-max` | `780px` | largeur commune : bulles, carte, plan |
+
+`flex-shrink: 0` sur `.chat-tete` est **obligatoire**, pas décoratif :
+`.chat-shell` est un `flex-direction: column`, et sans lui une conversation
+longue comprime l'en-tête de 54px à 21px. La mesure l'a montré, la relecture du
+fichier ne l'aurait pas montré.
+
+---
 ## 5. Profondeur
 
 **Une seule ombre** : `--ombre`. Deux valeurs coexistent —
