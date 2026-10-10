@@ -193,6 +193,76 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.9 Quatre corrections, trois diagnostics infirmes (`ey`)
+
+Quatre demandes de correction. Trois des diagnostics qui les accompagnent
+ne tenaient pas a la mesure. La regle qui en sort : **on mesure avant de
+corriger, et on dit ce que la mesure contredit.**
+
+#### Le plan etait invisible — mais pas pour la raison donnee
+
+Le symptome etait juste (le plan ne se lisait pas en theme clair), la cause
+etait inversee.
+
+| | fond | texte du plan | contraste |
+|---|---|---|---|
+| clair, avant | `#f6f6f6` | `#ffffff` | **1,08:1 — invisible** |
+| sombre | `#0d0d0d` | `#ffffff` | 19,44:1 — lisible |
+| clair, apres | `#f6f6f6` | `#171717` | 16,59:1 — lisible |
+
+`--texte-plan-bloc` n'etait declare que dans `:root`, et `.md pre.plan-bloc`
+n'a pas de fond propre : il herite de `--fond-code-bloc`. Un jeton absent d'un
+theme **herite de l'autre et se trompe sans bruit** — c'est le theme sombre qui
+masquait le defaut, en etant correct.
+
+Le `.code-lang` accuse (`color: var(--primaire)`) etait, lui, en contraste
+correct dans les deux themes (16,59:1 et 17,21:1). Il reste change : `--primaire`
+est un accent qui s inverse, et le poser sur un fond de code est un pari qui
+depend du fond.
+
+Le plan est aussi sorti de `--mono` : il sort un etat publie, pas du code. La
+pile de police de `body` devient `--police-ui` — elle etait ecrite en dur, donc
+inutilisable ailleurs.
+
+#### Les cellules de tableau etaient bien du texte brut
+
+`th.textContent` et `td.textContent` : confirme. Elles passent par
+`markdownInline()` puis `innerHTML`. Sûr sans sanitisation supplementaire :
+`markdownInline()` echappe le HTML avant de baliser. Mesure : `**gras**`,
+`*`code`*` et `[lien](url)` rendus ; `<script>` du modele affiche comme
+texte, `window.__XSS` non defini.
+
+Le defilement passe sur un `.md-table-wrap`. La table avait `display: block`,
+un hack qui casse le calcul de colonnes ; elle redevient `display: table`.
+Alignement `:---:` verifie : `left, center, right`.
+
+#### La fluidite : l'hypothese ne tient pas
+
+`afficherProgressif()` refait bien `zone.replaceChildren()` et reparse tout le
+markdown a chaque flush — la cause posee est **vraie**. Mais le regroupement par
+image existe deja (`planifierFlush()`), et le cout mesure est :
+
+| mots | `markdownVersFragment` | texte simple |
+|---|---|---|
+| 400 | 0,23 ms | 0,01 ms |
+| 1600 | 0,17 ms | ~0 ms |
+
+Soit 0,06 a 0,23 ms par rendu, tres en deca d'une image (16,7 ms) — de 100 a 170
+fois plus cher qu'un noeud texte, mais negligeable. `crash-ui` confirme : 60
+rendus en 146 ms. **Aucun correctif applique** : il n y a rien a corriger sur la
+base de cette mesure. Si un lag est constate sur une machine precise, il vient
+d ailleurs (layout du fil qui grossit), et il faut une trace de profileur.
+
+#### Une porte qui ne fermait pas
+
+Pendant la suppression de `.voie-modele`, `docs/chat-demo.js` s est casse
+(`Missing catch or finally after try`) et `tools/check.js` a affiche
+**« aucune anomalie bloquante »**. Il verifiait des chaines de caracteres, jamais
+le parsing — or ce fichier *est* l application : une accolade de trop et toute la
+page est morte, sans qu'aucune porte ne bronche. `check.js` compile maintenant
+`chat-demo.js` avec `vm.Script` (qui parse sans executer). Verifie en
+cassant volontairement le fichier : `BLOQUANT`, code de sortie 1.
+
 ### 4.8 Un tour, un seul bloc continu (`ev`)
 
 Un tour de l'assistant est **un seul `.row.bot`**, et son DOM est deja dans

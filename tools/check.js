@@ -43,6 +43,18 @@ console.log('ids=' + ids.length + ' dups=' + JSON.stringify(dups));
 if (dups.length) signaler('id duplique(s) : ' + dups.join(', '));
 
 const js = fs.readFileSync(path.join(dir, 'chat-demo.js'), 'utf8');
+/* v20261007 (ey) : une ERREUR DE SYNTAXE dans chat-demo.js etait invisible ici.
+   Le fichier a ete casse (`Missing catch or finally after try`) et ce controle
+   a affiche « aucune anomalie bloquante » : il verifiait des chaines de
+   caracteres, jamais le parsing. Or chat-demo.js EST l'application ; une
+   accolade de trop et toute la page est morte, sans qu'aucune porte ne
+   bronche. On compile donc le fichier pour de vrai.
+   `vm.Script` parse SANS executer : rien ne tourne, aucun effet de bord. */
+try {
+  new (require('vm').Script)(js, { filename: 'docs/chat-demo.js' });
+} catch (e) {
+  signaler('chat-demo.js ne compile pas : ' + e.message);
+}
 /* v20261007 (B1/U1) : on scannait UNIQUEMENT `getElementById("x")`. Or le code
    utilise massivement l'alias `$('x')` — `const statutEl = $('statut')` n'était
    donc jamais vérifié, et #statut/#dot ont pu disparaître du HTML sans que

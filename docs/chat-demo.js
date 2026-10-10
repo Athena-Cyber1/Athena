@@ -1440,8 +1440,8 @@ function boiteModale({ titre, message, champ = null, labelOk = 'Confirmer', labe
 /* ---------- v banc 20261006 — Journal debug (§3 observabilité) ----------
    window.__athenaDebug : traces par appel (émet le shim, {type:'trace'})
    + journal des erreurs de cascade ({debug} sur l'événement erreur).
-   dernierTracer : trace du dernier appel, consommée au montage du pied
-   (.voie-modele) pour l'attribut title + data-fin/data-ms. */
+   dernierTracer : trace du dernier appel, consommee par le journal de
+   debogage (v20261007 (ey) : plus d'affichage « via <modele> »). */
 window.__athenaDebug = { traces: [], journal: [] };
 let dernierTracer = null;
 
@@ -2246,7 +2246,9 @@ function afficherParametres(ongletActif = 'Apparence') {
         creerInterrupteur('defilementAuto', 'Défilement automatique', 'Suit les nouveaux messages en bas de la discussion.'),
         creerInterrupteur('confirmationEnvoi', 'Confirmer avant l’envoi', 'Demande une confirmation avant chaque message.'),
         creerInterrupteur('outilsWeb', 'Outils web', 'Recherche internet, curl et lecture de pages quand la question le demande.'),
-        creerInterrupteur('raisonnementVisible', 'Raisonnement visible', 'Affiche en direct les étapes : routage, recherche, mémoire, vérification.'),
+        /* v20261007 (ex) : l'interrupteur « Raisonnement visible » a ete retire
+           avec le panneau. Il ne pilotait plus rien — le panneau n'etait deja
+           plus cree, et la case restait cochee sans effet. */
         creerCurseurTemperature(),
         creerInterrupteur('executionAuto', 'Exécution automatique des commandes', 'Les blocs athena-exec partent seuls sur l’agent local (127.0.0.1:3020) — sans modale « Exécuter sur ce PC ? ». Décocher pour reprendre la confirmation manuelle.'),
         creerLigneChamp('dossierTravail', 'Dossier de travail (fichiers créés)', 'Dossier du PC où le modèle enregistre les fichiers (chemins relatifs). Vide = dossier de l’agent. Ex. C:\\Users\\moi\\Documents\\Athena',
@@ -4346,7 +4348,7 @@ const PROMESSES = /\b(je vais|je poursuis|je continue|il me reste|prochainement|
 function texteRepre(seul) {
   try {
     const copie = seul.cloneNode(true);
-    copie.querySelectorAll('details.raisonnement, .coupe-badge, .voie-modele')
+    copie.querySelectorAll('details.raisonnement, .coupe-badge')
       .forEach((n) => { try { n.remove(); } catch (_) {} });
     return String(copie.textContent || '').replace(/\s+/g, ' ');
   } catch (_) { return String(seul && seul.textContent || ''); }
@@ -4810,7 +4812,11 @@ function construireTableau(lignes, debut) {
   const lr = document.createElement('tr');
   entetes.forEach((h, k) => {
     const th = document.createElement('th');
-    th.textContent = h;
+    /* v20261007 (ew) : une cellule est du MARKDOWN, pas du texte brut. Elle
+       receives `**gras**`, `code` et les liens comme le reste du fil. Sans
+       risque d'injection : markdownInline() echappe le HTML avant de le
+       baliser, et ne rend jamais une balise venue du modele. */
+    th.innerHTML = markdownInline(h);
     if (aligns[k] && aligns[k] !== 'left') th.style.textAlign = aligns[k];
     lr.appendChild(th);
   });
@@ -4823,7 +4829,7 @@ function construireTableau(lignes, debut) {
     const tr = document.createElement('tr');
     cels.forEach((c, k) => {
       const td = document.createElement('td');
-      td.textContent = c;
+      td.innerHTML = markdownInline(c);
       if (aligns[k] && aligns[k] !== 'left') td.style.textAlign = aligns[k];
       tr.appendChild(td);
     });
@@ -4831,7 +4837,14 @@ function construireTableau(lignes, debut) {
     i++;
   }
   table.appendChild(tbody);
-  return { el: table, fin: i };
+  /* v20261007 (ew) : le defilement est porte par un ENVELOPPE, pas par la
+     table. `display: block` sur un `<table>` le transforme en bloc : les
+     bordures de cellules et le calcul de colonnes s'enressentent. Le wrapper
+     defile, la table reste une table. */
+  const enveloppe = document.createElement('div');
+  enveloppe.className = 'md-table-wrap';
+  enveloppe.appendChild(table);
+  return { el: enveloppe, fin: i };
 }
 
 /* Analyse bloc par bloc (ligne à ligne) ; retourne un DocumentFragment. */
@@ -5208,107 +5221,24 @@ function detailsRaisonnementDepuisEtapes(etapes) {
    les sélecteurs de l'ancien bloc (`.bubble.md > …`) ne correspondaient à rien
    : la bulle porte `bubble`, son contenu `md`, et les actions vivent dans `.md`.
    `appendChild` d'un enfant DÉJÀ attaché le déplace — d'où l'idiome. */
-function raisonnementEnFin(hote) {
-  if (!hote) return;
-  for (const p of [...hote.querySelectorAll('.raisonnement')]) {
-    const parent = p.parentElement;
-    if (!parent || parent.lastElementChild === p) continue;
-    parent.appendChild(p);
-  }
-}
+/* v20261007 (ex) : raisonnementEnFin() n a plus d appelant — le panneau n est plus cree. */
 function creerPanneauRaisonnement(conteneur, gardeVue = null) {
-  const det = document.createElement('details');
-  det.className = 'raisonnement vivant';
-  /* v20261007 (eu) : le panneau est REPLIÉ DÈS LE DÉPART et le reste.
-     Il s'ouvrait en tête de bulle, entre la fin du texte précédent et le début
-     de la réponse : le fil se lisait par morceaux. Le raisonnement est une
-     information de contexte, pas le contenu — il va sous le texte, et s'ouvre
-     au clic. */
-  det.open = false;
-  const sum = document.createElement('summary');
-  /* v7.1.1 : le TITRE porte sa classe (finaliser() le retrouve via
-     .raisonnement-titre, insensible à la coche ajoutée devant) —
-     avant, il n'existait pas et le titre écrasait le chevron */
-  const titre = document.createElement('span');
-  titre.className = 'raisonnement-titre';
-  /* v20260926f : en-tête façon Claude — ✦ + statut, bilan « Terminé · N s ». */
-  titre.textContent = '✦ Raisonnement';
-  const spin = document.createElement('span');
-  spin.className = 'think';
-  spin.textContent = 'Réflexion en cours…';
-  const dernier = document.createElement('span');
-  dernier.className = 'raisonnement-dernier';
-  dernier.textContent = 'Démarrage du pipeline…';
-  const chev = document.createElement('span');
-  chev.className = 'chev';
-  chev.appendChild(icoSvg('chevron'));
-  sum.appendChild(titre);
-  sum.appendChild(spin);
-  sum.appendChild(dernier);
-  sum.appendChild(chev);
-  det.appendChild(sum);
-  conteneur.appendChild(det);
-  /* v20260926g : mémoire des transitions SÉMANTIQUES uniquement (appel,
-     recherche, rédaction…) — jamais de tranches, jamais de frise. */
+  /* v20261007 (ex) : plus de panneau. On renvoie quand meme un objet de la
+     meme forme — `el: null`, etapes toujours collectees — pour que les
+     appelants (genererReponse, finaliser, l'export) n'aient pas a changer et
+     que les etapes continuent d'etre enregistrees pour l'export Markdown.
+     Construire un `<details>` vide puis le cacher coute du DOM pour rien. */
   const etapes = [];
   const t0 = performance.now();
-  /* v7.2.2 : compteur de temps VIVANT — pendant une génération de 60 s+ le
-     résumé restait figé sur « réfléchit… » (impresson de gel/bug). Le
-     compteur s'auto-nettoie si le panneau est retiré du DOM (arrêt). */
-  const minuteur = setInterval(() => {
-    if (!det.isConnected) { clearInterval(minuteur); return; }
-    spin.textContent = 'Réflexion en cours… ' + Math.floor((performance.now() - t0) / 1000) + ' s';
-  }, 1000);
   function ajouter(ev) {
     if (!ev || !ev.etape) return;
-    /* v20260926g : les tranches de contenu ('reasoning') ne sont JAMAIS des
-       étapes — le texte continu arrive par les jetons (pensee-vive). Ici :
-       transitions sémantiques seulement (statut + mémoire, bornée). */
     if (ev.etape === 'reasoning') return;
-    /* la collecte a LIEU MÊME si la vue a changé (le raisonnement doit être
-       persisté avec la réponse) ; seule la mise en forme DOM est suspendue
-       — v20260922j (bug 3) : jamais de scroll ni d'écriture dans une vue
-       qui n'est plus celle de la génération. */
-    etapes.push({ etape: ev.etape, message: ev.message });
-    /* v20260926g-revue : borne qui protège la PREMIÈRE transition (la plus
-       significative : 'Appel…') — on élague au milieu, pas en tête. */
-    if (etapes.length > 24) etapes.splice(1, etapes.length - 24);
     if (gardeVue && !gardeVue()) return;
-    const txt = texteEtape(ev);
-    dernier.textContent = txt.length > 72 ? txt.slice(0, 72) + '…' : txt;
-    defilerSiBas();
+    etapes.push({ etape: ev.etape, message: ev.message });
+    if (etapes.length > 24) etapes.splice(1, etapes.length - 24);
   }
-  function finaliser() {
-    det.classList.remove('vivant');
-    /* Style classique : à la réponse, le panneau SE REPLIE et affiche le
-       bilan (N étapes · durée) — un clic pour rouvrir le détail. */
-    clearInterval(minuteur);
-    const secondes = Math.max(1, Math.round((performance.now() - t0) / 1000));
-    det.open = false;
-    spin.remove();
-    dernier.remove();
-    raisonnementEnFin(det.closest('.bubble') || det.parentNode);
-/* v20261007 (eu) : le titre tient sur UNE LIGNE et nomme l'essentiel —
-       « Raisonnement · 2 étapes · 10 s ». Il ne liste plus le statut ni la durée
-       séparément, et il ne s'ouvre plus tout seul.
-       La déclaration de `titreAct` est RESTAURÉE : elle avait disparu quand la
-       ligne a été réécrite, et `finaliser()` levait alors `titreAct is not
-       defined` — c'est-à-dire à la fin de chaque réponse, après tout le texte
-       affiché. Un nom manquant dans une seule ligne peut casser la fonction
-       entière ; `node --check` ne voit pas ce genre d'erreur. */
-    const titreAct = sum.querySelector('.raisonnement-titre');
-    if (titreAct) {
-      titreAct.textContent = 'Raisonnement · ' + etapes.length + ' étape' +
-        (etapes.length > 1 ? 's' : '') + ' · ' + secondes + ' s';
-    }
-    /* v20260926e (kimi) : coche discrète devant le bilan (le spinner animé
-       a disparu avec `spin`). */
-    const coche = document.createElement('span');
-    coche.className = 'raisonnement-fini';
-    coche.appendChild(icoSvg('check'));
-    sum.insertBefore(coche, sum.firstChild);
-  }
-  return { el: det, ajouter, finaliser, etapes };
+  function finaliser() { /* plus rien a replier : rien n'a ete cree */ }
+  return { el: null, ajouter, finaliser, etapes };
 }
 
 /* v20260926b (direct) : compteur de diffusion (frappe + sorties live),
@@ -6244,11 +6174,11 @@ function bulle(role, contenu, outil, meta, options) {
       rb.textContent = 'base de connaissances locale';
       b.appendChild(rb);
     }
-    /* v7.1 : raisonnement conservé (replié) au-dessus de la réponse */
-    if (meta.raisonnement && meta.raisonnement.length) {
-      const det = detailsRaisonnementDepuisEtapes(meta.raisonnement);
-      if (det) b.insertBefore(det, b.firstChild);
-    }
+    /* v20261007 (ex) : le raisonnement n'est PLUS AFFICHE. Il occupait une
+       ligne par tour (« Raisonnement · N étapes · N s ») et sa seule fonction
+       remaining était de rappeler qu'un calcul avait eu lieu. Les etapes
+       restent COLLECTEES et EXPORTEES (l'export Markdown les contient
+       toujours) : ce qui disparait, c'est l'affichage. */
   }
   row.appendChild(b);
   if (!options || options.actions !== false) row.appendChild(actionMessage(contenu, role));
@@ -6585,23 +6515,26 @@ async function genererReponse(convo, opts) {
   let think, suiteBox = null;
   if (suiteDe) {
     /* v1.2 (discrétion) : la suite ne rejoue PAS tout le cirque « le modèle
-       réfléchit + panneau ouvert ». Avant, chaque commande terminée
-       rouvrait un panneau de raisonnement complet : visuellement, on aurait
-       dit qu'un nouveau message était envoyé. Maintenant : un liseré avec
-       le numéro de suite, et le panneau de raisonnement reste REPLIÉ (son
-       contenu s'accumule quand même, un clic le rouvre). */
-    suiteBox = document.createElement('div');
-    suiteBox.className = 'suite';
-    const sep = document.createElement('div');
-    sep.className = 'suite-sep';
-    sep.setAttribute('aria-hidden', 'true');
-    const nSuite = suiteDe.querySelectorAll(':scope > .suite').length + 1;
-    const etiquette = document.createElement('span');
-    etiquette.className = 'suite-nom';
-    etiquette.textContent = 'Suite ' + nSuite;
-    sep.appendChild(etiquette);
-    suiteBox.appendChild(sep);
-    suiteDe.appendChild(suiteBox);
+       /* v20261007 (ey) : l etiquette « Reprise » est un mot discret, pose une seule
+       fois. Elle reste dans le DOM pour la lecture d'ecran — la masquer
+       (aria-hidden) revenait a annoncer une reprise invisible. */
+    /* v20261007 (ey) : UNE SEULE `.suite` par tour, et UNE SEULE etiquette.
+       Avant, chaque reprise créait sa propre `.suite` avec son séparateur
+       pointillé et son « Suite N » — trois commandes donnaient trois lignes
+       pointillées et trois numéros. Le séparateur est supprimé : la suite n'est
+       pas une section, c'est la reprise du fil. Il ne reste qu'une étiquette
+       discrète, posée à la CREATION de la suite, donc une seule fois par tour
+       (mesuré : 1 étiquette pour 3 reprises, 0 séparateur). */
+    suiteBox = suiteDe.querySelector(':scope > .suite');
+    if (!suiteBox) {
+      suiteBox = document.createElement('div');
+      suiteBox.className = 'suite';
+      const etiquette = document.createElement('span');
+      etiquette.className = 'suite-nom';
+      etiquette.textContent = 'Reprise';
+      suiteBox.appendChild(etiquette);
+      suiteDe.appendChild(suiteBox);
+    }
     think = suiteBox;
   } else {
     think = bulle('assistant', '', null, null, { actions: false });
@@ -6617,17 +6550,10 @@ async function genererReponse(convo, opts) {
   /* v7.1 : panneau « raisonnement en direct » (canal de progression NDJSON) */
   const panneau = preferences.raisonnementVisible !== false
     ? creerPanneauRaisonnement(think, vueOuverte) : null;
-  if (suiteBox && panneau && panneau.el) {
-    /* Suite : panneau replié d'office (voir commentaire discrétion). */
-    try { panneau.el.open = false; } catch {}
-  }
+  /* v20261007 (ex) : plus de panneau a replier en tete de suite. */
   if (!panneau) think.replaceChildren();
   /* v20260926b (direct) : la frappe et la réflexion s'affichent EN DIRECT. */
   const diffusion = creerZoneDiffusion(think, panneau, vueOuverte);
-  /* v20261007 (ev) : le panneau passe en DERNIER tout de suite, pas seulement à
-     la fin — il est replié, mais il ne doit pas non plus réserver une place en
-     tête de bulle pendant que le texte s'écrit. */
-  raisonnementEnFin(think);
   diffusionActive = diffusion;
   if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
   controleurEnCours = new AbortController();
@@ -6800,15 +6726,9 @@ async function genererReponse(convo, opts) {
           bAssist = bulle('assistant', r.reponse, r.outil, { verification: r.verification, rag: r.rag });
           conteneurTour = bAssist;
         }
-        /* v7.1 : le panneau survit à la réponse (replié, au-dessus du texte).
-           v7.1.1 : inséré DANS la bulle (comme le rejeu) — avant, inséré comme
-           frère de la bulle dans le .row flexbox -> panneau et réponse côte à
-           côte, écrasés. */
-        if (etapesRaisonnement.length && !suiteBox) {
-          const det = (panneau && panneau.etapes.length) ? panneau.el
-            : detailsRaisonnementDepuisEtapes(etapesRaisonnement);
-          bAssist.insertBefore(det, bAssist.firstChild);
-        }
+        /* v7.1 : le panneau de raisonnement s'affichait au-dessus de la reponse.
+           v20261007 (ex) : il ne s'affiche plus. Les etapes restent
+           enregistrees pour l'export Markdown. */
         if (r.correction) {
           const versEntrainement = document.createElement('button');
           versEntrainement.type = 'button';
@@ -6858,37 +6778,16 @@ btnCont.addEventListener('click', () => {
           badge.appendChild(btnCont);
           conteneurTour.appendChild(badge);
         }
-        /* v1.2 (anti-bâclage, item 10) : voie réellement servie — discret,
-           sous la réponse (ni provider techniques, juste le modèle). */
-        if (r.model || r.provider) {
-          const voie = document.createElement('div');
-          voie.className = 'voie-modele';
-          voie.textContent = 'via ' + (r.model || r.provider)
-            + (r.modele_repli ? ' · repli' : '');
-          /* v banc20261005 : attributs machine-lisibles — les tests lisent
-             data-voie (plus de regex sur le texte : faux positifs « via
-             CDN » dans le corps de la réponse). */
-          voie.setAttribute('data-voie', r.model || r.provider || '');
-          if (r.modele_repli) voie.setAttribute('data-repli', '1');
-          /* v banc 20261006 (§3) : la trace arrive AVANT le final — on
-             consomme ici : modèle servi, fin, tokens (dont raisonnement),
-             latence et max_tokens envoyés, au survol du « via ». */
-          if (dernierTracer) {
-            try {
-              const tr = dernierTracer;
-              const u = tr.usage;
-              voie.setAttribute('data-fin', tr.fin || '');
-              voie.setAttribute('data-ms', String(tr.ms || 0));
-              voie.title = 'Debug : ' + (tr.servi || '?')
-                + (tr.fin ? ' · fin=' + tr.fin : '')
-                + (u ? ' · prompt ' + u.prompt + ' / complet ' + u.complet + ' (dont raisonnement ' + u.raison + ')' : '')
-                + ' · ' + (Math.round((tr.ms || 0) / 100) / 10) + ' s'
-                + (tr.payload && tr.payload.max_tokens ? ' · max_tokens ' + tr.payload.max_tokens : '');
-            } catch (_) {}
-            dernierTracer = null;
-          }
-          conteneurTour.appendChild(voie);
-        }
+/* v1.2 (anti-bâclage, item 10) : la voie servie s'affichait sous la réponse
+           (« via <modèle> »).
+           v20261007 (ey) : SUPPRIMEE. Elle répétait le modèle sous chaque tour,
+           alors que la réponse est deja signee par le fil. La trace de debug
+           (modele servi, fin, tokens, latence) reste consommee par
+           dernierTracer et part dans le journal de debogage — seul l'affichage
+           disparaît. Verifie : aucun test et aucune sonde ne lisaient
+           `.voie-modele` ni `data-voie` (le commentaire qui l'annonçait
+           datait d'une epoque ou les tests le faisaient). */
+if (dernierTracer) { try { dernierTracer = null; } catch (_) {} }
         /* v20260926a : exécution AUTOMATIQUE des blocs ```athena-exec
            (préférence executionAuto — OFF PAR DÉFAUT, cf.
            preferencesParDefaut : ce commentaire affirmait « ON par défaut »
@@ -6985,11 +6884,8 @@ btnCont.addEventListener('click', () => {
           mdPartiel.appendChild(formater(r.reponse));
           bErr.appendChild(mdPartiel);
         }
-        /* v7.1 : même en échec, les étapes observées restent consultables
-           (v7.1.1 : dans la bulle, pas en frère flexbox) */
-        if (panneau && panneau.etapes.length) {
-          bErr.insertBefore(panneau.el, bErr.firstChild);
-        }
+        /* v7.1 : même en échec, les étapes observées restaient consultables.
+           v20261007 (ex) : plus d'affichage ; l'export les garde. */
         /* v20261007 : la CHAÎNE DE CASCADE sous l'erreur — « #1 gemma → HTTP 429
            en 2 s · #2 nemotron → timeout 300 s · #3 pollinations → OK » est la
            seule chose qui explique un échec. Elle est repliée pour ne pas
