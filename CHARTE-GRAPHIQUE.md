@@ -193,56 +193,67 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
-### 4.8 Un tour, un seul bloc continu (`eu`)
+### 4.8 Un tour, un seul bloc continu (`ev`)
 
-**Ordre mesuré des enfants d’une bulle d’assistant**, avant :
+Un tour de l'assistant est **un seul `.row.bot`**, et son DOM est deja dans
+l'ordre de lecture :
 
-| # | nœud | rôle |
-|---|---|---|
-| 1 | `details.raisonnement` | le raisonnement **en tête** |
-| 2 | `div.diffusion` | le texte |
-| 3 | `details.activity-group` | les commandes |
-| 4 | `div.suite` | « Suite 2 », séparateur pointillé |
-
-Le texte était coupé **par le raisonnement**, en plein milieu, et les commandes
-tombaient entre deux morceaux de prose.
-
-L’ordre est désormais fixé par `order`, sans déplacer un seul nœud :
-
-| `order` | nœud |
+| ordre | noeud |
 |---|---|
-| 1 | texte, paragraphes, listes, `.suite` — **la suite est la continuité du texte** |
-| 2 | `.activity-group`, `.action` — les cartes, en retrait d’une colonne |
-| 3 | `.raisonnement` — replié, sous tout |
+| 1 | le texte, les blocs de code |
+| 2 | les cartes d'action, **sous le bloc de code de leur commande** |
+| 3 | la synthese, si elle vient apres |
+| 4 | le raisonnement, replie, une ligne |
 
-**Le séparateur « Suite N » disparaît.** La suite n’est pas une section, c’est
-la reprise du fil au point exact où il s’était arrêté. Mesuré : `display: none`.
+C'est une regle de **construction**, pas de rendu. Aucun `order` en CSS : la
+copie, le selectionneur de texte et la lecture d'ecran suivent le meme ordre que
+l'oeil, parce que c'est le meme ordre.
 
-**Le raisonnement tient sur une ligne** : « Raisonnement · 2 étapes · 10 s »,
-replié dès le départ (il s’ouvrait en tête de bulle), et le statut « Terminé »
-a disparu du titre — la durée le dit déjà.
+#### Ce que le bloc `eu` avait rate
 
-**Le nom du modèle n’est réaffiché nulle part** dans le fil.
+`eu` reputait regler la question avec `order`, en selectivityant
+`.bubble.md > …`. Mesure sur un tour **reel** : ce selecteur ne designait
+rien.
 
-Vérification demandée — trois commandes et un texte long, dans les deux thèmes :
-**une seule bulle `.row.bot`**, et l’ordre visuel, mesuré par position :
+- la bulle porte `class="bubble"`, son contenu `class="md"` — `.bubble.md`
+  exige un element qui ait **les deux**, ce qui n'arrive jamais ;
+- `.md-pied-modele`, `.raisonnement-corps` et `.md-contenu` : **zero**
+  occurrence dans `chat-demo.js`. Trois selecteurs pour du vide ;
+- les actions vivent dans `.md`, pas dans `.bubble`.
 
-```
-1. paragraphe 1   @120
-2. paragraphe 2   @161
-3. suite (texte)  @216
-4. carte 1        @317
-5. carte 2        @359
-6. carte 3        @400
-7. raisonnement   @440
-```
+Consequence : ni le deplacement du raisonnement, ni la disparition du
+separateur de suite, ni le retrait des cartes n'avaient ete appliques. La
+verification qui les validait avait mesure un DOM **fabrique par la sonde**, pas
+celui de l'application — le selecteur de la sonde etait plus permissif que celui
+du CSS.
 
-Un piège de mesure : lire l’ordre du DOM ne dit rien de l’ordre affiché —
-`order` réordonne l’affichage sans déplacer un nœud. Il faut trier par
-`getBoundingClientRect().top`. Le premier relevé était FAUX : il concluait que
-les cartes passaient après le texte de la suite, en comparant des positions
-prises avant l’activation de la feuille.
+La regle qui vaut : **un test qui mesure le DOM doit le construire avec le code
+de l'application**, jamais a la main. Ici, piloter `genererReponse()` avec une
+reponse et de vraies etapes de raisonnement donne la structure reelle en une
+seconde.
 
+#### Verification demandee — trois commandes et un texte long, dans les deux themes
+
+Une seule bulle `.row.bot`, et **l'ordre du DOM** relu sur le DOM reel :
+
+    .row.bot > .bubble > div.md > details.raisonnement
+
+Le raisonnement est le **dernier enfant**, replie, titre
+« Raisonnement · 3 etapes · 1 s ». L'ordre visuel, mesure par
+`getBoundingClientRect().top` :
+
+    y=317  p            y=561  p (synthese)
+    y=358  p            y=602  details.activity-group
+    y=467  pre          y=727  details.raisonnement
+
+#### Un piege de mesure, deux fois
+
+1. **L'ordre du DOM ne dit rien de l'ordre affiche.** `order` reordonne
+   l'affichage sans deplacer un noeud. Comparer des positions prises avant que
+   la feuille ne soit active donne un « non » faux.
+2. **Un selecteur CSS trop permissif valide n'importe quoi.** `.bubble.md`
+   ne matchait rien ; la sonde, elle, construisait une bulle qui avait bien les
+   deux classes, donc « ça marchait » des deux cotes du papier.
 ### 4.7 Gras, émojis et zones (`et`)
 
 **Le gras traverse le code.** `markdownInline` découpait le texte sur les

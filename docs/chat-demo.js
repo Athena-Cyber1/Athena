@@ -5201,6 +5201,21 @@ function detailsRaisonnementDepuisEtapes(etapes) {
   }
   return det;
 }
+/* v20261007 (ev) : le panneau de raisonnement est le DERNIER nœud de son
+   conteneur, dans le DOM lui-même — plus aucune règle `order` en CSS.
+   `order` réordonne l'AFFICHAGE sans toucher au DOM : la copie et la lecture
+   d'écran, elles, suivaient encore l'ordre ancien (raisonnement en tête). Et
+   les sélecteurs de l'ancien bloc (`.bubble.md > …`) ne correspondaient à rien
+   : la bulle porte `bubble`, son contenu `md`, et les actions vivent dans `.md`.
+   `appendChild` d'un enfant DÉJÀ attaché le déplace — d'où l'idiome. */
+function raisonnementEnFin(hote) {
+  if (!hote) return;
+  for (const p of [...hote.querySelectorAll('.raisonnement')]) {
+    const parent = p.parentElement;
+    if (!parent || parent.lastElementChild === p) continue;
+    parent.appendChild(p);
+  }
+}
 function creerPanneauRaisonnement(conteneur, gardeVue = null) {
   const det = document.createElement('details');
   det.className = 'raisonnement vivant';
@@ -5272,6 +5287,7 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
     det.open = false;
     spin.remove();
     dernier.remove();
+    raisonnementEnFin(det.closest('.bubble') || det.parentNode);
 /* v20261007 (eu) : le titre tient sur UNE LIGNE et nomme l'essentiel —
        « Raisonnement · 2 étapes · 10 s ». Il ne liste plus le statut ni la durée
        séparément, et il ne s'ouvre plus tout seul.
@@ -6090,13 +6106,22 @@ function actionMessage(contenu, role) {
    On garde une base par défaut pour les emojis absents du jeu local, afin que
    l'application reste correcte si le modèle en sort un nouveau. */
 const TWEMOJI_BASE = './vendor/twemoji/';
-const TWEMOJI_BASE_REPLI = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/';
-/* La bibliothèque construit `<base><size><codepoint><ext>`. Par défaut elle
-   attend `72x72/2705.png` — donc il faut dire explicitement qu'on sert des SVG
-   à plat : `ext: '.svg'` et `size: ''`. Sans ces deux options, le fichier
-   local n'est jamais trouvé et l'émoji reste celui du système. */
-const TWEMOJI_OPTS = { base: TWEMOJI_BASE, ext: '.svg', size: '' };
-const TWEMOJI_OPTS_REPLI = { base: TWEMOJI_BASE_REPLI, ext: '.svg', size: '' };
+/* Le jeu complet est dans `svg/` (3689 fichiers), servi à plat.
+   ATTENTION — ce build de twemoji n'honore PAS `size: ''` :
+     size: how.folder || toSizeSquaredAsset(how.size || twemoji.size)
+   `''` est falsy, donc le défaut `72x72` reprenait la main et l'URL devenait
+   `72x72/<code>.svg`. C'est le SEUL moyen d'obtenir un dossier à plat ici :
+   passer par `folder`. Ne pas « simplifier » en `size: ''` — ça casserait
+   silencieusement le chemin et les émojis retomberaient sur l'emoji système. */
+const TWEMOJI_OPTS = { base: TWEMOJI_BASE, folder: 'svg', ext: '.svg' };
+/* v20261007 (ev) : PLUS DE REPLI CDN. Le jeu local est complet (3689 SVG,
+   14.0.2) ; le repli vers cdn.jsdelivr.net ne pouvait servir qu'à masquer un
+   chemin cassé, en faisant partir une requête réseau — exactement ce que la
+   page doit pouvoir faire sans réseau. Un émoji absent se signale dans la
+   console au lieu de sortir silencieusement. */
+function emojiserSignaleAbsent(e) {
+  try { console.warn('[twemoji] absent du jeu local :', String((e && e.origText) || e)); } catch (_) {}
+}
 /* Tous les conteneurs de TEXTE, pas seulement `.bubble` et `.md` : les cartes
    d'action, le plan de travail et le raisonnement portaient des emojis
    système, à côté de bulles Twemoji — deux rendus dans le même fil.
@@ -6109,16 +6134,12 @@ function emojiser(racine) {
     if (!racine || !window.twemoji || typeof window.twemoji.parse !== 'function') return;
     const sansPre = (el) => el.closest('pre') === null;
     if (racine.matches && racine.matches(CONTENEURS_TEXTE) && sansPre(racine)) {
-      try { window.twemoji.parse(racine, TWEMOJI_OPTS); } catch (e) {
-        try { window.twemoji.parse(racine, TWEMOJI_OPTS_REPLI); } catch (e2) {}
-      }
+      try { window.twemoji.parse(racine, TWEMOJI_OPTS); } catch (e) { emojiserSignaleAbsent(e); }
       return;
     }
     racine.querySelectorAll(CONTENEURS_TEXTE).forEach((el) => {
       if (!sansPre(el)) return;
-      try { window.twemoji.parse(el, TWEMOJI_OPTS); } catch (e) {
-        try { window.twemoji.parse(el, TWEMOJI_OPTS_REPLI); } catch (e2) {}
-      }
+      try { window.twemoji.parse(el, TWEMOJI_OPTS); } catch (e) { emojiserSignaleAbsent(e); }
     });
   } catch {}
 }
@@ -6603,6 +6624,10 @@ async function genererReponse(convo, opts) {
   if (!panneau) think.replaceChildren();
   /* v20260926b (direct) : la frappe et la réflexion s'affichent EN DIRECT. */
   const diffusion = creerZoneDiffusion(think, panneau, vueOuverte);
+  /* v20261007 (ev) : le panneau passe en DERNIER tout de suite, pas seulement à
+     la fin — il est replié, mais il ne doit pas non plus réserver une place en
+     tête de bulle pendant que le texte s'écrit. */
+  raisonnementEnFin(think);
   diffusionActive = diffusion;
   if (vueOuverte() && preferences.defilementAuto) msgsEl.scrollTop = msgsEl.scrollHeight;
   controleurEnCours = new AbortController();

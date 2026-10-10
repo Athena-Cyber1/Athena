@@ -6822,7 +6822,7 @@ html[data-theme="dark"] .chat-tete {
 .md pre {
   border-radius: var(--rayon-s);
   border: 1px solid var(--bord-code);
-  padding: clamp(28px, 4.2vh, 34px) 14px 13px;
+  padding: clamp(28px, 4.2vh, 34px) clamp(12px, 1.4vw, 16px) 13px;
   font-family: var(--mono);
 }
 .md pre code {
@@ -6836,8 +6836,16 @@ html[data-theme="dark"] .chat-tete {
 .file-bloc {
   border-radius: var(--rayon-s);
   border: 1px solid var(--bord);
-  background: var(--fond-code-bloc);
-  color: var(--texte-code-bloc);
+/* v20261007 (ev) : la carte suit le THEME.
+     Elle portait `--fond-code-bloc`, c'est-a-dire la couleur d'un BLOC DE CODE :
+     #f6f6f6 en clair, #0d0d0d en sombre. En clair elle n'etait donc pas noire
+     mais un gris du meme ton que le code, sans se distinguer de l'en-tete ni du
+     composeur. Mesure avant/apres (carte, en-tete, texte) :
+       clair  avant #f6f6f6 / #efefef / #171717   ->  apres #ffffff / #efefef / #171717
+       sombre  avant #0d0d0d / transparent / #f1f1f1 -> apres #1f1d1d / transparent / #f1f1f1
+     En sombre elle passe aussi d'un noir de code a la surface reelle du theme. */
+  background: var(--surface);
+  color: var(--texte);
   overflow: hidden;
 }
 /* L'en-tête de fichier sur UNE SEULE LIGNE, à la hauteur de la barre de langue
@@ -6881,67 +6889,50 @@ img.emoji,\nimg.twemoji {
   margin: 0 0.05em;
 }
 /* ============================================================================
-   v20261007 (eu) — UN TOUR, UN SEUL BLOC CONTINU
+   v20261007 (ev) - LE DOM EST DANS L ORDRE DE LECTURE
    ============================================================================
-   Mesure de l'ordre RÉEL des enfants d'une bulle d'assistant au fil de l'eau :
-     1. details.raisonnement   ← le raisonnement EN TÊTE
-     2. div.diffusion          ← le texte
-     3. details.activity-group ← les commandes
-     4. div.suite              ← « Suite 2 », séparateur pointillé
-   Le texte était donc coupé PAR LE RAISONNEMENT, en plein milieu, et les
-   commandes tombaient entre deux morceaux de prose.
+   Le bloc precedent (eu) reputait corriger l ordre d affichage avec la
+   propriete CSS `order`. Mesure faite sur un tour REEL : ce bloc ne
+   correspondait a RIEN.
 
-   L'ordre est désormais fixé par `order`, sans déplacer un seul nœud : le DOM
-   garde la structure que le JS construit, la lecture suit un ordre stable.
-   Texte court → cartes d'action repliées → synthèse → raisonnement replié.
+     - le selecteur etait `.bubble.md`, or la bulle porte `class="bubble"`
+       et son contenu `class="md"` : `.bubble.md` est un element qui aurait
+       les DEUX classes. Il n en a jamais eu.
+     - `.md-pied-modele`, `.raisonnement-corps` et `.md-contenu` : zero
+       occurrence dans chat-demo.js. Trois selecteurs pour du vide.
+   Consequence : ni le deplacement du raisonnement, ni la disparition du
+   separateur de suite, ni le retrait des cartes n avaient ete appliques. La
+   verification qui les validait avait mesure un DOM FABRIQUE par la sonde, pas
+   celui de l application.
+
+   Le DOM reel d un tour :
+     .row.bot > .bubble > .md            (texte)
+                                > details.raisonnement
+   En flux direct (message rejoue depuis l historique), le groupe d actions est
+   le DEUXIEME enfant de la bulle ; pendant la generation il vit dans `.md`,
+   juste sous le bloc de code auquel la commande se rattache. D ou l absence de
+   `>` ici : la position reelle differe entre les deux chemins.
+
+   L ordre est donc desormais celui de la CREATION, et il est le meme pour la
+   lecture d ecran, la copie et le selecteur tout : texte, puis cartes, puis
+   synthese, puis raisonnement replie.
    ============================================================================ */
 
-/* Le fil se lit de haut en bas. */
-.bubble.md {
-  display: flex;
-  flex-direction: column;
-}
-/* Le texte ET la suite partagent `order: 1`. La suite est la CONTINUITÉ du
-   texte : un `.suite` qui sort après les cartes fait lire la réponse à
-   l'envers (mesuré : texte de suite à y=321, cartes à y=446). */
-.bubble.md > .diffusion,
-.bubble.md > .md-contenu,
-.bubble.md > p,
-.bubble.md > ul,
-.bubble.md > ol,
-.bubble.md > pre,
-.bubble.md > .suite {
-  order: 1;
-}
-.bubble.md > .activity-group,
-.bubble.md > .action {
-  order: 2;
-}
-.bubble.md > .raisonnement {
-  order: 3;
-}
-/* La suite d'une commande n'est pas une nouvelle réponse : elle reprend le
-   fil au point exact où il s'était arrêté, sans séparateur. Le « Suite 2 »
-   devant chaque commande était la coupure la plus visible. */
-.bubble.md > .suite {
-  display: flex;
-  flex-direction: column;
-}
-/* Le séparateur disparaît : la suite est la CONTINUITÉ du texte, pas une
-   section à part. On garde l'espace, pas la ligne pointillée. */
-.bubble.md > .suite > .suite-sep {
+/* Le separateur « Suite N » disparait. Une suite n est pas une section, c est
+   la reprise du fil au point exact ou il s etait arrete : la ligne pointillee
+   etait la coupure la plus visible du fil. L etiquette, elle, reste dans le
+   DOM pour la lecture d ecran. */
+.bubble .suite > .suite-sep {
   display: none;
 }
-.bubble.md > .suite {
+.bubble .suite {
   margin-top: var(--espace-3);
 }
-.bubble.md > .suite > :not(.suite-sep) {
-  order: 1;
-}
 
-/* Le raisonnement tient sur UNE LIGNE, replié, sous le texte : « Raisonnement ·
-   2 étapes · 10 s ». Il était un panneau ouvert en tête de bulle. */
-.bubble.md > .raisonnement > summary {
+/* Le raisonnement tient sur UNE LIGNE, replie, sous le texte :
+   « Raisonnement · 2 etapes · 10 s ». Il etait un panneau ouvert en tete de
+   bulle. */
+.bubble .raisonnement > summary {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -6949,22 +6940,14 @@ img.emoji,\nimg.twemoji {
   color: var(--texte-doux);
   font-size: 0.8125rem;
 }
-.bubble.md > .raisonnement > summary .raisonnement-titre {
+.bubble .raisonnement > summary .raisonnement-titre {
   font-weight: normal;
 }
-.bubble.md > .raisonnement > .raisonnement-corps {
-  margin-top: var(--espace-2);
-}
 
-/* Le nom du modèle n'est réaffiché nulle part dans le fil : la bulle est déjà
-   alignée à gauche, et le nom ne distinguait rien à l'œil. */
-.bubble.md > .md-pied-modele {
-  display: none;
-}
-
-/* Les cartes d'action restent en retrait d'une colonne, rattachées au texte par
-   leur bordure gauche. */
-.bubble.md > .activity-group {
+/* Les cartes d action restent en retrait d une colonne, rattachees au texte
+   par leur bordure gauche. Sans la bordure du dessus : elles ne sont pas une
+   section, elles sont un piece du tour. */
+.bubble .activity-group {
   margin: var(--espace-2) 0 0;
   border-top: none;
   padding-left: var(--espace-2);

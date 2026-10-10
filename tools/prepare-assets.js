@@ -34,17 +34,23 @@ copy("docs/vendor/twemoji.min.js", "public/vendor/twemoji.min.js");
    déjà locale, mais les images venaient du CDN — hors ligne, le rendu
    retombait sur l'émoji système. GitHub Pages publie `docs/`, donc les SVG
    doivent vivre dans `docs/vendor/twemoji/` ET être copiés dans `public/`
-   pour que le serveur local les serve aussi. */
+   pour que le serveur local les serve aussi.
+   v20261007 (ev) : jeu COMPLET dans `svg/` (3689 fichiers, 14.0.2), à plat.
+   L'ancien sous-dossier `72x72/` n'a plus lieu d'être : le chemin dependedait
+   du défaut `size` de la bibliothèque, pas d'un choix de notre part. */
 (function copieTwemoji() {
   const src = "docs/vendor/twemoji";
   const dst = "public/vendor/twemoji";
   if (!fs.existsSync(src)) return;
-  /* Les SVG vivent dans un sous-dossier `72x72/` : la bibliothèque Twemoji
-     construit `<base><size><codepoint><ext>` et `size` n'est pas configurable
-     dans cette version — le sous-dossier fait partie du chemin. */
-  fs.mkdirSync(dst + "/72x72", { recursive: true });
-  for (const nom of fs.readdirSync(src + "/72x72")) {
-    if (nom.endsWith(".svg")) fs.copyFileSync(src + "/72x72/" + nom, dst + "/72x72/" + nom);
+  fs.mkdirSync(dst + "/svg", { recursive: true });
+  for (const nom of fs.readdirSync(src + "/svg")) {
+    if (nom.endsWith(".svg")) fs.copyFileSync(src + "/svg/" + nom, dst + "/svg/" + nom);
   }
+  /* L'ancien miroir `72x72/` ne doit pas survivre : il ferait 14 doublons
+     et ferait croire que le chemin est toujours-active. */
+  const vieux = dst + "/72x72";
+  if (fs.existsSync(vieux)) fs.rmSync(vieux, { recursive: true, force: true });
+  const licence = src + "/LICENCE-TWEMOJI-GRAPHICS.txt";
+  if (fs.existsSync(licence)) fs.copyFileSync(licence, dst + "/LICENCE-TWEMOJI-GRAPHICS.txt");
 })();
 console.log("prepared generated assets");
