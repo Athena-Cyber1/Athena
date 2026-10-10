@@ -118,7 +118,7 @@ const SVG_ICOS = {
   pinOff: '<path d="M12 17v5" /> <path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89" /> <path d="m2 2 20 20" /> <path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11" />',
   refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" />',
   search: '<path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" />',
-  send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" /> <path d="m21.854 2.147-10.94 10.939" />',
+  enter: '<path d="M20 4v7a4 4 0 0 1-4 4H4" /> <path d="m9 10-5 5 5 5" />',
   stop: '<rect width="18" height="18" x="3" y="3" rx="2" />',
   terminal: '<path d="m7 11 2-2-2-2" /> <path d="M11 13h4" /> <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />',
   thumbDown: '<path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z" /> <path d="M17 14V2" />',
@@ -6292,7 +6292,7 @@ function majBoutonArret() {
        à chaque appelant. */
     btnEl.disabled = false;
   } else {
-    btnEl.replaceChildren(icoSvg('send'));
+    btnEl.replaceChildren(icoSvg('enter'));
     btnEl.title = 'Envoyer';
     btnEl.setAttribute('aria-label', 'Envoyer');
     btnEl.classList.remove('en-cours');
