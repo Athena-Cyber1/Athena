@@ -193,6 +193,84 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.10 Émojis natifs de l'OS (`ez`)
+
+Les émojis ne sont plus des images. Ils sont rendus par le système.
+
+#### Pourquoi on ne peut pas livrer les emoji Apple
+
+Les dessins d'Apple Color Emoji sont la propriété d'Apple et n'ont **jamais**
+été licenciés pour redistribution. Ce n'est pas une interprétation : la règle
+App Store 5.2.5 rejette les apps qui les utilisent, et c'est sur ce fondement
+qu'Apple a fait bloquer Telegram en 2022.
+
+Ce qu'Apple autorise, en revanche, est explicite :
+
+> Apps may use Unicode characters that render as Apple emoji in their app and
+> app metadata. Apple emoji may not be used on other platforms or embedded
+> directly in your app binary.
+
+La frontière est donc nette : **laisser l'OS dessiner est permis ; livrer les
+dessins ne l'est pas.** Athena fait la première des deux.
+
+#### Ce que ça donne
+
+| où | ce qui dessine |
+|---|---|
+| macOS, iOS | **les vrais emoji Apple** (Apple Color Emoji) |
+| Windows | Segoe UI Emoji |
+| Android, Linux | Noto Color Emoji |
+
+La pile `--police-emoji` se place **après** les polices d'interface : elle ne
+contient que des glyphes emoji, donc le texte courant n'est pas affecté, et un
+émoji absent d'Inter est trouvé.
+
+#### Ce qu'il reste à faire, et pourquoi
+
+Unicode donne à U+2705, U+2764 et U+26A0 une présentation **texte** par défaut.
+Sans le sélecteur de variation U+FE0F, la coche, le cœur et le triangle
+s'affichent en glyphe noir et plat — c'est ce que faisaient les images, sans
+qu'on le voie.
+
+`forcerPresentationEmoji()` l'ajoute donc, **sauf** aux caractères qui ont déjà
+la présentation emoji (`Emoji_Presentation`) : leur ajouter FE0F ferait basculer
+certains moteurs vers la variante texte. Mesuré :
+
+    U+2705 ✅  pas de FE0F   (déjà présentation emoji)
+    U+274C ❌  pas de FE0F   (déjà présentation emoji)
+    U+2B50 ⭐  pas de FE0F   (déjà présentation emoji)
+    U+2764 ❤  FE0F ajouté   (présentation texte par défaut)
+    U+26A0 ⚠  FE0F ajouté   (présentation texte par défaut)
+
+Idempotent : un second passage ne change rien.
+
+#### Un bug que le `catch` a avalé en silence
+
+La fonction a d'abord été écrite `const frappe = RE_PICTO.exec(data)`, puis
+réassignée dans la boucle : « Assignment to constant variable ». Le
+`catch {}` de `emojiser()` a absorbé l'erreur — **aucun glyphe modifié, aucune
+ligne en console**. C'est la même famille que `titreAct is not defined`, en
+pire : ici la faute est invisible par construction, parce qu'un `try/catch` nu
+est précisément le genre d'instruction qui garantit qu'on ne la verra pas.
+
+#### Coût
+
+| | avant | après |
+|---|---|---|
+| fichiers | 3689 SVG + 1 bibliothèque | **0** |
+| poids | 8,19 Mo | **0** |
+| requêtes réseau par émoji | 1 (HTTP 200, 150×150) | **0** |
+
+Le revers : le rendu n'est plus figé à l'emoji 14.0.2, il suit l'OS. C'est le
+compromis voulu — c'est aussi ce qui permet d'avoir le vrai rendu Apple.
+
+#### Deux glyphes échappent encore au natif
+
+`STATUT_EMOJIS` remplace ✅ et ⚠ par les icônes SVG du système
+(`.statut-ligne`) : un choix de conception antérieur, qui préférait l'icône de
+l'application au glyphe du modèle pour les marques de statut. Ces deux-là ne
+passeront donc pas par l'emoji de l'OS tant que ce choix tient.
+
 ### 4.9 Quatre corrections, trois diagnostics infirmes (`ey`)
 
 Quatre demandes de correction. Trois des diagnostics qui les accompagnent

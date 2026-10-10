@@ -123,6 +123,11 @@
      recopier la pile. Le plan l'herite de `.md pre`, donc de `--mono` — un plan
      n'est pas du code. */
   --police-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
+  /* v20261007 (ez) : pile de police pour les EMOJIS NATIFS. Apple Color Emoji
+     en tete : sur macOS/iOS le navigateur dessine les vrais emoji Apple.
+     Sinon Segoe UI Emoji (Windows) puis Noto Color Emoji (Android/Linux).
+     Plus aucune image : rien a charger, rien a versionner. */
+  --police-emoji: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "NotoEmoji", "Twemoji Mozilla", "EmojiOne Color", "Android Emoji", sans-serif;
 }
 /* ————— Base ————— */
 html,
@@ -132,8 +137,11 @@ body {
   /* v20261007 (dw) : police de base à 16px. Elle n'était fixée nulle part, donc la racine restait à la valeur par défaut du navigateur (16px) — mais rien ne l'assurait : un reset plus tard, un style hérité, ou un navigateur réglé autrement suffisait à décaler t… */
   font-size: 16px;
   /* la pile s'applique aussi hors .page-demo (modales,
-     voiles) — avant : Times New Roman par défaut du navigateur. */
-  font-family: var(--police-ui);
+     voiles) — avant : Times New Roman par défaut du navigateur.
+     v20261007 (ez) : la pile se complete des polices EMOJI de l'OS, apres
+     celles de l'interface. Elles ne contiennent que des glyphes emoji : le
+     texte normal n'est pas affecte, et un emoji absent d'Inter est trouve. */
+  font-family: var(--police-ui), var(--police-emoji);
 }
 /* v20260926h : Inter auto-hébergée — les @font-face sont dans le <head>
    (docs/index.html + src/app/page.tsx) car le bundler Next ne résout pas
@@ -4379,14 +4387,6 @@ header.chat-tete {
 .md {
   font-family: "Inter", var(--font-geist-sans, system-ui), -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", Arial, sans-serif;
 }
-/* Èmojis style Twemoji (proche macOS) au lieu des émojis système. */
-.bubble img.emoji,
-.md img.emoji {
-  height: 1.2em;
-  width: 1.2em;
-  vertical-align: -0.2em;
-  margin: 0 0.05em;
-}
 @media (min-width: 721px) {
   /* v20260926j (cadrage) : colonne messages 768 px — 736 de contenu +
      16 px de chaque côté, bords bien droits des deux côtés. */
@@ -6791,12 +6791,6 @@ html[data-theme="dark"] .chat-tete {
    le texte qui les porte. La règle est en `em` et non en `px` : l'émoji suit
    la taille du texte, donc il reste cohérent dans une légende, un titre et un
    paragraphe — sans trois valeurs à maintenir. */
-img.emoji,\nimg.twemoji {
-  height: 1.25em;
-  width: 1.25em;
-  vertical-align: -0.25em;
-  margin: 0 0.05em;
-}
 /* ============================================================================
    v20261007 (ev) - LE DOM EST DANS L ORDRE DE LECTURE
    ============================================================================

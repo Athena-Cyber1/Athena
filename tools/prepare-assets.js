@@ -28,29 +28,20 @@ copy("docs/index.html", "public/_index.html");
 copy("docs/fonts/inter-400.woff2", "public/fonts/inter-400.woff2");
 copy("docs/fonts/inter-500.woff2", "public/fonts/inter-500.woff2");
 copy("docs/fonts/inter-700.woff2", "public/fonts/inter-700.woff2");
-/* v20260926i : Twemoji auto-hébergé (émojis proches macOS). */
-copy("docs/vendor/twemoji.min.js", "public/vendor/twemoji.min.js");
-/* v20261007 (et) : les SVG Twemoji sont AUTO-HÉBERGÉS. La bibliothèque était
-   déjà locale, mais les images venaient du CDN — hors ligne, le rendu
-   retombait sur l'émoji système. GitHub Pages publie `docs/`, donc les SVG
-   doivent vivre dans `docs/vendor/twemoji/` ET être copiés dans `public/`
-   pour que le serveur local les serve aussi.
-   v20261007 (ev) : jeu COMPLET dans `svg/` (3689 fichiers, 14.0.2), à plat.
-   L'ancien sous-dossier `72x72/` n'a plus lieu d'être : le chemin dependedait
-   du défaut `size` de la bibliothèque, pas d'un choix de notre part. */
-(function copieTwemoji() {
-  const src = "docs/vendor/twemoji";
-  const dst = "public/vendor/twemoji";
-  if (!fs.existsSync(src)) return;
-  fs.mkdirSync(dst + "/svg", { recursive: true });
-  for (const nom of fs.readdirSync(src + "/svg")) {
-    if (nom.endsWith(".svg")) fs.copyFileSync(src + "/svg/" + nom, dst + "/svg/" + nom);
+/* v20261007 (ez) : la copie de `vendor/twemoji.min.js` a été retirée avec la
+   bibliothèque (les émojis sont natifs). Elle plantait ici en ENOENT, car elle
+   pointait sur un fichier supprimé — `tools/check.js` ne valide pas ce script. */
+/* v20260926i : Twemoji auto-hébergé.
+   v20261007 (ez) : SUPPRIMÉ. Les émojis sont rendus par l'OS — la pile
+   `--police-emoji` met Apple Color Emoji en tête. Les dessins Apple ne sont pas
+   redistribuables (règle App Store 5.2.5) ; laisser le système dessiner est
+   explicitement autorisé, et cela supprime 3689 fichiers (8,19 Mo) du dépôt
+   ainsi que toute requête réseau pour un émoji. Le dossier `vendor/twemoji/`
+   est retiré des deux côtés. */
+(function purgeTwemoji() {
+  for (const d of ["docs/vendor/twemoji", "public/vendor/twemoji", "docs/vendor/twemoji.min.js", "public/vendor/twemoji.min.js"]) {
+    const p = path.join(root, d);
+    if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
   }
-  /* L'ancien miroir `72x72/` ne doit pas survivre : il ferait 14 doublons
-     et ferait croire que le chemin est toujours-active. */
-  const vieux = dst + "/72x72";
-  if (fs.existsSync(vieux)) fs.rmSync(vieux, { recursive: true, force: true });
-  const licence = src + "/LICENCE-TWEMOJI-GRAPHICS.txt";
-  if (fs.existsSync(licence)) fs.copyFileSync(licence, dst + "/LICENCE-TWEMOJI-GRAPHICS.txt");
 })();
 console.log("prepared generated assets");

@@ -364,8 +364,9 @@
     <!-- Clés API des modèles cloud (voir keys.js) + interception /api/* → providers réels. -->
     <script src="./keys.js?v=20261007dj"></script>
     <script src="./api-shim.js?v=20261007do"></script>
-    <!-- Twemoji auto-hébergé (émojis proches macOS) — images CDN, repli alt si hors-ligne. -->
-    <script src="./vendor/twemoji.min.js"></script>
+    <!-- v20261007 (ez) : plus de Twemoji. Les emoji sont rendus par l'OS
+         (pile --police-emoji, Apple Color Emoji en tete) : vrai rendu Apple
+         sur macOS/iOS, zero fichier, zero requete. -->
     <script src="./chat-demo.js?v=20261007dz"></script>
   </div>
 </body>

@@ -6027,50 +6027,75 @@ function actionMessage(contenu, role) {
 /* v20260926i : émojis style Twemoji (proche macOS) au lieu des émojis
    système (Microsoft sur Windows). Jamais dans le code (pre) : la coloration
    syntaxique resterait lisible.
-   v20261007 (et) : les SVG sont AUTO-HÉBERGÉS dans `vendor/twemoji/`
-   (14 fichiers, 8,8 Ko au total). Avant, la bibliothèque était locale mais les
-   IMAGES venaient de `cdn.jsdelivr.net` — donc un rendu correct exigeait le
-   réseau, et hors ligne on retombait sur l'émoji système. Le CDN répondait
-   (HTTP 200) mais restait une dépendance : la politique de sécurité d'une page
-   peut le bloquer à tout moment, sans que rien ne le signale.
-   On garde une base par défaut pour les emojis absents du jeu local, afin que
-   l'application reste correcte si le modèle en sort un nouveau. */
-const TWEMOJI_BASE = './vendor/twemoji/';
-/* Le jeu complet est dans `svg/` (3689 fichiers), servi à plat.
-   ATTENTION — ce build de twemoji n'honore PAS `size: ''` :
-     size: how.folder || toSizeSquaredAsset(how.size || twemoji.size)
-   `''` est falsy, donc le défaut `72x72` reprenait la main et l'URL devenait
-   `72x72/<code>.svg`. C'est le SEUL moyen d'obtenir un dossier à plat ici :
-   passer par `folder`. Ne pas « simplifier » en `size: ''` — ça casserait
-   silencieusement le chemin et les émojis retomberaient sur l'emoji système. */
-const TWEMOJI_OPTS = { base: TWEMOJI_BASE, folder: 'svg', ext: '.svg' };
-/* v20261007 (ev) : PLUS DE REPLI CDN. Le jeu local est complet (3689 SVG,
-   14.0.2) ; le repli vers cdn.jsdelivr.net ne pouvait servir qu'à masquer un
-   chemin cassé, en faisant partir une requête réseau — exactement ce que la
-   page doit pouvoir faire sans réseau. Un émoji absent se signale dans la
-   console au lieu de sortir silencieusement. */
-function emojiserSignaleAbsent(e) {
-  try { console.warn('[twemoji] absent du jeu local :', String((e && e.origText) || e)); } catch (_) {}
-}
+   v20261007 (et) : SVG auto-hébergés dans `vendor/twemoji/`.
+   v20261007 (ez) : SUPPRIMÉS, au profit des émojis NATIFS. Les dessins Apple
+   Color Emoji appartiennent à Apple et n'ont jamais été licenciés pour
+   redistribution (règle App Store 5.2.5 ; Telegram, 2022). Apple autorise en
+   revanche explicitement les « Unicode characters that render as Apple emoji » :
+   on laisse donc le système dessiner. On gagne 8,19 Mo et 3689 fichiers, on
+   perd la version figée — le rendu suit l'OS, ce qui est le but. */
 /* Tous les conteneurs de TEXTE, pas seulement `.bubble` et `.md` : les cartes
    d'action, le plan de travail et le raisonnement portaient des emojis
    système, à côté de bulles Twemoji — deux rendus dans le même fil.
    `pre` reste exclu : la coloration syntaxique y serait illisible. */
+/* v20261007 (ez) : EMOJIS NATIFS DE L'OS. Plus aucune image.
+   Rappel du droit : les dessins Apple Color Emoji sont la propriete d'Apple et
+   n'ont jamais ete licences pour redistribution (regle App Store 5.2.5 ;
+   Telegram, 2022). Ce qu'Apple autorise explicitement, en revanche :
+   « Apps may use Unicode characters that render as Apple emoji ». Donc on
+   demande au systeme de dessiner, au lieu de livrer les dessins.
+
+   Concretement : sur macOS/iOS, ce sont les VRAIS emoji Apple. Sur Windows,
+   Segoe UI Emoji ; sur Android, Noto Color Emoji. Zoctet telecharge, zero
+   requete, et le rendu suit toujours l'OS de l'utilisateur — ce que Twemoji
+   empechait justement (3689 SVG, 8,19 Mo, figes a la version 14.0.2).
+
+   Ce qui reste a faire ici : FORCER la presentation emoji. Unicode donne a
+   U+2705 (coche), U+2764 (coeur) et U+26A0 (triangle) une presentation
+   TEXTE par defaut : sans U+FE0F, ils s'affichent en glyphe noir et plat.
+   On ajoute donc le selecteur de variation FE0F la ou la regle Emoji le
+   demande (UAX #51) — c'est ce que faisaient les images, sans qu'on le voie. */
 const CONTENEURS_TEXTE = 'p, li, h1, h2, h3, h4, blockquote, td, th, summary, ' +
   '.action-tete, .action-etat, .action-sortie, .plan-tete-nom, .plan-suivi, ' +
-  '.raisonnement-titre, .md-check, .statut-ligne, .file-nom, .file-tete';
+  '.md-check, .statut-ligne, .file-nom, .file-tete';
+/* Pictographique qui n'a PAS la presentation emoji par defaut : VS16 obligatoire.
+   `Emoji_Presentation`反过来 importe : tout ce qui l'a ne doit surtout PAS
+   recevoir FE0F, sinon certains moteurs forcent la variante texte. */
+const RE_PICTO = /\p{Extended_Pictographic}/gu;
+const RE_DEJA = /[\uFE0E\uFE0F]/;
+function forcerPresentationEmoji(noeud) {
+  const data = noeud.nodeValue;
+  if (!data) return;
+  RE_PICTO.lastIndex = 0;
+  /* `let` et pas `const` : la boucle reassigne `frappe`. Ecrit en `const`, la
+     fonction levait « Assignment to constant variable » — et le `catch {}` de
+     emojiser() l avalait en silence, sans un glyphe modifie et sans une ligne a
+     la console. Le meme piege que `titreAct is not defined` : une faute dans une
+     fonction COUVERTE par un try/catch nu ne se voit pas. */
+  let frappe = RE_PICTO.exec(data);
+  while (frappe) {
+    const i = frappe.index;
+    const apres = data.slice(i + frappe[0].length, i + frappe[0].length + 1);
+    const deja = apres === '\uFE0F' || apres === '\uFE0E';
+    if (!deja && !/\p{Emoji_Presentation}/u.test(frappe[0])) {
+      noeud.nodeValue = data.slice(0, i + frappe[0].length) + '\uFE0F' + data.slice(i + frappe[0].length);
+      return forcerPresentationEmoji(noeud);   // le texte a change : on repart
+    }
+    frappe = RE_PICTO.exec(data);
+  }
+}
 function emojiser(racine) {
   try {
-    if (!racine || !window.twemoji || typeof window.twemoji.parse !== 'function') return;
+    if (!racine) return;
     const sansPre = (el) => el.closest('pre') === null;
-    if (racine.matches && racine.matches(CONTENEURS_TEXTE) && sansPre(racine)) {
-      try { window.twemoji.parse(racine, TWEMOJI_OPTS); } catch (e) { emojiserSignaleAbsent(e); }
-      return;
-    }
-    racine.querySelectorAll(CONTENEURS_TEXTE).forEach((el) => {
-      if (!sansPre(el)) return;
-      try { window.twemoji.parse(el, TWEMOJI_OPTS); } catch (e) { emojiserSignaleAbsent(e); }
-    });
+    const traiter = (el) => {
+      if (el.closest('pre')) return;
+      const marche = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let n = marche.nextNode();
+      while (n) { forcerPresentationEmoji(n); n = marche.nextNode(); }
+    };
+    if (racine.matches && racine.matches(CONTENEURS_TEXTE)) { traiter(racine); return; }
+    racine.querySelectorAll(CONTENEURS_TEXTE).forEach(traiter);
   } catch {}
 }
 /* ---------- Rendu des messages ---------- */
