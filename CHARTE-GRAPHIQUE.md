@@ -193,6 +193,56 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.8 Un tour, un seul bloc continu (`eu`)
+
+**Ordre mesuré des enfants d’une bulle d’assistant**, avant :
+
+| # | nœud | rôle |
+|---|---|---|
+| 1 | `details.raisonnement` | le raisonnement **en tête** |
+| 2 | `div.diffusion` | le texte |
+| 3 | `details.activity-group` | les commandes |
+| 4 | `div.suite` | « Suite 2 », séparateur pointillé |
+
+Le texte était coupé **par le raisonnement**, en plein milieu, et les commandes
+tombaient entre deux morceaux de prose.
+
+L’ordre est désormais fixé par `order`, sans déplacer un seul nœud :
+
+| `order` | nœud |
+|---|---|
+| 1 | texte, paragraphes, listes, `.suite` — **la suite est la continuité du texte** |
+| 2 | `.activity-group`, `.action` — les cartes, en retrait d’une colonne |
+| 3 | `.raisonnement` — replié, sous tout |
+
+**Le séparateur « Suite N » disparaît.** La suite n’est pas une section, c’est
+la reprise du fil au point exact où il s’était arrêté. Mesuré : `display: none`.
+
+**Le raisonnement tient sur une ligne** : « Raisonnement · 2 étapes · 10 s »,
+replié dès le départ (il s’ouvrait en tête de bulle), et le statut « Terminé »
+a disparu du titre — la durée le dit déjà.
+
+**Le nom du modèle n’est réaffiché nulle part** dans le fil.
+
+Vérification demandée — trois commandes et un texte long, dans les deux thèmes :
+**une seule bulle `.row.bot`**, et l’ordre visuel, mesuré par position :
+
+```
+1. paragraphe 1   @120
+2. paragraphe 2   @161
+3. suite (texte)  @216
+4. carte 1        @317
+5. carte 2        @359
+6. carte 3        @400
+7. raisonnement   @440
+```
+
+Un piège de mesure : lire l’ordre du DOM ne dit rien de l’ordre affiché —
+`order` réordonne l’affichage sans déplacer un nœud. Il faut trier par
+`getBoundingClientRect().top`. Le premier relevé était FAUX : il concluait que
+les cartes passaient après le texte de la suite, en comparant des positions
+prises avant l’activation de la feuille.
+
 ### 4.7 Gras, émojis et zones (`et`)
 
 **Le gras traverse le code.** `markdownInline` découpait le texte sur les

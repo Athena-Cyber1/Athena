@@ -5204,7 +5204,12 @@ function detailsRaisonnementDepuisEtapes(etapes) {
 function creerPanneauRaisonnement(conteneur, gardeVue = null) {
   const det = document.createElement('details');
   det.className = 'raisonnement vivant';
-  det.open = true;
+  /* v20261007 (eu) : le panneau est REPLIÉ DÈS LE DÉPART et le reste.
+     Il s'ouvrait en tête de bulle, entre la fin du texte précédent et le début
+     de la réponse : le fil se lisait par morceaux. Le raisonnement est une
+     information de contexte, pas le contenu — il va sous le texte, et s'ouvre
+     au clic. */
+  det.open = false;
   const sum = document.createElement('summary');
   /* v7.1.1 : le TITRE porte sa classe (finaliser() le retrouve via
      .raisonnement-titre, insensible à la coche ajoutée devant) —
@@ -5267,8 +5272,19 @@ function creerPanneauRaisonnement(conteneur, gardeVue = null) {
     det.open = false;
     spin.remove();
     dernier.remove();
-    let titreAct = sum.querySelector('.raisonnement-titre');
-    if (titreAct) titreAct.textContent = '✦ Raisonnement · ' + etapes.length + ' étape' + (etapes.length > 1 ? 's' : '') + ' · Terminé · ' + secondes + ' s';
+/* v20261007 (eu) : le titre tient sur UNE LIGNE et nomme l'essentiel —
+       « Raisonnement · 2 étapes · 10 s ». Il ne liste plus le statut ni la durée
+       séparément, et il ne s'ouvre plus tout seul.
+       La déclaration de `titreAct` est RESTAURÉE : elle avait disparu quand la
+       ligne a été réécrite, et `finaliser()` levait alors `titreAct is not
+       defined` — c'est-à-dire à la fin de chaque réponse, après tout le texte
+       affiché. Un nom manquant dans une seule ligne peut casser la fonction
+       entière ; `node --check` ne voit pas ce genre d'erreur. */
+    const titreAct = sum.querySelector('.raisonnement-titre');
+    if (titreAct) {
+      titreAct.textContent = 'Raisonnement · ' + etapes.length + ' étape' +
+        (etapes.length > 1 ? 's' : '') + ' · ' + secondes + ' s';
+    }
     /* v20260926e (kimi) : coche discrète devant le bilan (le spinner animé
        a disparu avec `spin`). */
     const coche = document.createElement('span');
