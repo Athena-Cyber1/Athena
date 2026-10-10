@@ -193,6 +193,41 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+### 4.7 Gras, émojis et zones (`et`)
+
+**Le gras traverse le code.** `markdownInline` découpait le texte sur les
+segments `code` AVANT le gras : un `**` qui englobe du code était coupé en deux,
+et le gras disparaissait sans bruit. Les segments sont maintenant retirés
+derrière un jeton avant toute mise en forme, puis restaurés à la fin — le gras
+porte sur la chaîne entière. `tests/gras-code.test.cjs` verrouille 13 cas,
+dont `**nom \`du code\`**` et l’orphelin `**`, qui reste du texte.
+
+**Les émojis sont auto-hébergés.** 14 SVG dans `vendor/twemoji/72x72/`
+(8,8 Ko). La bibliothèque était locale, les images venaient du CDN : hors ligne
+le rendu retombait sur l’émoji système. La conversion porte maintenant sur tous
+les conteneurs de texte — cartes d’action, plan, raisonnement — et non plus
+seulement `.bubble` et `.md`. Taille relative : `1.25em`.
+
+**En-tête et composeur : même traitement.** Mesure avant : même fond, mais
+ombres différentes et l’en-tête n’avait **aucun flou** (`blur: none`) pendant
+que le composeur était à `blur(8px)`. Les deux valent désormais
+`0 0 14px 6px var(--surface)` et `blur(8px)`.
+
+Piège Twemoji : la bibliothèque construit `<base><size><codepoint><ext>` et
+`size` n’est pas configurable dans cette version — le sous-dossier `72x72/`
+fait partie du chemin, et il faut `ext: '.svg'` explicite.
+
+**Blocs de code et fichiers.** `.md pre` passe au rayon `--rayon-s`, à
+`--bord-code`, et à un padding fluide borné par la hauteur de la barre de langue
+(28 à 34px). `.file-bloc` reçoit la même surface, le même rayon, `--bord` et un
+débordement masqué ; `.file-tete` est sur une seule ligne, à la hauteur de la
+barre de langue des blocs de code.
+
+**Le curseur de frappe est supprimé.** `.diffusion-curseur` clignotait une fois
+par demi-seconde devant chaque lecture, et une animation infinie n’est jamais
+décorative. Le fait que le texte arrive progressivement suffit, et l’état
+« En cours » est porté par la carte d’action.
+
 ### 4.6 Espacement et carte d’action (`es`)
 
 **Une seule échelle d’espaces**, base 4px : `--espace-1` (4px),

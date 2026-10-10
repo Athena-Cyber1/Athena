@@ -2734,50 +2734,76 @@ function substituerEmojisStatut(s) {
   }
   return t;
 }
+/* Remplace le corps de markdownInline : le gras et l'italique sont appliqués à
+ * la CHAÎNE ENTIÈRE, les segments de code étant d'abord mis à l'abri derrière
+ * un jeton, puis restaurés à la fin.
+ *
+ * Cause du défaut : le texte était découpé sur les segments `code` AVANT le
+ * traitement du gras. Un `**` qui englobe du code était donc coupé en deux —
+ * `**nom **` et `` `code` `` — et aucun des deux morceaux ne formait une paire
+ * de `**`, donc aucun gras.
+ */
 function markdownInline(texte) {
   /* v20260926n : les entités du modèle (&amp; &lt; &mdash;…) sont DÉCODÉES
      avant échappement — sans quoi &amp; s'affichait littéralement « &amp; »
      (double échappement, mesuré). L'échappement reste la DERNIÈRE opération :
      aucun <script> du modèle ne peut passer. */
   const s = echapperHtml(decoderEntites(texte));
-  const morceaux = s.split(/(`+[^`]+`+)/g); // préserve les segments `code`
-  return morceaux.map((morceau) => {
-    if (/^`+[^`]+`+$/.test(morceau)) {
-      return '<code>' + morceau.replace(/^`+/, '').replace(/`+$/, '') + '</code>';
-    }
-    let t = substituerEmojisStatut(morceau);
-    // case à cocher GFM en tête de liste : « - [x] fait » / « - [ ] à faire »
-    t = t.replace(/^\s*\[([ xX])\]\s+/, (_m, coche) =>
-      /[xX]/.test(coche)
-        ? '<span class="md-check faite" role="img" aria-label="fait">' + icoSvgTexte('check') + '</span>'
-        : '<span class="md-check" role="img" aria-label="à faire"></span>');
-    /* liens [texte](url) — http(s) uniquement, jamais de javascript:.
-       La cible peut porter un titre ([t](http… "titre")) : sans cette
-       branche, l'URL nue était ré-liée PAR-DESSUS le lien markdown et le
-       rendu cassait en « [t](<a…>http…</a> "titre") » (mesuré). */
-    t = t.replace(/\[([^\]]+)\]\(([^()]*)\)/g, (m, texte2, cible) => {
-      /* la cible a été échappée (« devient &quot;) et peut être entourée de
-         <> : on normalise AVANT de tester l'URL, sinon le titre faisait
-         échouer la détection et l'URL était ré-liée par l'étape suivante. */
-      const brut = cible.trim().replace(/^<([\s\S]*)>$/, '$1').trim();
-      const dm = /^\s*(https?:\/\/[^\s)<]+)(?:\s+.*)?$/.exec(brut);
-      if (!dm) return m;
-      return '<a href="' + dm[1] + '" target="_blank" rel="noopener noreferrer">' + texte2 + '</a>';
-    });
-    // barré GFM : ~~texte~~
-    t = t.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
-    // URLs nues -> liens (le modèle sort rarement du [texte](url)), SAUF dans
-    // les <a> déjà générés (v20260926d : une URL dans le texte d'un lien
-    // re-matchait et imbriquait un second <a>).
-    t = t.split(/(<a\s[^>]*>[\s\S]*?<\/a>)/gi).map((frag) => {
-      if (/^<a\s/i.test(frag)) return frag;
-      return frag.replace(/(^|[\s(])((?:https?:\/\/)[^\s<)]+)/g, (_m, avant, url) =>
-        avant + '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>');
-    }).join('');
-    t = t.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-    t = t.replace(/(^|[^*\w])\*([^*\n]+)\*(?![\w*])/g, '$1<em>$2</em>');
-    return t;
+
+  /* Les segments de code sont retirés AVANT toute mise en forme, et gardés
+     dans un tableau indexé. Le gras, l'italique et le barré s'appliquent donc
+     à la chaîne entière, jamais à l'intérieur d'un segment découpé.
+     Le jeton contient des caractères qui ne peuvent pas survenir dans le
+     texte du modèle : il ne peut pas être confondu avec du contenu. */
+  const codes = [];
+  let marque = s;
+  marque = marque.replace(/(`+)([^`]+?)\1/g, (_m, _b, contenu) => {
+    codes.push('<code>' + contenu + '</code>');
+    return ' CODE' + (codes.length - 1) + ' ';
+  });
+
+  let t = substituerEmojisStatut(marque);
+  /* case à cocher GFM en tête de liste : « - [x] fait » / « - [ ] » à faire */
+  t = t.replace(/^\s*\[([ xX])\]\s+/, (_m, coche) =>
+    /[xX]/.test(coche)
+      ? '<span class="md-check faite" role="img" aria-label="fait">' + icoSvgTexte('check') + '</span>'
+      : '<span class="md-check" role="img" aria-label="à faire"></span>');
+  /* liens [texte](url) — http(s) uniquement, jamais javascript:.
+     La cible peut porter un titre ([t](http… "titre")) : sans cette
+     branche, l'URL nue était ré-liée PAR-DESSUS le lien markdown et le
+     rendu cassait en « [t](<a…>http…</a> "titre") » (mesuré). */
+  t = t.replace(/\[([^\]]+)\]\(([^()]*)\)/g, (m, texte2, cible) => {
+    /* la cible a été échappée (→ devient &quot;) et peut être entourée de
+       <> : on normalise AVANT de tester l'URL, sinon le titre faisait
+       échouer la détection et l'URL était ré-liée par l'étape suivante. */
+    const brut = cible.trim().replace(/^<([\s\S]*)>$/, '$1').trim();
+    const dm = /^\s*(https?:\/\/[^\s)<]+)(?:\s+.*)?$/.exec(brut);
+    if (!dm) return m;
+    return '<a href="' + dm[1] + '" target="_blank" rel="noopener noreferrer">' + texte2 + '</a>';
+  });
+  /* URLs nues → liens (le modèle sort rarement du [texte](url)), SAUF dans
+     les <a> déjà générés (v20260926d : une URL dans le texte d'un lien
+     re-matchait et imbriquait un second <a>). */
+  t = t.split(/(<a\s[^>]*>[\s\S]*?<\/a>)/gi).map((frag) => {
+    if (/^<a\s/i.test(frag)) return frag;
+    return frag.replace(/(^|[\s(])((?:https?:\/\/)[^\s<)]+)/g, (_m, avant, url) =>
+      avant + '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>');
   }).join('');
+
+  /* v20261007 (et) : le gras et l'italique portent sur la chaîne ENTIÈRE.
+     `[^\n]+?` autorise un `*` isolé à l'intérieur (a * b), mais refuse le
+     saut de ligne, et n'avale pas un second `*` isolé. Un `**` orphelin reste
+     du texte littéral — c'est le comportement attendu sur une saisie brute. */
+  t = t.replace(/\*\*([^\n]+?)\*\*(?!\*)/g, '<strong>$1</strong>');
+  t = t.replace(/(^|[^*\w])\*([^\n]+?)\*(?![\w*])/g, '$1<em>$2</em>');
+  t = t.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+
+  /* Les segments de code sont restaurés APRÈS toute mise en forme : ils
+     n'ont jamais été coupés, donc un `**` qui les englobe les a traversés
+     sans être fooled par leurs étoiles. */
+  t = t.replace(/ CODE(\d+) /g, (_m, i) => codes[Number(i)]);
+
+  return t;
 }
 
 /* Un bloc de code ``` avec étiquette de langage + bouton copier.
@@ -5263,15 +5289,18 @@ window.__athenaFlux = fluxStats;
    (chemin tamponné), reveler() rejoue le texte final en machine à écrire. */
 function creerZoneDiffusion(conteneur, panneau, gardeVue = null) {
   const zone = document.createElement('div');
-  zone.className = 'diffusion';
+zone.className = 'diffusion';
   zone.hidden = true;
   let txtEl = document.createElement('div');
   txtEl.className = 'md diffusion-texte';   /* v20261007 (dp) : la queue est du markdown */
-  const curseur = document.createElement('span');
-  curseur.className = 'diffusion-curseur';
-  curseur.textContent = '▍';
-  curseur.setAttribute('aria-hidden', 'true');
-  zone.append(txtEl, curseur);
+  /* v20261007 (et) : le curseur de frappe SUPPRIMÉ. C'était un caractère
+     clignotant après le texte en cours de diffusion — sur fond blanc il
+     clignotait une fois par demi-seconde devant chaque lecture, et une
+     animation infinie n'est jamais décorative pour quelqu'un qui la voit depuis
+     longtemps. Le fait que le texte arrive progressivement suffit à signaler
+     que la génération est en cours, et l'état « En cours » est déjà porté par
+     la carte d'action. */
+  zone.appendChild(txtEl);
   conteneur.appendChild(zone);
   /* v1.2 (fluidité) : rendu markdown PROGRESSIF. Avant, la frappe diffusait
      le markdown BRUT (les ``` défilaient en texte), puis la bulle finale
@@ -6034,22 +6063,46 @@ function actionMessage(contenu, role) {
 }
 
 /* v20260926i : émojis style Twemoji (proche macOS) au lieu des émojis
-   système (Microsoft sur Windows). Lib auto-hébergée (vendor/) ; images
-   CDN avec repli gracieux (l'attribut alt garde l'émoji si hors-ligne).
-   Jamais dans le code (pre) : la coloration syntaxique resterait lisible. */
-const TWEMOJI_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/';
+   système (Microsoft sur Windows). Jamais dans le code (pre) : la coloration
+   syntaxique resterait lisible.
+   v20261007 (et) : les SVG sont AUTO-HÉBERGÉS dans `vendor/twemoji/`
+   (14 fichiers, 8,8 Ko au total). Avant, la bibliothèque était locale mais les
+   IMAGES venaient de `cdn.jsdelivr.net` — donc un rendu correct exigeait le
+   réseau, et hors ligne on retombait sur l'émoji système. Le CDN répondait
+   (HTTP 200) mais restait une dépendance : la politique de sécurité d'une page
+   peut le bloquer à tout moment, sans que rien ne le signale.
+   On garde une base par défaut pour les emojis absents du jeu local, afin que
+   l'application reste correcte si le modèle en sort un nouveau. */
+const TWEMOJI_BASE = './vendor/twemoji/';
+const TWEMOJI_BASE_REPLI = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/';
+/* La bibliothèque construit `<base><size><codepoint><ext>`. Par défaut elle
+   attend `72x72/2705.png` — donc il faut dire explicitement qu'on sert des SVG
+   à plat : `ext: '.svg'` et `size: ''`. Sans ces deux options, le fichier
+   local n'est jamais trouvé et l'émoji reste celui du système. */
+const TWEMOJI_OPTS = { base: TWEMOJI_BASE, ext: '.svg', size: '' };
+const TWEMOJI_OPTS_REPLI = { base: TWEMOJI_BASE_REPLI, ext: '.svg', size: '' };
+/* Tous les conteneurs de TEXTE, pas seulement `.bubble` et `.md` : les cartes
+   d'action, le plan de travail et le raisonnement portaient des emojis
+   système, à côté de bulles Twemoji — deux rendus dans le même fil.
+   `pre` reste exclu : la coloration syntaxique y serait illisible. */
+const CONTENEURS_TEXTE = 'p, li, h1, h2, h3, h4, blockquote, td, th, summary, ' +
+  '.action-tete, .action-etat, .action-sortie, .plan-tete-nom, .plan-suivi, ' +
+  '.raisonnement-titre, .md-check, .statut-ligne, .file-nom, .file-tete';
 function emojiser(racine) {
   try {
     if (!racine || !window.twemoji || typeof window.twemoji.parse !== 'function') return;
-    if (racine.matches && (racine.matches('.bubble') || racine.matches('.md'))) {
-      if (!racine.querySelector('pre')) {
-        try { window.twemoji.parse(racine, { base: TWEMOJI_BASE }); } catch {}
-        return;
+    const sansPre = (el) => el.closest('pre') === null;
+    if (racine.matches && racine.matches(CONTENEURS_TEXTE) && sansPre(racine)) {
+      try { window.twemoji.parse(racine, TWEMOJI_OPTS); } catch (e) {
+        try { window.twemoji.parse(racine, TWEMOJI_OPTS_REPLI); } catch (e2) {}
       }
+      return;
     }
-    racine.querySelectorAll('p, li, h1, h2, h3, blockquote, td, th').forEach((el) => {
-      if (el.closest('pre')) return;
-      try { window.twemoji.parse(el, { base: TWEMOJI_BASE }); } catch {}
+    racine.querySelectorAll(CONTENEURS_TEXTE).forEach((el) => {
+      if (!sansPre(el)) return;
+      try { window.twemoji.parse(el, TWEMOJI_OPTS); } catch (e) {
+        try { window.twemoji.parse(el, TWEMOJI_OPTS_REPLI); } catch (e2) {}
+      }
     });
   } catch {}
 }

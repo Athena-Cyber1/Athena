@@ -1,0 +1,4 @@
+# Le fichier de l'application est ecrit en CRLF cote depot. Sans cette regle,
+# git normalise en LF a chaque aller-retour et le diff affiche les 10 000 lignes
+# du fichier comme modifiees, alors que seule une poignee de lignes change.
+docs/chat-demo.js text eol=crlf

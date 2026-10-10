@@ -30,4 +30,21 @@ copy("docs/fonts/inter-500.woff2", "public/fonts/inter-500.woff2");
 copy("docs/fonts/inter-700.woff2", "public/fonts/inter-700.woff2");
 /* v20260926i : Twemoji auto-hébergé (émojis proches macOS). */
 copy("docs/vendor/twemoji.min.js", "public/vendor/twemoji.min.js");
+/* v20261007 (et) : les SVG Twemoji sont AUTO-HÉBERGÉS. La bibliothèque était
+   déjà locale, mais les images venaient du CDN — hors ligne, le rendu
+   retombait sur l'émoji système. GitHub Pages publie `docs/`, donc les SVG
+   doivent vivre dans `docs/vendor/twemoji/` ET être copiés dans `public/`
+   pour que le serveur local les serve aussi. */
+(function copieTwemoji() {
+  const src = "docs/vendor/twemoji";
+  const dst = "public/vendor/twemoji";
+  if (!fs.existsSync(src)) return;
+  /* Les SVG vivent dans un sous-dossier `72x72/` : la bibliothèque Twemoji
+     construit `<base><size><codepoint><ext>` et `size` n'est pas configurable
+     dans cette version — le sous-dossier fait partie du chemin. */
+  fs.mkdirSync(dst + "/72x72", { recursive: true });
+  for (const nom of fs.readdirSync(src + "/72x72")) {
+    if (nom.endsWith(".svg")) fs.copyFileSync(src + "/72x72/" + nom, dst + "/72x72/" + nom);
+  }
+})();
 console.log("prepared generated assets");

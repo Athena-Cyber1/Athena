@@ -4097,17 +4097,6 @@ details.raisonnement li.doute {
   word-break: break-word;
   font-size: 0.92rem;
 }
-.diffusion-curseur {
-  display: inline-block;
-  margin-left: 1px;
-  animation: diffusion-clignote 0.9s steps(2) infinite;
-}
-.reduce-animation .diffusion-curseur {
-  animation: none;
-}
-@keyframes diffusion-clignote {
-  50% { opacity: 0; }
-}
 .pensee-vive {
   /* v20260926h : scrollable (demande UI) — fini le fondu qui tronquait. */
   color: var(--texte-doux);
@@ -6802,4 +6791,92 @@ html[data-theme="dark"] .md .action.etat-echec .action-sortie {
   --espace-2: 8px;
   --espace-3: 12px;
   --espace-4: 16px;
+}
+/* ============================================================================
+   v20261007 (et) — EN-TÊTE COMME COMPOSEUR, BLOCS DE CODE ET FICHIERS
+   ============================================================================ */
+
+/* 5. L'EN-TÊTE REÇOIT LE MÊME TRAITEMENT QUE LE COMPOSEUR.
+   Mesure avant : même fond, mais ombre et flou différents.
+     chat-tete : 0px 6px 18px -12px rgba(0,0,0,.4)  et  blur = NONE
+     composeur : 0px 0px 14px 6px var(--surface)     et  blur = 8px
+   L'en-tête n'avait donc pas de flou du tout : il laissait passer le texte
+   net au lieu de le diffuser. Les deux zones doivent se lire comme une seule
+  -voile posée sur la conversation. */
+.chat-tete,
+header.chat-tete,
+html[data-theme="light"] .chat-tete,
+html[data-theme="dark"] .chat-tete {
+  background: var(--surface);
+  box-shadow: 0 0 14px 6px var(--surface);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-bottom: 0;
+}
+
+/* 4. BLOCS DE CODE ET FICHIERS : MÊME LANGAGE.
+   `.md pre` gardait `border-radius: 11px` et `font-size: 0.84rem` en dur, et
+   un padding haut de 32px écrit à la main pour la barre de langue.
+   Tout passe par les jetons : rayon, bordure, et un padding fluide borné par
+   la hauteur réelle de la barre (28 à 34px). */
+.md pre {
+  border-radius: var(--rayon-s);
+  border: 1px solid var(--bord-code);
+  padding: clamp(28px, 4.2vh, 34px) 14px 13px;
+  font-family: var(--mono);
+}
+.md pre code {
+  font-size: clamp(0.8rem, 0.76rem + 0.2vw, 0.9rem);
+  font-family: var(--mono);
+}
+
+/* `.file-bloc` : même surface, même rayon et même bordure que les blocs de
+   code, et un débordement masqué — un nom de fichier long doit être tronqué par
+   la boîte, pas déborder sur la page. */
+.file-bloc {
+  border-radius: var(--rayon-s);
+  border: 1px solid var(--bord);
+  background: var(--fond-code-bloc);
+  color: var(--texte-code-bloc);
+  overflow: hidden;
+}
+/* L'en-tête de fichier sur UNE SEULE LIGNE, à la hauteur de la barre de langue
+   des blocs de code : les deux « barres » se superposent sans décalage. */
+.file-tete {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: clamp(28px, 4.2vh, 34px);
+  padding: 0 14px;
+  background: transparent;
+  border-bottom: 1px solid var(--bord-code);
+  white-space: nowrap;
+  min-width: 0;
+}
+.file-tete .ico {
+  flex: 0 0 auto;
+}
+.file-tete .file-nom,
+.file-tete .file-apercu-nom {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-tete .file-taille {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--texte-doux);
+}
+/* v20261007 (et) — TAILLE DES ÉMOJIS : RELATIVE À LA LIGNE.
+   Twemoji produit des `<img>` de 1em par défaut, ce qui les rend plus petits que
+   le texte qui les porte. La règle est en `em` et non en `px` : l'émoji suit
+   la taille du texte, donc il reste cohérent dans une légende, un titre et un
+   paragraphe — sans trois valeurs à maintenir. */
+img.emoji,\nimg.twemoji {
+  height: 1.25em;
+  width: 1.25em;
+  vertical-align: -0.25em;
+  margin: 0 0.05em;
 }
