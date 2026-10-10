@@ -105,9 +105,25 @@ function navNoteFlux() {
    HUD (16,7 ns/px) qui devient le plafond au-delà de ~700 kpx.
    On garde le RATIO de la boîte : l'image remplit exactement la boîte, sans
    barre noire. Le client envoie la taille en pixels ÉCRAN (boîte × dpr). */
+/* v20261007 (fc) : le plafond passe de 700 000 a 4 000 000 px, et il DOIT
+   l'être. Il y a deux plafonds, un de chaque côté, et le plus contraignant
+   gagnait : le client calcule dpr borné [1, natif] avec un budget de
+   3,5 Mpx, puis envoie la taille en pixels écran — et cet agent la retaillait
+   à 700 kpx. Corriger le seul client n'aurait rien changé : l'image revenait
+   à 700 kpx, floue exactement comme avant.
+
+   4 Mpx et non 3,5 : le client peut dépasser 3,5 Mpx quand le panneau est très
+   grand ET qu'il refuse de descendre sous dpr 1 (2400×1600 = 3,84 Mpx). Un
+   plafond agent de 3,5 le retaillerait de nouveau. À 4 Mpx, l'agent n'est
+   jamais le facteur limitant.
+
+   Le coût est réel et assumé : la capture vaut 11,7 ms + 0,0059 ms/kpx, donc
+   ~32 ms à 3,5 Mpx contre ~16 ms à 0,7 Mpx. On achète de la netteté contre
+   de la cadence. `ATHENA_VUE_MAX_PX` permet de redescendre si un poste le
+   trouve trop lent — c'est à ça que sert la variable d'environnement. */
 const NAV_VUE_MAX_PX = (() => {
   const v = Number(process.env.ATHENA_VUE_MAX_PX);
-  return Number.isFinite(v) && v >= 100000 ? Math.round(v) : 700000;
+  return Number.isFinite(v) && v >= 100000 ? Math.round(v) : 4000000;
 })();
 
 /* Une capture JPEG, quelle que soit la voie (action `cadre` = image par image,

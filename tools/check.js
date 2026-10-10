@@ -55,6 +55,32 @@ try {
 } catch (e) {
   signaler('chat-demo.js ne compile pas : ' + e.message);
 }
+
+/* v20261007 (fb) : meme coup pour le CSS. En retirant un selecteur
+   `.btn-nav.nav-occupe .hnav-badge` d'une liste dont l'accoladeOuvrante etait
+   a la LIGNE SUIVANTE, la declaration `animation: none` a disparu avec — le
+   fichier ne compilait plus du tout et `tools/check.js` affichait
+   « aucune anomalie bloquante ». On verifie donc l'equilibrage des accolades,
+   hors commentaires et hors chaines. */
+(function verifieCSS() {
+  const chemin = path.join(__dirname, '..', 'design', 'athena-demo.css');
+  if (!fs.existsSync(chemin)) return;
+  const brut = fs.readFileSync(chemin, 'utf8');
+  const sans = brut
+    .replace(/\/\*[\s\S]*?\*\//g, '')          // commentaires
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')      // chaines doubles
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")      // chaines simples
+    .replace(/data:image\/svg\+xml,[^)]*\)/g, 'url()');
+  const ouvrantes = (sans.match(/\{/g) || []).length;
+  const fermantes = (sans.match(/\}/g) || []).length;
+  if (ouvrantes !== fermantes) {
+    signaler('athena-demo.css : accolades desequilibrees (' + ouvrantes + ' ouvrantes, ' + fermantes + ' fermantes)');
+  }
+  /* un selecteur suivi d'un autre selecteur sans accolade : la liste a ete
+     cassee en retirant un membre (le piege ci-dessus). */
+  const orphelin = sans.match(/^\s*[,]\s*$/m);
+  if (orphelin) signaler('athena-demo.css : selecteur orphelin (virgule seule sur une ligne)');
+})();
 /* v20261007 (B1/U1) : on scannait UNIQUEMENT `getElementById("x")`. Or le code
    utilise massivement l'alias `$('x')` — `const statutEl = $('statut')` n'était
    donc jamais vérifié, et #statut/#dot ont pu disparaître du HTML sans que

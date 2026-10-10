@@ -8386,16 +8386,44 @@ function rendreHudContexte() {
   titre.className = 'hud-section-titre';
   titre.textContent = 'Contexte de la discussion';
   panneau.appendChild(titre);
-  const c = conversationOuverte();
+const c = conversationOuverte();
   const nb = (c.messages || []).length;
   const u = jetonsDiscussion();
   const lim = limiteDiscussion();
+  /* v20261007 (fc) : le contexte s'affiche en BARRE — les tokens utilisés sur
+     la limite. Cinq lignes « clé : valeur » ne se lisaient pas : il fallait les
+     lire une par une pour reconstituer un rapport qui tient en un trait. */
+  const ratio = lim ? Math.max(0, Math.min(1, u / lim)) : 0;
+  const barre = document.createElement('div');
+  barre.className = 'hud-contexte-barre';
+  const libelle = document.createElement('span');
+  libelle.textContent = 'Contexte utilisé';
+  const chiffres = document.createElement('span');
+  chiffres.className = 'hud-contexte-chiffres';
+  chiffres.textContent = lim
+    ? u.toLocaleString('fr-FR') + ' / ' + lim.toLocaleString('fr-FR')
+      + ' tokens · ' + Math.round(ratio * 100) + ' %'
+    : u.toLocaleString('fr-FR') + ' tokens · limite selon le modèle';
+  barre.append(libelle, chiffres);
+  panneau.appendChild(barre);
+
+  const piste = document.createElement('div');
+  piste.className = 'hud-contexte-piste';
+  piste.setAttribute('role', 'img');
+  piste.setAttribute('aria-label', 'Contexte utilisé : ' + (lim ? Math.round(ratio * 100) + ' % de la limite' : 'limite inconnue'));
+  if (lim) {
+    const remplissage = document.createElement('div');
+    remplissage.className = 'hud-contexte-remplissage';
+    /* La largeur est posee en style : une valeur CSS seule (`width: 42%`)
+       serait le meme pour tous. */
+    remplissage.style.width = (ratio * 100).toFixed(2) + '%';
+    piste.appendChild(remplissage);
+  }
+  panneau.appendChild(piste);
+
   const lignes = [
-    ['Utilisés (estimés)', u + ' tokens'],
     ['Modèle', modeleChoisi ? modeleChoisi.name : 'auto (sans relais)'],
-    ['Limite', lim ? lim + ' tokens' : 'selon le modèle choisi'],
-    ['Remplissage', lim ? Math.round((u / lim) * 100) + ' %' : '—'],
-    ['Messages', nb + ' message' + (nb > 1 ? 's' : '')],
+    ['Messages', nb + ' message' + (nb > 1 ? 's' : '')]
   ];
   lignes.forEach(([k, v]) => {
     const row = document.createElement('div');
@@ -8404,7 +8432,7 @@ function rendreHudContexte() {
     panneau.appendChild(row);
   });
   const note = document.createElement('div');
-  note.className = 'hud-note';
+  note.className = 'hud-note hud-contexte-note';
   note.textContent = 'Estimation : caractères / 3.5. Au-delà de 95 % de la limite, les anciens messages sont résumés automatiquement.';
   panneau.appendChild(note);
 }
@@ -8625,24 +8653,27 @@ function hnavNomMoteur() {
 }
 
 function majBadgeNavigateur() {
-  const el = document.getElementById('navigateur-actif-nom');
-  if (!el) return;
-  const txt = hnavOccupe ? '…'
-    : hnavEtat === 'pret' ? 'actif'
-      : hnavEtat === 'inactif' ? 'arrêté'
-        : hnavEtat === 'absent' ? 'sans pw'
-          : '…';
-  if (el.textContent !== txt) el.textContent = txt;
+  /* v20261007 (fb) : le badge `#navigateur-actif-nom` est SUPPRIME (ainsi que
+     les classes `nav-actif` / `nav-occupe`). Il empujait l'etat dans une pastille
+     de quelques pixels : « actif » pendant tout un snapshot, alors que la page
+     etait en train de bouger — le mot distinguait mal une image stale d'une
+     page qui repond.
+
+     ATTENTION au `if (!el) return` d avant : il etait en TETE de fonction, donc
+     supprimer le seul `<span>` suffisait a tuer aussi `btn.title` et tout le
+     reste — le retour s'arretait avant. On garde donc la meme information, mais
+     uniquement dans l'attribut `title` (survol) et dans `#navigateur-info`
+     (bandeau d'etat), qui existent deja. */
+  const etat = hnavEtat === 'pret' ? 'pret'
+    : hnavEtat === 'inactif' ? 'arrete'
+      : hnavEtat === 'absent' ? 'sans pw'
+        : 'inconnu';
   const btn = document.getElementById('btn-navigateur');
-  if (btn) {
-    btn.classList.toggle('nav-actif', hnavEtat === 'pret');
-    /* v1.6 : « occupé » — avant, le badge disait « actif » pendant tout un
-       snapshot : impossible de voir que la page était en train de bouger. */
-    btn.classList.toggle('nav-occupe', hnavOccupe);
-    btn.title = 'Navigateur du modèle — ' + hnavNomMoteur() + ' — session ' + (hnavOccupe ? 'occupé' : txt)
-      + (hnavEtat === 'absent' ? ' (playwright non installé)' : '')
-      + (hnavEtat === 'inconnu' ? ' (agent local injoignable)' : '');
-  }
+  if (!btn) return;
+  btn.title = 'Navigateur du modèle - ' + hnavNomMoteur() + ' - session '
+    + (hnavOccupe ? 'occupée (mise à jour en cours)' : etat)
+    + (hnavEtat === 'absent' ? ' (playwright non installé)' : '')
++ (hnavEtat === 'inconnu' ? ' (agent local injoignable)' : '');
 }
 
 /* v1.6 : bandeau d'état du HUD (rangée 3 de l'en-tête). Vide = caché. */
@@ -8823,20 +8854,33 @@ let hnavBoiteSuivie = false;
    balayage : 700 kpx = 52,6 i/s, 794 kpx = 50,0, 1 Mpx = 41,7 ECHEC). Au-delà
    on baisse le multiplicateur au lieu de laisser l'agent rogner — le ratio est
    conservé, donc l'image remplit toujours la boîte au plus près. */
-const HNAV_BOITE_MAX_PX = 700000;
+/* v20261007 (fc) : le plafond porte sur les PIXELS ENVOYES, pas sur la
+   surface CSS. L'ancien calcul partait de 700 000 px² de surface CSS :
+     dpr = min(dprEcran, sqrt(700000 / surfaceCSS))
+   Toute surface > 700 000 px² réduisait donc le dpr, meme sur un ecran net,
+   et le navigateur agrandissait ensuite une image trop petite — c'etait la
+   pixelisation. Mesure de l'ancien calcul :
+     900x600  ecran 1,5 -> 1,14  reduit
+     800x500  ecran 2   -> 1,32  reduit
+    1100x780  ecran 1,5 -> 0,90  SOUS-RESO
+    1280x800  ecran 2   -> 0,83  SOUS-RESO (le cas le plus courant !)
+   Un panneau de 1280x800 sur un ecran dense etait capture a 41 % de sa taille
+   reelle, puis agrandi a l'affichage.
+
+   Desormais on budgette ce qu'on envoie reellement, 3,5 Mpx, et on ne descend
+   JAMAIS sous dpr 1 : sous 1, la capture est agrandie a l'affichage, ce qui est
+   la pixelisation. Un tres grand panneau sur un ecran dense depasse donc le
+   budget plutot que d'etre flou — c'est le bon arbitrage : un exces de pixels
+   coute du transport, un manque coute de la lisibilite. */
+const HNAV_PIXELS_MAX = 3500000;
 function hnavLireBoite() {
   const corps = document.getElementById('navigateur-corps');
   if (!corps) return { w: 0, h: 0 };
   const r = corps.getBoundingClientRect();
-  /* v1.9 : pixels ÉCRAN, pas pixels CSS. Sur un écran dense (devicePixelRatio
-     2) ou avec un zoom Brave, une image taillée à la taille CSS est ré-échantillonnée
-     ×2 par le navigateur → « affichage zoomé et pixélisé ». On capture donc en
-     × dpr, et si ça dépasse le plafond on réduit dpr (même ratio, donc pas de
-     barre noire) : 1 px capturé = 1 px écran affiché. */
   const dprNat = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
   const wcss = Math.max(0, Math.min(2400, r.width));
   const hcss = Math.max(0, Math.min(1600, r.height));
-  const dpr = Math.min(dprNat, Math.sqrt(HNAV_BOITE_MAX_PX / Math.max(1, wcss * hcss)));
+  const dpr = Math.max(1, Math.min(dprNat, Math.sqrt(HNAV_PIXELS_MAX / Math.max(1, wcss * hcss))));
   return {
     w: Math.max(0, Math.round(wcss * dpr)),
     h: Math.max(0, Math.round(hcss * dpr)),

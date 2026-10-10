@@ -2515,23 +2515,77 @@ span.think:not(details .think) {
 .btn-modele[aria-expanded="true"] .modele-ico {
   transform: rotate(180deg);
 }
+/* v20261007 (fc) : les deux règles `.hud-modeles` (l'une à la base, l'autre
+   dans `@media (max-width: 940px)`) disaient exactement la même chose —
+   `top: auto; bottom: calc(100% + 8px)`. La seconde était redondante, et la
+   première ne donnait au panneau qu'une partie de son apparence : fond
+   `--carte`, bordure `--bord-fort`, largeur fixe 300px. Une seule règle, en
+   jetons, largeur fluide alignée sur la colonne du composeur. */
 .hud-modeles {
-  /* v20260926c (affichage) : les boutons sont dans le composeur (bas d'écran)
-     ⅒ le panneau s'ouvre VERS LE HAUT, sinon il dépassait sous le viewport. */
+  /* les boutons sont dans le composeur (bas d'écran) : le panneau s'ouvre
+     VERS LE HAUT, sinon il dépassait sous le viewport. */
   position: absolute;
   top: auto;
   bottom: calc(100% + 8px);
   right: 0;
-  width: 300px;
-  max-width: calc(100vw - 32px);
+  width: min(var(--colonne-max), calc(100vw - 2 * var(--marge-page)));
   max-height: min(420px, calc(100vh - 140px));
   overflow-y: auto;
-  background: var(--carte);
-  border: 1px solid var(--bord-fort);
-  border-radius: var(--rayon);
-  box-shadow: var(--ombre);
+  background: var(--fond);
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-l);
+  box-shadow: var(--halo);
   padding: 6px;
   z-index: var(--z-hud);
+  /* Apparition seule — jamais de mouvement. Couverte par le filet global
+     `prefers-reduced-motion` (durée 0.01 ms), donc rien à prévoir ici. */
+  animation: hud-apparait 0.16s ease-out;
+}
+@keyframes hud-apparait {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Séparateur fin entre les groupes, plutôt qu'une bordure par ligne :
+   `.hud-item` garde `border: 1px solid transparent` pour l'alignement, donc
+   aucun trait visible par defaut. */
+.hud-modeles .hud-section-titre + .hud-item {
+  border-top-color: var(--bord);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+/* --- Contexte : une BARRE, pas cinq lignes de texte --- */
+.hud-contexte-barre {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 4px;
+  font-size: 0.66rem;
+  color: var(--texte-doux);
+}
+/* Les chiffres ne doivent pas sauter quand le compteur change : sans
+   `tabular-nums`, « 1 000 » et « 999 » n'ont pas la meme largeur et la jauge
+   tremble a chaque jeton. */
+.hud-contexte-chiffres {
+  font-variant-numeric: tabular-nums;
+  color: var(--texte);
+  white-space: nowrap;
+}
+.hud-contexte-piste {
+  height: 4px;
+  margin: 0 10px 6px;
+  border-radius: 999px;
+  background: var(--bord);
+  overflow: hidden;
+}
+.hud-contexte-remplissage {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primaire);
+  /* jamais d'animation de largeur : la jauge doit lire l'état, pas faire spectacle */
+}
+.hud-contexte-note {
+  padding: 6px 10px 4px;
 }
 .hud-section-titre {
   font-size: 0.66rem;
@@ -2913,43 +2967,19 @@ span.think:not(details .think) {
   padding: 18px 16px;
   white-space: pre-line;
 }
-/* badge d'état dans le bouton d'en-tête (à gauche de « Partager ») */
-/* v20261007 (U1) : le badge est masqué AU REPOS et visible dès qu'il porte une information (session ouverte, ou action du modèle en cours). Avant, `display:none !important` neutralisait aussi les deux règles ci-dessous : */
-.hnav-badge {
-  display: none;
-  padding: 1px 7px;
-  border: 1px solid var(--bord);
-  border-radius: 999px;
-  font-size: 0.64rem;
-  line-height: 1.5;
-  color: var(--texte-doux);
-}
-.btn-nav.nav-actif .hnav-badge {
-  display: inline-block;
-  border-color: var(--ok);
-  color: var(--ok);
-}
 /* v1.6 : « occupé » = une action du modèle tourne. Avant, le badge disait
    « actif » pendant tout un snapshot — impossible de voir que la page bouge. */
-.btn-nav.nav-occupe .hnav-badge {
-  display: inline-block;
-  border-color: var(--primaire);
-  color: var(--primaire);
-  animation: hnav-pulse 1.1s ease-in-out infinite;
-}
-@keyframes hnav-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
 @media (max-width: 720px) {
   .btn-modele {
     max-width: 110px;
     padding: 0 8px;
   }
-  .hud-modeles {
-    width: min(300px, calc(100vw - 24px));
-    right: -6px;
-  }
+/* v20261007 (fc) : ce `width: min(300px, …)` imposait 300 px sur mobile et
+   annulait la largeur fluide (mesure : 314 px a 720 comme a 390). La formule
+   de la base — `min(--colonne-max, 100vw - 2 * --marge-page)` — donne 342 px a
+   390, soit la colonne du composeur avec sa marge. Le `right: -6px` partait
+   avec : il décalait le panneau hors du bord droit sans raison une fois la
+   largeuralignee. */
   /* v20260926c (affichage) : le toast ne doit jamais dépasser ni masquer
      tout le composeur sur petit écran. */
   .toast-notice {
@@ -3630,8 +3660,11 @@ span.think:not(details .think) {
 }
 /* Panneau commun : plus large que les anciens (300/268 px) car il porte les
    trois listes, et plus haut pour éviter un triple défilement. */
+/* v20261007 (fc) : cette largeur FIXE (340 px) etait posee APRES
+   `.hud-modeles`, donc elle ecrasait sa largeur fluide : mesure, le panneau
+   faisait 282 px a 1440 comme a 390. Les trois panneaux partagent desormais la
+   meme base, alignee sur la colonne du composeur. */
 .hud-reglages {
-  width: 340px;
   max-height: min(640px, calc(100vh - 140px));
 }
 .hud-reglage-section + .hud-reglage-section {
@@ -3943,10 +3976,6 @@ span.think:not(details .think) {
 .btn-modele:active {
   transform: scale(0.94); /* Effet d'enfoncement identique à .btn-attacher */
 }
-.hud-modeles {
-  top: auto;
-  bottom: calc(100% + 8px);
-}
 .btn-envoyer {
   width: 28px;
   height: 28px;
@@ -3995,8 +4024,9 @@ span.think:not(details .think) {
   min-width: 3em;
   text-align: left;
 }
+/* v20261007 (fc) : idem - 268 px fixes, meme effet que les 340 px. */
 .hud-efforts {
-  width: 268px;
+  max-height: min(420px, calc(100vh - 140px));
 }
 /* v20260926b (direct) : diffusion en direct, terminal live, cartes fichier. */
 .diffusion {
@@ -4094,15 +4124,14 @@ html[data-theme="light"] .nav-capture {
     animation: none;
     opacity: 0.6;
   }
-  /* Les indicateurs « en action » restent distinguables par leur couleur. */
+/* Les indicateurs « en action » restent distinguables par leur couleur. */
   .btn-envoyer.en-cours,
-  .dot,
-  .btn-nav.nav-occupe .hnav-badge {
+  .dot {
     animation: none;
   }
   /* Défilement : le défilement doux est un mouvement, il est neutralisé plus
-     haut par le filet global ; on le reaffirmed ici pour les navigateurs qui
-     ne l appliqueraient pas au conteneur. */
+     haut par le filet global ; on le réaffirme ici pour les navigateurs qui
+     ne l'appliqueraient pas au conteneur. */
   .msgs {
     scroll-behavior: auto;
   }
