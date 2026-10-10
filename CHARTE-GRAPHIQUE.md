@@ -193,6 +193,77 @@ blanche, pas l'ombre, qui détache la carte. Le risque était réel, il est vér
 Mesuré au rastérisé, profil vertical sous le bord de la carte : 31,29,29 →
 45,43,43 en sombre ; 255,255,255 → 241,241,241 en clair.
 
+﻿﻿### 4.11 Icônes : toutes viennent de Lucide (`fa`)
+
+Toutes les icônes de l'interface viennent de [lucide.dev](https://lucide.dev/icons/),
+version **lucide-static 1.55.0**, licence **ISC** (redistribution libre, y compris
+commerciale).
+
+#### Ce qui a été remplacé
+
+| où | combien |
+|---|---|
+| dictionnaire `SVG_ICOS` (chat-demo.js) | 24 |
+| balises `<svg>` en dur dans `index.html` | 28 |
+| masques-loupe en `data:image/svg+xml` (CSS) | 2 |
+| **total** | **54** |
+
+#### Les noms de clés ne changent pas
+
+`icoSvg('check')` fonctionne toujours. Le dictionnaire garde ses 24 clés
+d'origine ; seul le **tracé** est celui de Lucide. Aucune des 12 clés appelées
+directement, ni les 12 appelées par variable (`c.epingle ? 'pinOff' : 'pin'`,
+`etat.cle === 'echec' ? 'alert' : 'terminal'`, `cfg.icone`...), n'a disparu.
+
+Renommages appliqués côté Lucide :
+
+| clé | avant (maison) | Lucide |
+|---|---|---|
+| `filter` | 3 barres | `list-filter` |
+| `more` | trois points | `ellipsis` |
+| `refresh` | 2 arcs | `refresh-cw` |
+| `terminal` | rectangle + invite | `square-terminal` |
+| `stop` | — | `square` |
+| `volume` | haut-parleur | `volume-2` |
+| `chevron` | chevron fermé | `chevron-right` |
+| `alert` | triangle | `triangle-alert` |
+
+#### Rien à ajuster côté CSS
+
+La règle `.ico` posait déjà `stroke: currentColor`, `fill: none`,
+`stroke-linecap: round`, `stroke-linejoin: round` — **exactement** le modèle
+Lucide. Seule différence : `stroke-width: 1.7` au lieu de `2`, plus fin à
+16 px. Aucune règle `img.emoji` n'était concernée (émojis natifs désormais).
+
+#### Deux data-URI restent hors-Lucide, volontairement
+
+Ce sont le **curseur** du réticule du HUD, en `cursor:` et `background:`. Ce n'est
+pas une icône mais un pointeur de souris : il est **rempli blanc, contour noir**,
+afin de rester visible sur le HUD sombre comme sur fond clair. Deux raisons de ne
+pas le mettre en Lucide :
+
+- `mouse-pointer-2` est un **trait sans fond** — invisible sur un fond sombre ;
+- une image `cursor:` n'a **aucun contexte CSS**, donc `currentColor` n'y
+  fonctionne pas : la couleur devrait être figée dans le fichier, ce qui casse
+  le thème clair.
+
+Le changer poserait plus de problème qu'il n'en résout. C'est signalé, pas fait.
+
+#### Un piège d'outillage, pour mémoire
+
+La section a d'abord été écrite, relue et réécrite par PowerShell
+(`Get-Content -Raw` puis `Set-Content -Encoding UTF8`). PowerShell 5.1 lit en
+**ANSI** un fichier sans BOM : chaque accent est devenu `Ã©`, `Ã´`, `æ¥è‡ª`.
+50 caractères corrompus, invisibles à l'œil dans un diff rapide. Tout passage par
+un outil qui relit le fichier doit se faire en UTF-8 explicite — ou pas du tout.
+
+#### Contrôle
+
+40 `svg.ico` dans la page, **0** sans tracé, 0 erreur JS. Les 17 à taille nulle
+sont dans des panneaux `display:none` (menu compte, HUD plan, HUD navigateur,
+interpréteur, recherche, actions de conversation) — c'est l'état fermé, pas une
+casse.
+
 ### 4.10 Émojis natifs de l'OS (`ez`)
 
 Les émojis ne sont plus des images. Ils sont rendus par le système.

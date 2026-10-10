@@ -90,37 +90,41 @@ const gererCompteEl = $('gerer-compte'), preferencesCompteEl = $('preferences-co
 /* ————— Jeu d'icônes SVG inline (traits, courants hérités) —————
    Remplace les glyphes Unicode (✎ ⤓ × ↑ ↓ ⧉ ✓ ■ ↵ › …) par un jeu
    d'icônes homogène : stroke=currentColor, 1.7, extrémités arrondies. */
+/* v20261007 (fa) : TOUTES les icones viennent de LUCIDE (lucide.dev).
+   Set lucide-static 1.55.0, licence ISC. Le dictionnaire garde les MÊMES
+   noms de cles qu avant — `icoSvg('check')` fonctionne toujours — mais le
+   tracé est celui de Lucide, et non plus un dessin maison.
+   Rien d autre à ajuster : la règle `.ico` posait déjà `stroke: currentColor`,
+   `fill: none`, `stroke-linecap/linejoin: round` — exactement le modèle Lucide
+   (qui impose `stroke-width: 2` ; nous gardons 1.7, plus fin, tuned pour 16 px).
+   Renommages appliqués : filter -> list-filter, more -> ellipsis,
+   refresh -> refresh-cw, terminal -> square-terminal, stop -> square,
+   volume -> volume-2, chevron -> chevron-right, alert -> triangle-alert. */
 const SVG_ICOS = {
-  /* v20261007 (dw) : les trois points sont VERTICAUX. À l'horizontale ils
-     se lisaient comme un tiret cadratin ou une ellipse de chargement — c'est
-     le menu « burger » horizontal, pas le kebab. En vertical, plus aucune
-     ambiguïté avec l'état de chargement. */
-  more: '<circle cx="12" cy="5.4" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="18.6" r="1.7"/>',
-  pencil: '<path d="M4.5 19.5h4L19.8 8.2a2.1 2.1 0 0 0-3-3L5.5 16.5v3z"/><path d="m14.5 6.5 3 3"/>',
-  download: '<path d="M12 4.5v10m0 0 3.5-3.5M12 14.5 8.5 11"/><path d="M5 19.5h14"/>',
-  x: '<path d="m7.5 7.5 9 9m0-9-9 9"/>',
-  /* v20260926c (affichage) : la carte fichier utilisait icoSvg('file') qui
-     n'existait pas → repli sur la croix X (lu comme « fermer »). */
-  file: '<path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4"/>',
-  pin: '<path d="M12 20.5v-6.5"/><path d="M8.8 4.5h6.4l-1 6 2.3 2.3H7.5l2.3-2.3z"/>',
-  pinOff: '<path d="M12 20.5v-6.5"/><path d="M8.8 4.5h6.4l-1 6 2.3 2.3H7.5l2.3-2.3z"/><path d="m4.5 4.5 15 15"/>',
-  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
-  check: '<path d="m5.5 12.5 4 4 9-9"/>',
-  chevron: '<path d="m9 6 6 6-6 6"/>',
-  stop: '<rect x="7.5" y="7.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none"/>',
-  send: '<path d="M12 19V5.5M6 11l6-5.5L18 11"/>',
-  alert: '<path d="M12 4.5 3 19.5h18z"/><path d="M12 10v3.5M12 16.5h.01"/>',
-  terminal: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 9.5 10.2 12 7 14.5"/><path d="M12 14.5h5"/>',
-  folder: '<path d="M3.5 7A2.5 2.5 0 0 1 6 4.5h3.2L11 6.5h7A2.5 2.5 0 0 1 20.5 9v7.5A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z"/>',
-  layers: '<path d="m12 3 7 4-7 4-7-4 7-4Z"/><path d="m5 12 7 4 7-4M5 17l7 4 7-4"/>',
-  code: '<path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14"/>',
-  briefcase: '<path d="M4 8.5h16v11H4zM8 8.5V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2.5M4 12h16M10 12v2h4v-2"/>',
-  filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
-  volume: '<path d="M5 10v4h3l4 3V7l-4 3H5Z"/><path d="M15 9.5a3 3 0 0 1 0 5M17.5 7a6 6 0 0 1 0 10"/>',
-  thumbUp: '<path d="M7 10v10H4V10h3ZM7 20h8.2a2 2 0 0 0 1.9-1.4l1.8-5.5A2 2 0 0 0 17 10h-4l.7-3.1A2.2 2.2 0 0 0 11.5 4L7 10"/>',
-  thumbDown: '<path d="M7 14V4H4v10h3ZM7 4h8.2a2 2 0 0 1 1.9 1.4l1.8 5.5A2 2 0 0 1 17 14h-4l.7 3.1a2.2 2.2 0 0 1-2.2 2.9L7 14"/>',
-  refresh: '<path d="M20 11a8 8 0 0 0-14.7-4L4 9"/><path d="M4 4v5h5M4 13a8 8 0 0 0 14.7 4L20 15"/><path d="M20 20v-5h-5"/>',
-  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" /> <path d="M12 9v4" /> <path d="M12 17h.01" />',
+  briefcase: '<path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /> <rect width="20" height="14" x="2" y="6" rx="2" />',
+  check: '<path d="M20 6 9 17l-5-5" />',
+  chevron: '<path d="m9 18 6-6-6-6" />',
+  code: '<path d="m16 18 6-6-6-6" /> <path d="m8 6-6 6 6 6" />',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /> <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />',
+  download: '<path d="M12 15V3" /> <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /> <path d="m7 10 5 5 5-5" />',
+  file: '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" />',
+  filter: '<path d="M2 5h20" /> <path d="M6 12h12" /> <path d="M9 19h6" />',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />',
+  layers: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" /> <path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" /> <path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" />',
+  more: '<circle cx="12" cy="12" r="1" /> <circle cx="19" cy="12" r="1" /> <circle cx="5" cy="12" r="1" />',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" /> <path d="m15 5 4 4" />',
+  pin: '<path d="M12 17v5" /> <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />',
+  pinOff: '<path d="M12 17v5" /> <path d="M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89" /> <path d="m2 2 20 20" /> <path d="M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11" />',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /> <path d="M21 3v5h-5" /> <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /> <path d="M8 16H3v5" />',
+  search: '<path d="m21 21-4.34-4.34" /> <circle cx="11" cy="11" r="8" />',
+  send: '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" /> <path d="m21.854 2.147-10.94 10.939" />',
+  stop: '<rect width="18" height="18" x="3" y="3" rx="2" />',
+  terminal: '<path d="m7 11 2-2-2-2" /> <path d="M11 13h4" /> <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />',
+  thumbDown: '<path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z" /> <path d="M17 14V2" />',
+  thumbUp: '<path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z" /> <path d="M7 10v12" />',
+  volume: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /> <path d="M16 9a5 5 0 0 1 0 6" /> <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />',
+  x: '<path d="M18 6 6 18" /> <path d="m6 6 12 12" />',
 };
 
 /* Version chaîne (pas un nœud DOM) — pour injecter une icône dans du HTML
