@@ -34,3 +34,7 @@ tests/bench-jsdom-baseline.json
 
 # Workers — état local wrangler (jamais committé)
 worker/.wrangler/
+
+# journal du serveur local (v20261011)
+_dev.log
+_dev.err
