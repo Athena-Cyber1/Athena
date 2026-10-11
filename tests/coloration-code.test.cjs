@@ -226,7 +226,12 @@ const JETONS = ['code-commentaire-sombre', 'code-chaine-sombre', 'code-mot-sombr
   'code-base-sombre', 'code-base-clair',
   // v20261011 (fc) : les roles distincts du mot-cle et de la fonction.
   'code-motcle-sombre', 'code-motcle-clair',
-  'code-fonction-sombre', 'code-fonction-clair'];
+  'code-fonction-sombre', 'code-fonction-clair',
+  // v20261011 (fd) : quatre roles separes, mesures sur du vrai code.
+  'code-classe-sombre', 'code-classe-clair',
+  'code-parametre-sombre', 'code-parametre-clair',
+  'code-variable-sombre', 'code-variable-clair',
+  'code-litteral-sombre', 'code-litteral-clair'];
 for (const jeton of JETONS) {
   const brut = lire(jeton);
   if (!brut) { echec('jeton absent du CSS : --' + jeton); continue; }
@@ -286,6 +291,99 @@ for (const couple of [['code-motcle-sombre', 'code-fonction-sombre'], ['code-mot
 test('le mot-cle n est plus la meme couleur que le texte de base',
   Boolean(val('code-motcle-sombre') && val('code-motcle-sombre').toLowerCase() !== (val('code-mot-sombre') || '#000').toLowerCase()),
   'motcle ' + val('code-motcle-sombre') + ' / mot ' + val('code-mot-sombre'));
+
+/* v20261011 (fd) : deux roles qui portent la MEME couleur n'en font qu'un.
+   C etait le defaut du point fc (quatre roles, un bleu) — on verrouille
+   chaque famille de roles distincts, dans les DEUX themes. */
+const FAMILLES = ['motcle', 'fonction', 'classe', 'parametre', 'variable', 'litteral'];
+for (const theme of ['sombre', 'clair']) {
+  const vues = FAMILLES.map(r => val('code-' + r + '-' + theme)).filter(Boolean);
+  const doublons = vues.filter((c, i) => vues.indexOf(c) !== i);
+  test('theme ' + theme + ' : les ' + FAMILLES.length + ' roles ont des couleurs toutes distinctes',
+    vues.length === FAMILLES.length && doublons.length === 0,
+    (vues.length === FAMILLES.length ? '' : 'jeton(s) manquant(s) ')
+    + (doublons.length ? 'DOUBLON(S) : ' + [...new Set(doublons)].join(', ') : vues.join(' ')));
+}
+/* Un role doit etre distinct du TEXTE DE BASE : sinon il ne porte rien. */
+for (const r of FAMILLES) {
+  const a = val('code-' + r + '-sombre'), base = val('code-base-sombre');
+  test('--code-' + r + '-sombre se distingue de la base', Boolean(a && base && a.toLowerCase() !== base.toLowerCase()), a + ' vs ' + base);
+}
+
+/* v20261011 (fd) — AUCUNE CLASSE NE DOIT RECEVOIR DEUX COULEURS.
+ *
+ * Le piege : la table du theme clair redonnait le bleu de la palette
+ * precedente a `variable` et `params`, et cealyres apres les regles qui
+ * leur donnaient le lilas et le cyan. Meme specificite, plus tard : elle
+ * gagne. Le resultat n'etait pas une couleur « absente » — c'etait
+ * silencieusement le MAUVAIS role qui s'affichait, et rien ne le signalait.
+ *
+ * On analyse donc le CSS comme le navigateur le fait : pour chaque classe
+ * `.hljs-*`, toutes les regles qui la declarent, et la couleur de chacune.
+ * Deux couleurs differentes pour la meme classe = CONFLIT.
+ */
+console.log('\n--- 5c. aucune classe ne recoit deux couleurs ---');
+const lignesCss = css.replace(/\r\n/g, '\n').split('\n');
+const parClasse = {};
+for (let i = 0; i < lignesCss.length; i++) {
+  const l = lignesCss[i];
+  const m = /\.hljs-([a-z0-9_-]+)/.exec(l);
+  if (!m) continue;
+  if (/^\s*\*/.test(l)) continue;
+  const cls = 'hljs-' + m[1];
+  let j = i;
+  while (j < lignesCss.length && !/color\s*:/.test(lignesCss[j])) {
+    if (/^\}/.test(lignesCss[j]) && j > i) break;
+    j++;
+  }
+  const cm = j < lignesCss.length ? /var\((--[a-z0-9-]+)\)/.exec(lignesCss[j]) : null;
+  if (cm) (parClasse[cls] = parClasse[cls] || []).push(cm[1]);
+}
+/* On ne compare QUE les jetons d'un meme theme. `--code-commentaire-sombre`
+ * et `--code-commentaire-clair` sont deux couleurs legitimes et
+ * ATTENDUES : c'est la meme regle, declenchee par deux etats du document.
+ * Les confondre faisait crier une palette parfaitement saine — un test qui
+ * crie faux est un test qu'on finit par ignorer. */
+const memeTheme = (jetons) => {
+  const parTheme = { sombre: new Set(), clair: new Set() };
+  for (const j of jetons) {
+    if (/-sombre\b/.test(j)) parTheme.sombre.add(j);
+    else if (/-clair\b/.test(j)) parTheme.clair.add(j);
+  }
+  return ['sombre', 'clair'].filter(t => parTheme[t].size > 1);
+};
+/* Deux classes portent LEGITIMEMENT deux roles, et ce n'est pas un conflit :
+   `hljs-literal` peut etre un nombre OU true/false/null ; `hljs-title` une
+ * fonction OU une classe. Le coloriseur emet `class="hljs-title function_"`
+ * ou `class="hljs-title class_"` — le second jeton dit lequel des deux.
+ * On les compte donc comme distinctes, en lisant le jeton qui suit.
+ * (Surtout : il faut que ce soit le SECOND jeton qui tranche, sinon la
+ *  regle la plus longue gagnerait par specificite — ce qui est exactement le
+ *  piege qu on cherche a attraper.) */
+const COMPOSITES = new Set(['hljs-title', 'hljs-literal']);
+const conflits = Object.entries(parClasse)
+  .filter(([c]) => !COMPOSITES.has(c))
+  .map(([c, v]) => [c, v, memeTheme(v)])
+  .filter(([, , mauvais]) => mauvais.length);
+test('aucune classe .hljs-* ne recoit deux couleurs DANS UN MEME THEME', conflits.length === 0,
+  conflits.length
+    ? conflits.map(([c, , th]) => c + ' -> ' + th.join(' ET ')).join(' ; ')
+    : Object.keys(parClasse).length + ' classes, une couleur par theme');
+/* Les composites doivent porter une regle PAR second jeton. */
+for (const [cls, second] of [['hljs-title', 'function_'], ['hljs-title', 'class_'], ['hljs-literal', '']]) {
+  if (!second) continue;
+  const motif = new RegExp('\\.hljs-' + cls.replace('hljs-', '') + '\\.' + second);
+  test('composite ' + cls + '.' + second + ' a sa propre regle', motif.test(css),
+    motif.test(css) ? '' : 'absente — le second jeton ne tranche plus rien');
+}
+test('hljs-title.function_ et hljs-title.class_ ont deux couleurs',
+  (() => { const m = css.match(/\.hljs-title\.function_[\s\S]{0,200}?color:\s*var\(([^)]+)\)/); const n = css.match(/\.hljs-title\.class_[\s\S]{0,200}?color:\s*var\(([^)]+)\)/); return Boolean(m && n && m[1] !== n[1]); })(),
+  'fonction et classe ne doivent pas partager un jeton');
+
+/* Et l'inverse : chaque role DOIT avoir une couleur portee par un jeton. */
+const sansCouleur = Object.entries(parClasse).filter(([, v]) => !v.length);
+test('chaque classe .hljs-* utilisee recoit bien une couleur', sansCouleur.length === 0,
+  sansCouleur.map(([c]) => c).join(', '));
 
 console.log('\n' + (ko ? 'RESULTAT: ' + ko + ' ECHEC(S), ' + ok + ' OK' : 'RESULTAT: ' + ok + '/' + ok + ' OK'));
 process.exit(ko ? 1 : 0);

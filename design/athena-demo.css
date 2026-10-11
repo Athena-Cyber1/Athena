@@ -1286,37 +1286,49 @@ button.dot:focus-visible,
    structure du langage se repere d un coup d oeil. */
 .md pre code .hljs-keyword,
 .md pre code .hljs-built_in,
-.md pre code .hljs-type,
-.md pre code .hljs-literal {
+.md pre code .hljs-type {
   color: var(--code-motcle-sombre);
 }
-/* Fonctions, classes, methodes : BLEU. Bleu et violet sont voisins en
-   teinte mais opposes en clarte : sur un bloc, un `function` se distingue
-   d un `return` sans lecture attentive. */
-.md pre code .hljs-title,
+/* true / false / null : ni des mots-cles, ni des nombres. Ils portaient la
+   couleur des mots-cles, ce qui les rendait invisibles comme litteraux. */
+.md pre code .hljs-literal {
+  color: var(--code-litteral-sombre);
+}
+/* Fonctions, methodes : BLEU — ce qu on APPELLE. */
 .md pre code .hljs-title.function_,
-.md pre code .hljs-title.class_,
-.md pre code .hljs-function,
-.md pre code .hljs-class {
+.md pre code .hljs-function {
   color: var(--code-fonction-sombre);
 }
-/* PROPRIETES : le meme bleu que les fonctions, en plus sourd — c est un
+/* Classes et types : AMBRE — ce qu on DECLARE. Ambre et bleu sont deux
+   familles tres eloignees : declaration et appel se repirent sans avoir a
+   les differencier par la clarte seule. */
+.md pre code .hljs-title.class_,
+.md pre code .hljs-class {
+  color: var(--code-classe-sombre);
+}
+/* Parametres et operateurs : CYAN — la SIGNATURE. On sait ce qu une
+   fonction attend et ce qu elle fait sans lire son corps. */
+.md pre code .hljs-params,
+.md pre code .hljs-punctuation,
+.md pre code .hljs-operator {
+  color: var(--code-parametre-sombre);
+}
+/* Proprietes et attributs : famille des fonctions, en plus sourd. C est un
    acces a un membre, pas une definition. */
 .md pre code .hljs-property,
 .md pre code .hljs-attr,
-.md pre code .hljs-attribute,
-.md pre code .hljs-variable,
-.md pre code .hljs-params {
+.md pre code .hljs-attribute {
   color: var(--code-fonction-sombre);
 }
-.md pre code .hljs-section,
-.md pre code .hljs-punctuation,
-.md pre code .hljs-operator,
-.md pre code .hljs-selector-tag,
-.md pre code .hljs-selector-class,
-.md pre code .hljs-selector-id,
-.md pre code .hljs-selector-attr,
-.md pre code .hljs-selector-pseudo {
+/* Variables locales et « this » : LILAS, volontairement le plus sourd des
+   roles colores. Une variable est du CONTEXTE : elle doit se voir sans
+   diaper. */
+.md pre code .hljs-variable,
+.md pre code .hljs-variable.constant_,
+.md pre code .hljs-variable.language_ {
+  color: var(--code-variable-sombre);
+}
+.md pre code .hljs-section {
   color: var(--code-mot-sombre);
 }
 /* `hljs-class` et `hljs-function` sont REELS : ils sont produits par core,
@@ -1325,10 +1337,13 @@ button.dot:focus-visible,
    relecture. Meme famille que les mots-cles : ils portent la structure. */
 /* Tags et attributs HTML/XML : meme famille que les mots-cles, sinon une page
    HTML s'affiche comme un mur gris sans structure. */
-.md pre code .hljs-tag,
-.md pre code .hljs-name,
-.md pre code .hljs-attr {
-  color: var(--code-mot-sombre);
+/* Tags HTML/XML : famille des FONCTIONS (c est un nom appele), le nom du
+   tag encore plus sourd — c est une etiquette, pas une valeur. */
+.md pre code .hljs-tag {
+  color: var(--code-fonction-sombre);
+}
+.md pre code .hljs-name {
+  color: var(--code-classe-sombre);
 }
 .md pre code .hljs-tag .hljs-name {
   font-weight: 600;
@@ -1391,32 +1406,43 @@ html[data-theme="light"] .md pre code .hljs-bullet {
 }
 html[data-theme="light"] .md pre code .hljs-keyword,
 html[data-theme="light"] .md pre code .hljs-built_in,
-html[data-theme="light"] .md pre code .hljs-type,
-html[data-theme="light"] .md pre code .hljs-literal {
+html[data-theme="light"] .md pre code .hljs-type {
   color: var(--code-motcle-clair);
 }
+html[data-theme="light"] .md pre code .hljs-literal {
+  color: var(--code-litteral-clair);
+}
+html[data-theme="light"] .md pre code .hljs-title.class_,
+html[data-theme="light"] .md pre code .hljs-class {
+  color: var(--code-classe-clair);
+}
+html[data-theme="light"] .md pre code .hljs-params,
+html[data-theme="light"] .md pre code .hljs-punctuation,
+html[data-theme="light"] .md pre code .hljs-operator {
+  color: var(--code-parametre-clair);
+}
+html[data-theme="light"] .md pre code .hljs-variable {
+  color: var(--code-variable-clair);
+}
+/* fonctions, methodes, proprietes, attributs : famille bleue */
 html[data-theme="light"] .md pre code .hljs-title,
 html[data-theme="light"] .md pre code .hljs-function,
-html[data-theme="light"] .md pre code .hljs-class,
 html[data-theme="light"] .md pre code .hljs-property,
 html[data-theme="light"] .md pre code .hljs-attr,
-html[data-theme="light"] .md pre code .hljs-attribute,
-html[data-theme="light"] .md pre code .hljs-variable,
-html[data-theme="light"] .md pre code .hljs-params {
+html[data-theme="light"] .md pre code .hljs-attribute {
   color: var(--code-fonction-clair);
 }
 html[data-theme="light"] .md pre code .hljs-section,
-html[data-theme="light"] .md pre code .hljs-punctuation,
-html[data-theme="light"] .md pre code .hljs-operator,
 html[data-theme="light"] .md pre code .hljs-selector-tag,
 html[data-theme="light"] .md pre code .hljs-selector-class,
 html[data-theme="light"] .md pre code .hljs-selector-id,
 html[data-theme="light"] .md pre code .hljs-selector-attr,
 html[data-theme="light"] .md pre code .hljs-selector-pseudo,
-html[data-theme="light"] .md pre code .hljs-tag,
-html[data-theme="light"] .md pre code .hljs-name,
-html[data-theme="light"] .md pre code .hljs-attr {
-  color: var(--code-mot-clair);
+html[data-theme="light"] .md pre code .hljs-tag {
+  color: var(--code-fonction-clair);
+}
+html[data-theme="light"] .md pre code .hljs-name {
+  color: var(--code-classe-clair);
 }
 html[data-theme="light"] .md pre code .hljs-code,
 html[data-theme="light"] .md pre code .hljs-meta {
@@ -3769,6 +3795,26 @@ span.think:not(details .think) {
      #276749 = 6,17:1 sur #f6f6f6. */
   --code-fonction-sombre: #7cc4ff;
   --code-fonction-clair: #0d47a1;
+  /* v20261011 (fd) — QUATRE ROLES DE PLUS, mesures sur du vrai code.
+     Releve sur un fichier JS reel : `params`, `variable`, `property` et
+     `title` sortaient TOUS en #7cc4ff. Quatre roles, une teinte : impossible
+     de distinguer une definition de fonction d un acces a une propriete.
+     Il fallait des roles, pas des nuances de la meme couleur.
+
+       classe    Panier            ambre   ce qu on DECLARE
+       parametre articles, prix    cyan    ce qu on ATTEND
+       variable  this, locales     lilas    du contexte, volontairement sourd
+       litteral  true/false/null   rouge    ni un mot-cle, ni un nombre
+
+     Ces quatre declenchaient sur la MEMME famille de classes avant. */
+  --code-classe-sombre: #ffd54f;
+  --code-classe-clair: #7a4f00;
+  --code-parametre-sombre: #89ddff;
+  --code-parametre-clair: #00695c;
+  --code-variable-sombre: #a6accd;
+  --code-variable-clair: #4527a0;
+  --code-litteral-sombre: #ff9e80;
+  --code-litteral-clair: #b3261e;
   --code-chaine-verte-sombre: #9bd45f;
   --code-chaine-verte-clair: #276749;
   --code-base-sombre: #f0f0f0;
