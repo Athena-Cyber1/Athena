@@ -8951,6 +8951,49 @@ let hnavBoiteSuivie = false;
    budget plutot que d'etre flou — c'est le bon arbitrage : un exces de pixels
    coute du transport, un manque coute de la lisibilite. */
 const HNAV_PIXELS_MAX = 3500000;
+/* v20261007 (ff) : INSTRUMENTATION DE LA LATENCE DU PANNEAU NAVIGATEUR.
+   Trois etapes mesurees par image :
+     decodage  — de la pose de `src` a l image prete a etre affichee
+     peinture   — de la pose a l affichage effectif (deux rAF)
+     cycle     — de l image precedente a celle-ci (cadence)
+   Trois appels `performance.now()` par image : de l ordre de la microseconde,
+   donc gratuits, et c'est le SEUL moyen de savoir quelle etape domine au lieu
+   de deviner. Lecture : dans la console du navigateur,
+     console.table(window.__athenaDebug.latence.brut())
+     console.table(window.__athenaDebug.latence.resume())   // mediane, p95
+   Cible : mediane < 100 ms, p95 < 200 ms. */
+const hnavMesures = [];
+const hnavMesurer = {
+  t0: () => performance.now(),
+  t1: (t0) => performance.now() - t0,
+  t2: (t1) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const m = { peinture: Math.round(t1), cycle: Math.round(performance.now() - _hnavPosePrec) };
+      _hnavPosePrec = performance.now();
+      hnavMesures.push(m);
+      if (hnavMesures.length > 200) hnavMesures.shift();
+    }));
+  }
+};
+let _hnavPosePrec = performance.now();
+const _hnavLatence = {
+  brut: () => hnavMesures.slice(),
+  resume: () => {
+    if (!hnavMesures.length) return [{ note: 'aucune image recue' }];
+    const p = (cle, q) => {
+      const t = hnavMesures.map(x => x[cle]).sort((a, b) => a - b);
+      return { mediane: t[Math.floor(t.length / 2)], p95: t[Math.min(t.length - 1, Math.floor(t.length * 0.95))] };
+    };
+    return [{ etape: 'peinture', ...p('peinture') }, { etape: 'cycle', ...p('cycle') }];
+  },
+  raz: () => { hnavMesures.length = 0; }
+};
+/* Rattachement APRES la declaration : `window.__athenaDebug` est cree bien plus
+   haut dans le fichier, y mettre `latence` directement levait
+   « Cannot access '_hnavLatence' before initialization » — la fenetre morte
+   entre la declaration `const` et son initialisation. */
+window.__athenaDebug.latence = _hnavLatence;
+
 function hnavLireBoite() {
   const corps = document.getElementById('navigateur-corps');
   if (!corps) return { w: 0, h: 0 };
@@ -9315,9 +9358,11 @@ function rendreHudNavigateur() {
       const cle = url.length + ':' + url.slice(-64);
       if (img.dataset.hnavSrc !== cle) {
         img.dataset.hnavSrc = cle;
+        const t0 = hnavMesurer.t0();          // v20261007 (ff) : depart du cycle
         const chargeur = new Image();
         const poser = () => {
           if (!img.isConnected || img.dataset.hnavSrc !== cle) return;
+          const t1 = hnavMesurer.t1(t0);     // pret a etre affiche
           img.src = chargeur.src;
           /* P2 (blob) : une seule URL vivante — l'ancienne est révoquée ICI,
              à l'instant où elle cesse d'être affichée. */
@@ -9325,6 +9370,11 @@ function rendreHudNavigateur() {
           hnavBlobAffiche = url;
           if (hnavBlobAttente === url) hnavBlobAttente = '';
           if (ancien && ancien !== url) hnavRevoquer(ancien);
+          /* v20261007 (ff) : la peinture est finie quand le navigateur a
+             compose l'image. Deux `requestAnimationFrame` : le premier est
+             AVANT le rendu, le second apres. Un seul suffirait a dater
+             l intention, pas l affichage. */
+          hnavMesurer.t2(t1);
         };
         chargeur.src = url;
         if (typeof chargeur.decode === 'function') chargeur.decode().then(poser).catch(poser);
