@@ -3398,9 +3398,29 @@ function genererBlocAction(donnees) {
   const etatEl = document.createElement('span');
   etatEl.className = 'action-etat';
   etatEl.textContent = etat.libelle;
-  const chev = document.createElement('span');
+const chev = document.createElement('span');
   chev.className = 'chev';
   chev.appendChild(icoSvg('chevron'));
+  /* v20261007 (fd) : COPIER LA COMMANDE, depuis l en-tete de la carte. Le
+     terminal recoit la commande TELLE QUELLE — sans les backticks du bloc de
+     code, sans l invite, sans guillemets — parce que c est ce qu on colle dans
+     un invite de commande. `copierTexte` gere deja le retour visuel et le
+     repli `execCommand` quand l API presse-papiers est refusee. */
+  const commande = String(d.commande || '').trim();
+  if (commande) {
+    const copierCmd = document.createElement('button');
+    copierCmd.type = 'button';
+    copierCmd.className = 'action-copier';
+    copierCmd.title = 'Copier la commande';
+    copierCmd.setAttribute('aria-label', 'Copier la commande');
+    copierCmd.appendChild(icoSvg('copy'));
+    copierCmd.addEventListener('click', (ev) => {
+      ev.preventDefault();      // sans quoi le <details> se replie
+      ev.stopPropagation();     // et le clic remonte a la carte entiere
+      copierTexte(commande, copierCmd);
+    });
+    sum.appendChild(copierCmd);
+  }
   sum.append(label, etatEl, chev);
   det.appendChild(sum);
 
@@ -3411,6 +3431,22 @@ function genererBlocAction(donnees) {
   const brut = d.stderr ? String(d.stderr) : String(d.stdout || '');
   sortie.textContent = tronquerSortie(brut, 200) || '(vide)';
   corps.appendChild(sortie);
+  /* La sortie affichee est TRONQUEE a 200 caracteres : la copier donne donc un
+     texte incomplet. On copie `brut`, jamais ce qui est a l ecran. */
+  if (brut) {
+    const copierOut = document.createElement('button');
+    copierOut.type = 'button';
+    copierOut.className = 'action-copier action-copier-sortie';
+    copierOut.title = 'Copier la sortie';
+    copierOut.setAttribute('aria-label', 'Copier la sortie');
+    copierOut.appendChild(icoSvg('copy'));
+    copierOut.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      copierTexte(brut, copierOut);
+    });
+    corps.appendChild(copierOut);
+  }
   det.appendChild(corps);
   return det;
 }
@@ -4803,6 +4839,17 @@ function estLigneSeparateurTableau(ligne) {
 function decouperCellules(ligne) {
   return String(ligne || '').trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
 }
+/* v20261007 (fd) : les deux serialisations du tableau, utilisees par les
+   boutons « Copier ». Le texte tabule colle directement dans Excel et Google
+   Sheets ; le Markdown garde la forme d'origine pour un editeur. */
+function tableauEnTexte(table) {
+  return [...table.rows].map(r => [...r.cells].map(c => c.textContent.trim()).join('\t')).join('\n');
+}
+function tableauEnMarkdown(table) {
+  const lignes = [...table.rows].map(r => '| ' + [...r.cells].map(c => c.textContent.trim()).join(' | ') + ' |');
+  if (lignes.length > 1) lignes.splice(1, 0, '|' + ' --- |'.repeat(table.rows[0].cells.length));
+  return lignes.join('\n');
+}
 function construireTableau(lignes, debut) {
   const entetes = decouperCellules(lignes[debut]);
   const aligns = decouperCellules(lignes[debut + 1]).map((c) => {
@@ -4848,6 +4895,28 @@ function construireTableau(lignes, debut) {
   const enveloppe = document.createElement('div');
   enveloppe.className = 'md-table-wrap';
   enveloppe.appendChild(table);
+  /* v20261007 (fd) : COPIER LE TABLEAU, en deux formats. Le texte tabulé est ce
+     qu'attend Excel et Google Sheets (une cellule = une colonne) ; le Markdown
+     est ce qu'attend un éditeur. Deux boutons, pas un : le second est moins
+     souvent utilisé mais reste indispensable, et un bouton qui devinerait le
+     format serait pire que pas de bouton. `copierTexte` gère le repli
+     `execCommand`. */
+  const outils = document.createElement('div');
+  outils.className = 'md-table-outils';
+  const boutonTabs = document.createElement('button');
+  boutonTabs.type = 'button';
+  boutonTabs.className = 'md-table-copier';
+  boutonTabs.title = 'Copier le tableau — texte tabulé (Excel, Sheets)';
+  boutonTabs.appendChild(icoSvg('copy'), document.createTextNode(' Copier'));
+  boutonTabs.addEventListener('click', () => copierTexte(tableauEnTexte(table), boutonTabs));
+  const boutonMd = document.createElement('button');
+  boutonMd.type = 'button';
+  boutonMd.className = 'md-table-copier';
+  boutonMd.title = 'Copier le tableau — Markdown';
+  boutonMd.appendChild(icoSvg('copy'), document.createTextNode(' Markdown'));
+  boutonMd.addEventListener('click', () => copierTexte(tableauEnMarkdown(table), boutonMd));
+  outils.append(boutonTabs, boutonMd);
+  enveloppe.appendChild(outils);
   return { el: enveloppe, fin: i };
 }
 
@@ -6650,7 +6719,14 @@ async function genererReponse(convo, opts) {
             convo.maj = Date.now();
             sauverConversations();
           }
-          bulle('assistant', msgStop);
+          /* v20261007 (fd) : `actions: false` sur une reponse INTERROMPUE. Mesure :
+           pendant le flux il y a deja 0 `.message-actions` (la bulle de
+           reflexion est creee avec `{ actions: false }`), donc le defaut
+           annonce — « la barre s affiche pendant l ecriture » — ne se
+           reproduit pas. Le cas reel qui restait : a l arret, on pousse un
+           message tronque, et la barre proposait de COPIER un texte coupe en
+           plein. Rien a copier : elle est retiree. */
+          bulle('assistant', msgStop, null, null, { actions: false });
         }
       }
       /* §8.7 : dé-verrouillage géré par le finally (compteur) — ne pas
@@ -6906,7 +6982,11 @@ if (dernierTracer) { try { dernierTracer = null; } catch (_) {} }
         sauverConversations();
       }
       if (vueOuverte()) {
-        const bErr = bulle('assistant', r ? r.erreur : 'Erreur inattendue.');
+        /* v20261007 (fd) : `actions: false` sur le bandeau d ERREUR. La barre y
+           proposait « Regenerer », « Copier » : copier un message d erreur ne
+           sert a rien, et le bouton Regenerer existe deja dans l erreur
+           elle-meme quand elle est reprenable. */
+        const bErr = bulle('assistant', r ? r.erreur : 'Erreur inattendue.', null, null, { actions: false });
         if (dejaAfficheErr.trim()) {
           const mdPartiel = document.createElement('div');
           mdPartiel.className = 'md';

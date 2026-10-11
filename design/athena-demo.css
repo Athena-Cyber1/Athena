@@ -3763,6 +3763,42 @@ span.think:not(details .think) {
   width: 15px;
   height: 15px;
 }
+/* v20261007 (fd) : `hidden` doit l'emporter sur `display: flex`. Sans cette
+   règle, un élément masqué par l'attribut restait visible — exactement le
+   piège que l'attribut est censé éviter. */
+.message-actions[hidden] {
+  display: none;
+}
+/* v20261007 (fd) : boutons de copie d'une carte d'action. Ils sont dans le
+   `<summary>`, donc un clic sans `stopPropagation` replierait la carte : le
+   JS neutralise les deux evenements. */
+.action-copier {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--texte-doux);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.action-copier:hover {
+  border-color: var(--bord-fort);
+  color: var(--texte);
+}
+.action-copier .ico {
+  width: 13px;
+  height: 13px;
+}
+.action-copier.copie-ok {
+  color: var(--ok);
+}
+.action-copier-sortie {
+  margin: 4px 0 0;
+}
 @media (max-width: 720px) {
   .composeur-pied {
     align-items: flex-start;
@@ -4224,6 +4260,36 @@ html[data-theme="light"] .nav-capture {
 /* v20261007 (ew) : le defilement passe sur l'enveloppe. La regle
    precedente faisait de la table un `display: block` — un hack qui casse le
    calcul de colonnes et l'alignement `:`. */
+.md-table-outils {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+.md-table-copier {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--bord);
+  border-radius: var(--rayon-s);
+  background: transparent;
+  color: var(--texte-doux);
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+.md-table-copier:hover {
+  border-color: var(--bord-fort);
+  color: var(--texte);
+}
+.md-table-copier .ico {
+  width: 12px;
+  height: 12px;
+}
+/* v20261007 (fd) : retour visuel de la copie, comme les autres boutons. */
+.md-table-copier.copie-ok {
+  color: var(--ok);
+}
+
 .md-table-wrap {
   max-width: 100%;
   overflow-x: auto;
