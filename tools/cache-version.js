@@ -14,8 +14,9 @@ const crypto = require('crypto');
  * contenu : si le fichier a change et que l'epoch annoncee est celle d'avant,
  * les deux ne peuvent pas correspondre.
  *
- * `tools/bump-cache.js` regenere le manifeste et le ?v=.
- * `check-cache.js` verifie que le manifeste decrit le contenu ACTUEL.
+ * `node tools/cache-version.js bump` regenere le manifeste et le ?v=.
+ * `node tools/cache-version.js` verifie que le manifeste decrit le contenu
+ * ACTUEL (branche dans tools/check.js).
  */
 const dir = path.join(__dirname, '..');
 const htmlPath = path.join(dir, 'docs', 'index.html');
@@ -29,15 +30,34 @@ const fichiers = (h) => {
   return out;
 };
 
-/* Les URL du HTML sont RELATIVES au dossier `docs/` (`./keys.js` =
-   docs/keys.js), et non a la racine du depot. Resoudre depuis la racine
-   echouait sur ENOENT — le controle aurait porte sur des fichiers qui
-   n'existent pas a cet endroit. */
-const sha = (rel) => {
-  const rel2 = rel.replace(/^\.\//, '').replace(/^docs\//, '');
-  const p = path.join(dir, 'docs', rel2);
-  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex').slice(0, 16);
+/* Les URL du HTML pointent vers `docs/…`, donc l'URL EST le chemin du
+   fichier. Resolvee depuis la racine elle echouait sur ENOENT — le controle
+   aurait porte sur des fichiers qui n'existent pas a cet endroit. */
+
+/* Les MIROIRS ne doivent PAS etre dans le manifeste.
+ *
+ * `docs/design/` est une copie generee par `tools/sync-design.js`, et
+ * `public/chat-demo.js`… par `tools/prepare-assets.js`. Leur contenu est
+ * reconstruit a chaque build : en local l'empreinte etait stable, en CI elle
+ * differe — et le garde a alors bloque le build sur un fichier que personne
+ * n'avait modifie (c'est arrive sur `fa`).
+ *
+ * Ce qu'il faut versionner, c'est la SOURCE : `design/athena-demo.css` est le
+ * fichier de reference (la charte le dit), `docs/design/` n'en est qu'un
+ * miroir. On mesure donc la source quand elle existe, et on ne garde au
+ * manifeste que les fichiers réellement servis.
+ */
+const SOURCE = {
+  'design/athena-demo.css': 'design/athena-demo.css',
+  'design/theme-loader.js': 'design/theme-loader.js',
+  'design/logo.svg': 'design/logo.svg',
 };
+const cheminSource = (rel) => {
+  const rel2 = rel.replace(/^\.\//, '');
+  if (SOURCE[rel2]) return path.join(dir, SOURCE[rel2]);
+  return path.join(dir, 'docs', rel2.replace(/^docs\//, ''));
+};
+const shaSource = (rel) => crypto.createHash('sha256').update(fs.readFileSync(cheminSource(rel))).digest('hex').slice(0, 16);
 
 const epoch = () => {
   const d = new Date();
@@ -61,9 +81,9 @@ function bump() {
   fs.writeFileSync(htmlPath, neuf);
 
   const manifeste = {};
-  for (const f of liste) manifeste[f] = sha(f);
+  for (const f of liste) manifeste[f] = shaSource(f);
   fs.writeFileSync(manifestePath, JSON.stringify({ version: v, fichiers: manifeste }, null, 2) + '\n');
-  console.log('bump-cache : epoch ' + v + ' sur ' + liste.length + ' fichiers');
+  console.log('cache-version : epoch ' + v + ' sur ' + liste.length + ' fichiers');
   for (const f of liste) console.log('   ' + f + '  ' + manifeste[f]);
 }
 
@@ -74,7 +94,7 @@ function verifie() {
   const ko = [];
 
   if (!fs.existsSync(manifestePath)) {
-    console.error('  BLOQUANT docs/cache-manifest.json absent — lancez : node tools/bump-cache.js');
+    console.error('  BLOQUANT docs/cache-manifest.json absent — lancez : node tools/cache-version.js bump');
     process.exitCode = 1;
     return;
   }
@@ -83,7 +103,7 @@ function verifie() {
   for (const f of liste) {
     const annonce = m.fichiers[f];
     if (!annonce) { ko.push(f + ' : absent du manifeste (fichier ajoute, ?v= jamais regenere)'); continue; }
-    const reel = sha(f);
+    const reel = shaSource(f);
     if (reel !== annonce) {
       ko.push(f + ' : contenu modifie (' + annonce + ' -> ' + reel + ') sans regenereer le ?v= — le navigateur servira le cache');
     }
@@ -99,7 +119,7 @@ function verifie() {
   if (ko.length) {
     console.error('  BLOQUANT cache non invalide :');
     ko.forEach(x => console.error('    - ' + x));
-    console.error('  corrigez par : node tools/bump-cache.js');
+    console.error('  corrigez par : node tools/cache-version.js bump');
     process.exitCode = 1;
   } else {
     console.log('  cache : ' + liste.length + ' fichiers, epoch ' + m.version + ', empreintes concordantes');
