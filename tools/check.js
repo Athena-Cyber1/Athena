@@ -154,6 +154,20 @@ for (const s of css) {
     if (!equilibre) signaler('CSS desequilibre : ' + s + ' (accolades)');
   }
 }
+/* v20261011 (fa) — INVALIDATION DE CACHE.
+   La coloration syntaxique a ete livree sans que `chat-demo.js` ni
+   `athena-demo.css` changent de `?v=`. Un navigateur ayant visite le site
+   avant a continue de servir l'ancien JS et l'ancien CSS : aucune
+   coloration, et — bien pire — AUCUNE erreur. La panne la plus silencieuse
+   du fichier, et la seule qui ne se voyait qu'a l'usage.
+   Le controle compare l'empreinte reelle des fichiers servis a celle du
+   manifeste : un contenu modifie sans regenereer le `?v=` echoue. */
+try {
+  require('./cache-version.js').verifie();
+} catch (e) {
+  signaler('controle de cache indisponible : ' + e.message);
+}
+
 console.log(bloquants.length ? 'ECHEC : ' + bloquants.length + ' anomalie(s) bloquante(s)' : 'OK : aucune anomalie bloquante');
 if (bloquants.length) process.exitCode = 1;
 console.log('done');

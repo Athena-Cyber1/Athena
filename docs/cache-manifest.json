@@ -1,0 +1,13 @@
+{
+  "version": "20261011f",
+  "fichiers": {
+    "./design/logo.svg": "4a633a28001b1d66",
+    "./design/athena-demo.css": "45d97a195c96b160",
+    "./design/theme-loader.js": "8930f70b35361be7",
+    "./keys.js": "25bf135f97d8d419",
+    "./api-shim.js": "1fa16d7a4d1bb27c",
+    "./vendor/hljs/highlight.min.js": "c4a399dd6f488bc9",
+    "./vendor/hljs/languages/powershell.min.js": "8357484cd585fb36",
+    "./chat-demo.js": "d2492bea81e7f2f2"
+  }
+}
