@@ -366,7 +366,13 @@
     <!-- v20261007 (ez) : plus de Twemoji. Les emoji sont rendus par l'OS
          (pile --police-emoji, Apple Color Emoji en tete) : vrai rendu Apple
          sur macOS/iOS, zero fichier, zero requete. -->
-    <script src="./chat-demo.js?v=20261007dz"></script>
+    <!-- v20261008 (fj) : coloration syntaxique. Auto-hebergee (zero requete
+     reseau, comme le reste du site). L ATTENTION est posee avant chat-demo.js :
+     la coloration est appliquee a la creation de chaque bloc, donc le vendor
+     doit etre pret quand le premier message s'affiche. -->
+<script src="./vendor/hljs/highlight.min.js?v=20261008"></script>
+<script src="./vendor/hljs/languages/powershell.min.js?v=20261008"></script>
+<script src="./chat-demo.js?v=20261007dz"></script>
   </div>
 </body>
 </html>

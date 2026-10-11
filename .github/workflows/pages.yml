@@ -43,6 +43,13 @@ jobs:
       # ne tire (15 vecteurs vérifiés sur le DOM parsé).
       - name: Sanitation markdown (XSS)
         run: npm run test:xss
+      # v20261008 — la coloration syntaxique est le seul endroit du rendu où
+      # une erreur ne casse rien : elle rend le code illisible, ou injecte du
+      # HTML issu du texte du modèle, sans qu'aucune porte ne bronche.
+      # Le test vérifie le DOM parsé, la fidélité du texte exécuté, la couverture
+      # de la table CSS et le contraste mesuré des jetons.
+      - name: Coloration syntaxique (vendor, couverture, contraste)
+        run: npm run test:coloration
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

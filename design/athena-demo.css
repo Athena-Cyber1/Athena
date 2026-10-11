@@ -1233,6 +1233,173 @@ button.dot:focus-visible,
   font-family: var(--mono);
   tab-size: 2;
 }
+/* v20261008 (fj) — COLORATION SYNTAXIQUE DES BLOCS DE CHAT (highlight.js).
+   Les quatre jetons ci-dessous existaient deja pour l'apercu de fichier du
+   HUD (`.file-apercu .tok-*`). Ils sont desormais ports par la coloration des
+   blocs ``` du fil : meme palette, meme identite, un seul systeme de jetons.
+
+   LES COULEURS SONT MESUREES, PAS CHOISIES. Chaque jeton est verifie contre le
+   fond REEL de la surface qui l'affiche — deux fonds en theme clair, car le
+   meme jeton sert a `.md pre` (#f6f6f6) et a `.file-apercu` (#f5f5f5) :
+       sombre  #0d0d0d   commentaire #8a8a8a  5,63:1
+                         chaine      #b5b5b5  9,48:1
+                         mot         #e8e8e8 15,86:1
+                         nombre      #ff756a  7,41:1
+       clair   #f6f6f6   commentaire #6f6f6f  4,65:1   4,61:1 sur #f5f5f5
+                         mot         #171717 16,59:1  16,44:1
+                         nombre      #c81e1e  5,31:1   5,26:1
+   UN SEUL jeton etait sous le seuil : la chaine claire (#8a8a8a) plafonnait a
+   3,19:1 — en dessous de 4,5:1, donc hors WCAG AA, sur LES DEUX surfaces.
+   Il passe a #464646 (8,73:1 / 8,66:1). C'est le meme defaut que le blanc sur
+   gris clair du plan (ew) : un jeton clair trop clair disparait sur fond clair.
+
+   L accent reste ROUGE, comme le veut le fichier (§ IDENTITE) : c'est le seul
+   accent, et il ne sert qu'aux NOMBRES et litteraux — 2 % du code reel
+   mesure. Les 38 % de commentaires sont le gris le plus sourd, les 21 % de
+   chaines le gris median : l'echelle suit la FREQUENCE, pour que ce qui se
+   repete le plus se lise en diagonale. */
+
+.md pre code .hljs-comment,
+.md pre code .hljs-quote {
+  color: var(--code-commentaire-sombre);
+  font-style: italic;
+}
+/* Les chaines : gris median. Le second plan (backtick, heredoc) est reel :
+   sinon la moitie du langage se lit dans la couleur du texte. */
+.md pre code .hljs-string,
+.md pre code .hljs-regexp,
+.md pre code .hljs-char.escape,
+.md pre code .hljs-subst {
+  color: var(--code-chaine-sombre);
+}
+/* Nombres et litteraux : le seul accent du fichier. 2 % du code, donc sa
+   saillie ne fatigue pas l'oeil — c'est une couleur de CONTROLE. */
+.md pre code .hljs-number,
+.md pre code .hljs-literal,
+.md pre code .hljs-symbol,
+.md pre code .hljs-bullet {
+  color: var(--code-nombre-sombre);
+}
+/* Mots-cles, types, fonctions, proprietes : le gris le plus clair. Ce sont
+   les 15 % qui portent la STRUCTURE — ils doivent se voir en premier. */
+.md pre code .hljs-keyword,
+.md pre code .hljs-built_in,
+.md pre code .hljs-type,
+.md pre code .hljs-title,
+.md pre code .hljs-class,
+.md pre code .hljs-function,
+.md pre code .hljs-section,
+.md pre code .hljs-params,
+.md pre code .hljs-attribute,
+.md pre code .hljs-variable,
+.md pre code .hljs-property,
+.md pre code .hljs-punctuation,
+.md pre code .hljs-operator,
+.md pre code .hljs-selector-tag,
+.md pre code .hljs-selector-class,
+.md pre code .hljs-selector-id,
+.md pre code .hljs-selector-attr,
+.md pre code .hljs-selector-pseudo {
+  color: var(--code-mot-sombre);
+}
+/* `hljs-class` et `hljs-function` sont REELS : ils sont produits par core,
+   python, ruby, java. Ils manquaient de la premiere table de coloration —
+   c'est le controle de COUVERTURE du test qui les a trouves, et non une
+   relecture. Meme famille que les mots-cles : ils portent la structure. */
+/* Tags et attributs HTML/XML : meme famille que les mots-cles, sinon une page
+   HTML s'affiche comme un mur gris sans structure. */
+.md pre code .hljs-tag,
+.md pre code .hljs-name,
+.md pre code .hljs-attr {
+  color: var(--code-mot-sombre);
+}
+.md pre code .hljs-tag .hljs-name {
+  font-weight: 600;
+}
+/* Addition / suppression (diff, et tout diff affiche dans un bloc) : la
+   GRAINE distingue l etat, pas la teinte — meme regle que `--ok`. Un diff
+   sans signe distinctif ne se lit plus du tout. */
+.md pre code .hljs-addition {
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  text-decoration: underline;
+  text-decoration-color: var(--code-nombre-sombre);
+  text-underline-offset: 2px;
+}
+.md pre code .hljs-deletion {
+  background: color-mix(in srgb, var(--danger-texte) 12%, transparent);
+  text-decoration: line-through;
+}
+/* Markdown colore dans un bloc ```markdown : le gras et l italique du modele
+   ressortent, sinon ils sont indiscernables du texte. */
+.md pre code .hljs-strong { font-weight: 700; }
+.md pre code .hljs-emphasis { font-style: italic; }
+.md pre code .hljs-code,
+.md pre code .hljs-meta {
+  color: var(--code-chaine-sombre);
+}
+/* `language-*` : hljs ajoute la classe du langage sur le conteneur. Sans
+   regle, un `code` herite de `--texte-code-bloc` (le corail) — ce qui n est
+   pas une erreur de contraste, mais ferait dependre la couleur du texte
+   courant du theme lu dans le badge plutot que des jetons. */
+.md pre code[class*="language-"],
+.md pre code.hljs {
+  /* Un bloc reellement colore : la base est un gris neutre (voir le jeton).
+     Un bloc NON colore garde le corail — c'est lui qui le rendait lisible
+     quand la coloration n'existait pas, et `athena-plan` en depend. */
+  color: var(--texte-code-bloc);
+}
+.md pre code.hljs {
+  color: var(--code-base-sombre);
+}
+html[data-theme="light"] .md pre code.hljs {
+  color: var(--code-base-clair);
+}
+/* Theme clair : memes quatre jetons, memes roles. On ne re-derive rien — la
+   liste de classes est identique, seules les valeurs changent. */
+html[data-theme="light"] .md pre code .hljs-comment,
+html[data-theme="light"] .md pre code .hljs-quote {
+  color: var(--code-commentaire-clair);
+}
+html[data-theme="light"] .md pre code .hljs-string,
+html[data-theme="light"] .md pre code .hljs-regexp,
+html[data-theme="light"] .md pre code .hljs-char.escape,
+html[data-theme="light"] .md pre code .hljs-subst {
+  color: var(--code-chaine-clair);
+}
+html[data-theme="light"] .md pre code .hljs-number,
+html[data-theme="light"] .md pre code .hljs-literal,
+html[data-theme="light"] .md pre code .hljs-symbol,
+html[data-theme="light"] .md pre code .hljs-bullet {
+  color: var(--code-nombre-clair);
+}
+html[data-theme="light"] .md pre code .hljs-keyword,
+html[data-theme="light"] .md pre code .hljs-built_in,
+html[data-theme="light"] .md pre code .hljs-type,
+html[data-theme="light"] .md pre code .hljs-title,
+html[data-theme="light"] .md pre code .hljs-class,
+html[data-theme="light"] .md pre code .hljs-function,
+html[data-theme="light"] .md pre code .hljs-section,
+html[data-theme="light"] .md pre code .hljs-params,
+html[data-theme="light"] .md pre code .hljs-attribute,
+html[data-theme="light"] .md pre code .hljs-variable,
+html[data-theme="light"] .md pre code .hljs-property,
+html[data-theme="light"] .md pre code .hljs-punctuation,
+html[data-theme="light"] .md pre code .hljs-operator,
+html[data-theme="light"] .md pre code .hljs-selector-tag,
+html[data-theme="light"] .md pre code .hljs-selector-class,
+html[data-theme="light"] .md pre code .hljs-selector-id,
+html[data-theme="light"] .md pre code .hljs-selector-attr,
+html[data-theme="light"] .md pre code .hljs-selector-pseudo,
+html[data-theme="light"] .md pre code .hljs-tag,
+html[data-theme="light"] .md pre code .hljs-name,
+html[data-theme="light"] .md pre code .hljs-attr {
+  color: var(--code-mot-clair);
+}
+html[data-theme="light"] .md pre code .hljs-code,
+html[data-theme="light"] .md pre code .hljs-meta {
+  color: var(--code-chaine-clair);
+}
+
 .code-lang {
   position: absolute;
   top: 7px;
@@ -3534,12 +3701,30 @@ span.think:not(details .think) {
      Ces quatre jetons sont donc l'exception documentée : du gris, plus
      l'accent. Toute couleur supplémentaire doit passer par un jeton nommé,
      jamais par un littéral. */
+  /* v20261008 (fj) : le TEXTE DE BASE d'un bloc colore. Il ne pouvait pas
+     rester le corail : --texte-code-bloc (#ea553c) et l accent des litteraux
+     (--lien-sombre, #ff756a) sont le meme rouge — mesures :
+         base vs accent = 1,37:1 en sombre, 1,00:1 en CLAIR.
+     Un « 10 » dans « brut * 10 » etait donc exactement la couleur du reste de
+     la ligne. La capture d'ecran l'a montre ; aucun test de contraste n'en
+     aurait parle, parce que les deux etaient Individuellement conformes.
+     Mesure sur le code reel du depot : les litteraux font 2 % du texte, la
+     base 31 %. L accent doit designer ce qui est RARE — il reste donc aux
+     litteraux, et la base devient un cran sous les mots-cles.
+     #e8e8e8 aurait ete le choix evident (c'est --code-mot-sombre), mais la
+     base et les mots-cles doivent se voir : d'ou un cran de plus. */
+  --code-base-sombre: #f0f0f0;
+  --code-base-clair: #242424;
   --code-commentaire-sombre: #8a8a8a;
   --code-chaine-sombre: #b5b5b5;
   --code-mot-sombre: #e8e8e8;
   --code-nombre-sombre: var(--lien-sombre);
   --code-commentaire-clair: #6f6f6f;
-  --code-chaine-clair: #8a8a8a;
+  /* v20261008 (fj) : etait #8a8a8a, soit 3,19:1 sur #f6f6f6 et 3,17:1
+     sur #f5f5f5 — sous 4,5:1 sur LES DEUX surfaces qui l'affichent.
+     Mesure : #464646 donne 8,73:1 et 8,66:1, et reste distinct du
+     commentaire (#6f6f6f, 1,88:1) comme du texte (#171717, 1,90:1). */
+  --code-chaine-clair: #464646;
   --code-mot-clair: #171717;
   --code-nombre-clair: var(--lien-clair);
   --lien: var(--lien-sombre);

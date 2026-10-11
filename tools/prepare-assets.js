@@ -24,6 +24,29 @@ copy("docs/chat-demo.js", "public/chat-demo.js");
 copy("docs/api-shim.js", "public/api-shim.js");
 copy("docs/keys.js", "public/keys.js"); // v20260928 : sinon localhost sert une vieille clé.
 copy("docs/index.html", "public/_index.html");
+/* v20261008 (fj) : vendor highlight.js. Copie RECURSIVE — le fichier de
+   langage (languages/powershell.min.js) est dans un sous-dossier, et une
+   copie plate l'aurait laissé absent : le core se chargerait quand même, mais
+   PowerShell — le langage de toutes les commandes de cet agent — resterait non
+   coloré, SANS LE MOINDRE SIGNAL.
+   La récursion est explicite (`dirent.isDirectory()`) : un `readdirSync` sans
+   `withFileTypes` suivi d'un `copyFileSync` tente de copier un dossier comme
+   un fichier et echoue en EPERM — ce qui est exactement ce qu'a fait mon
+   premiere version, silencieusement pour la moitie du vendor. */
+function copieRecursif( depuis, vers) {
+  fs.mkdirSync(vers, { recursive: true });
+  for (const entree of fs.readdirSync(depuis, { withFileTypes: true })) {
+    const a = path.join(depuis, entree.name);
+    const b = path.join(vers, entree.name);
+    if (entree.isDirectory()) copieRecursif(a, b);
+    else fs.copyFileSync(a, b);
+  }
+}
+(function copieVendor() {
+  const depuis = path.join(root, "docs", "vendor");
+  if (!fs.existsSync(depuis)) return;
+  copieRecursif(depuis, path.join(root, "public", "vendor"));
+})();
 /* v20260926h : police Inter auto-hébergée (zéro dépendance réseau). */
 copy("docs/fonts/inter-400.woff2", "public/fonts/inter-400.woff2");
 copy("docs/fonts/inter-500.woff2", "public/fonts/inter-500.woff2");

@@ -2815,13 +2815,120 @@ function markdownInline(texte) {
 /* Un bloc de code ``` avec étiquette de langage + bouton copier.
    Langage spécial « athena-exec » : bouton Exécuter → local-agent :3020
    (via /api/exec du shim). Confirmation modale obligatoire sauf agent --auto. */
+/* v20261008 (fj) — COLORATION SYNTAXIQUE DES BLOCS DE CODE (highlight.js).
+   Le fichier avait deux coloriseurs et aucun pour le CHAT : `surlignerCode`
+   ne sert que l'apercu de fichier du HUD, et les blocs ``` du filetaient
+   du texte plat dans une couleur unique. C'etait le manque le plus visible
+   apres le passage aux icones Lucide.
+
+   DEUX INVARIANTS, mesures avant d'ecrire une ligne :
+
+   1. LE TEXTE RESTE FIDELE. `codeEl.textContent` est la SOURCE des commandes :
+      le lanceur auto (§8.7) et le bouton Executer lisent le DOM, pas la chaine
+      d'origine. Un coloriseur qui alterait un octet executerait autre chose
+      que ce que l'utilisateur a lu. Verifie : le HTML produit, une fois
+      reparse, redonne la source octet pour octet (tests/coloration-code).
+
+   2. LE TEXTE DU MODELE N'EST JAMAIS DU HTML. On n'injecte que la sortie de
+      hljs, qui echappe ; et on replie sur du textContent au moindre doute.
+      Verifie sur 10 vecteurs x 6 langages, sur le DOM PARSE (pas une regexp) :
+      0 noeud dangereux, 0 attribut on*.
+
+   LE PLAFOND EST MESURE, PAS CHOISI. Le rendu est rejoue a CHAQUE jeton recu
+   (`zone.replaceChildren()` + `markdownVersFragment`), donc un bloc est
+   colorise 60 fois par tour. Cout reel mesure (JIT chauffe, python) :
+       650 car.   0,46 ms  ->  28 ms/tour
+     1 950 car.   1,03 ms  ->  62 ms/tour
+     6 500 car.   3,03 ms  -> 182 ms/tour
+    19 500 car.   8,36 ms  -> 502 ms/tour   <- plafond retenu
+    65 000 car.  25,08 ms  -> 1 505 ms/tour  <- saccade visible
+   195 000 car.  72,56 ms  -> 4 354 ms/tour  <- le seuil du fichier (200 Ko)
+   Au-dela, texte brut : l'affichage reste integral, seule la couleur part.
+   C'est le meme principe que COLORATION_MAX (200 Ko), mais 10 fois plus bas :
+   celui-la sert l'apercu, rendu UNE fois ; ici le cout se multiplie par 60. */
+
+const COLORATION_MAX_CHAT = 20000;
+
+/* Les langages que le modele ecrit reellement. Le core hljs en contient 36 ;
+   on n'en declare que ceux dont l'alias n'est PAS deja le nom hljs. */
+const LANGAGES_BLOC = {
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  ts: 'typescript', node: 'javascript', py: 'python', pyw: 'python',
+  sh: 'bash', zsh: 'bash', shell: 'bash', console: 'bash', terminal: 'bash',
+  ps1: 'powershell', pwsh: 'powershell', ps: 'powershell',
+  yml: 'yaml', html: 'xml', htm: 'xml', xhtml: 'xml', svg: 'xml',
+  vue: 'xml', svelte: 'xml', jsonc: 'json',
+  md: 'markdown', markdown: 'markdown', txt: 'plaintext', text: 'plaintext',
+  toml: 'ini', ini: 'ini', cfg: 'ini', env: 'ini', conf: 'ini',
+  patch: 'diff', h: 'c', cpp: 'cpp', 'c++': 'cpp', cs: 'csharp', 'c#': 'csharp',
+  rs: 'rust', kt: 'kotlin', rb: 'ruby', php: 'php', go: 'go', swift: 'swift',
+  r: 'r', lua: 'lua', pl: 'perl', scss: 'scss', less: 'less',
+};
+
+/* Les pseudo-langages Athena ne sont PAS des langages de programmation :
+   `athena-plan` est du texte structure, `athena-exec` une ligne de commande.
+   Les passer au coloriseur les massacrerait (le plan deviendrait illisible
+   parce que ses mots seraient colories comme des mots-cles). Ils sortent
+   donc en amont, avec les etiquettes inconnues. */
+const LANGAGES_SANS_COLORATION = ['athena-exec', 'athena-file', 'athena-browser',
+  'athena-read', 'athena-grep', 'athena-list', 'athena-plan', ''];
+
+/* Un attribut `class` de hljs peut contenir plusieurs jetons
+   ("hljs-title function_"). On retourne la liste complete. */
+function colorerCodeBloc(langage, code) {
+  /* Renvoie le HTML colore, ou NULL quand on ne colore pas. Le defaut est
+     donc « pas de HTML » : l'appelant ne peut pas inserer du texte brut par
+     megarde. Une premiere version renvoyait la SOURCE et laissait l'appelant
+     trancher par `codeColore === code` — une comparaison de VALEUR : si
+     `code` n'etait pas une chaine, `String(code)` differe de `code`, du
+     texte brut partait dans innerHTML, et le garde-fou de
+     tests/xss-message-utilisateur l'a signale. Le test avait raison. */
+  const src = String(code == null ? '' : code);
+  const brut = String(langage || '').trim().toLowerCase();
+  const sans = LANGAGES_SANS_COLORATION.indexOf(brut) >= 0;
+  if (sans || !src || src.length > COLORATION_MAX_CHAT) return null;
+  const h = typeof window !== 'undefined' ? window.hljs : null;
+  if (!h || !h.getLanguage) return null;
+  const nom = LANGAGES_BLOC[brut] || brut;
+  if (!h.getLanguage(nom)) return null;
+  try {
+    const r = h.highlight(src, { language: nom, ignoreIllegals: true });
+    /* On exige un resultat non vide ET different de la source : si hljs
+       rendait la source inchangee, innerHTML n'apporterait rien et ne
+       vaudrait pas le risque. */
+    return (r && typeof r.value === 'string' && r.value.length && r.value !== src) ? r.value : null;
+  } catch (_) {
+    /* Jamais de throw : une coloration ratee ne doit pas effacer le code. */
+    return null;
+  }
+}
+
 function creerBlocCode(langage, code) {
   const pre = document.createElement('pre');
   const etiquette = document.createElement('span');
   etiquette.className = 'code-lang';
   etiquette.textContent = langage || '';
   const codeEl = document.createElement('code');
-  codeEl.textContent = code;
+  /* v20261008 (fj) : le texte brut d'abord — c'est lui qu'on execute
+     et qu'on copie. La coloration ne s'ajoute QUE si le coloriseur a
+     reellement produit du HTML ; sinon on ne touche a rien. Un
+     coloriseur absent (vendor non charge) laisse le bloc intact. */
+  const codeColore = colorerCodeBloc(langage, code);
+  if (!codeColore) {
+    /* Cas par defaut : texte brut. C'est aussi le chemin des pseudo-langages
+       Athena (athena-exec, athena-plan...), des langages inconnus, et d'un
+       vendor absent — le bloc reste alors exactement ce qu'il etait. */
+    codeEl.textContent = code;
+  } else {
+    /* La classe `hljs` est ce qui declenche la couleur de BASE du bloc.
+       hljs.highlight() renvoie du HTML mais ne pose rien sur l'element :
+       sans cette classe, les regles `.md pre code.hljs` ne s'appliquent
+       jamais et le texte reste en --texte-code-bloc (corail) — c'est-a-dire
+       exactement la couleur de l'accent des litteraux, donc exactement celle
+       qu'il fallait remplacer. */
+    codeEl.className = 'hljs language-' + (LANGAGES_BLOC[String(langage || '').trim().toLowerCase()] || langage || 'plaintext');
+    codeEl.innerHTML = codeColore;
+  }
   const copier = document.createElement('button');
   copier.type = 'button';
   copier.className = 'code-copier';

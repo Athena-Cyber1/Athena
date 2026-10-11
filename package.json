@@ -13,6 +13,7 @@
     "test:shim": "node tests/shim-pauses.test.cjs",
     "test:boucle": "node tests/boucle-outils.test.cjs",
     "test:xss": "node tests/xss-markdown.test.cjs",
+    "test:coloration": "node tests/coloration-code.test.cjs",
     "sync:assets": "node tools/prepare-assets.js",
     "check": "node tools/prepare-assets.js && node tools/check.js"
   },
@@ -23,6 +24,7 @@
     "zod": "^3.24.3"
   },
   "devDependencies": {
+    "@highlightjs/cdn-assets": "^11.11.1",
     "@types/node": "20.17.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "^19.1.2",

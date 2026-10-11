@@ -264,6 +264,112 @@ sont dans des panneaux `display:none` (menu compte, HUD plan, HUD navigateur,
 interpréteur, recherche, actions de conversation) — c'est l'état fermé, pas une
 casse.
 
+### 4.12 Coloration syntaxique des blocs (`fj`)
+
+Les blocs ``` du fil sont colorés. Avant, ils étaient du texte plat dans une
+seule couleur — le défaut le plus visible après le passage aux icônes Lucide.
+
+**Le vendor est plus petit que prévu.** Le plantablait 7 fichiers de langage ;
+le core de highlight.js en contient déjà 36 (vérifié à l'exécution, pas dans le
+README). Il n'en manque qu'un : **powershell**. Deux fichiers, 133 Ko :
+
+| | taille |
+|---|---|
+| `highlight.min.js` | 127 Ko |
+| `languages/powershell.min.js` | 4,4 Ko |
+
+Auto-hébergé, comme le reste : zéro requête réseau.
+
+#### L'échelle suit la fréquence, pas l'œil
+
+Les couleurs ne sont pas choisies à l'œil : elles sont **mesurées sur la
+surface réelle qui les affiche** — deux fonds en thème clair, parce que le
+même jeton sert `.md pre` (#f6f6f6) et `.file-apercu` (#f5f5f5) :
+
+| rôle | sombre | vs fond | clair | vs fond |
+|---|---|---|---|---|
+| base | `#f0f0f0` | 17,05:1 | `#242424` | 14,36:1 |
+| mots-clés | `#e8e8e8` | 15,86:1 | `#171717` | 16,59:1 |
+| chaînes | `#b5b5b5` | 9,48:1 | `#464646` | 8,73:1 |
+| commentaires | `#8a8a8a` | 5,63:1 | `#6f6f6f` | 4,65:1 |
+| **littéraux** | `#ff756a` | 7,41:1 | `#c81e1e` | 5,31:1 |
+
+Ce qui décide de la place de chaque rôle, c'est la **fréquence réelle** dans le
+code du dépôt : 38 % de commentaires, 21 % de chaînes, 31 % de texte de base,
+2 % de nombres. L'échelle suit cette mesure — ce qui se répète le plus se lit en
+diagonale, et l'accent reste sur ce qui est rare.
+
+#### Un jeton était sous le seuil, un autre rendait l'accent invisible
+
+**`--code-chaine-clair` était hors WCAG AA** : `#8a8a8a` plafonnait à **3,19:1**
+sur `#f6f6f6` et 3,17:1 sur `#f5f5f5` — sous 4,5:1 sur les **deux** surfaces
+qui l'affichent. Passé à `#464646` (8,73:1 / 8,66:1). Même famille de défaut que
+le blanc sur gris clair du plan (`ew`) : un jeton trop clair disparaît sur fond
+clair.
+
+**L'accent ne désignait rien.** Le texte de base valait `--texte-code-bloc`
+(#ea553c, corail) et les nombres `--lien-sombre` (#ff756a) : le même rouge.
+Mesuré, **base vs accent = 1,37:1 en sombre et 1,00:1 en clair** — un « 10 »
+dans `brut * 10` avait exactement la couleur du reste de la ligne. Aucun test
+de contraste n'en aurait parlé : les deux étaient *individuellement* conformes.
+C'est la **capture d'écran** qui l'a montré.
+
+D'où `--code-base-*` : la base d'un bloc coloré devient un gris neutre, et le
+corail ne reste que sur les littéraux. Base vs accent passe à **2,30:1** et
+**2,71:1**. Un bloc *non* coloré (`athena-plan`, langage inconnu) garde le
+corail — c'est lui qui le rendait lisible quand la coloration n'existait pas.
+
+#### Deux invariants, non négociables
+
+1. **Le texte reste fidèle.** `codeEl.textContent` est la source des
+   commandes : le lanceur auto (§8.7) et le bouton Exécuter lisent le DOM. Une
+   coloration qui altère un octet exécuterait autre chose que ce que
+   l'utilisateur a lu. Vérifié sur 10 langages.
+2. **Le texte du modèle n'est jamais du HTML.** `colorerCodeBloc()` renvoie
+   `null` — pas la source — quand elle ne colore pas, et l'appelant n'insère en
+   `innerHTML` que dans la branche non vide. La première version renvoyait la
+   source et tranchait par `codeColore === code` : une comparaison de **valeur**.
+   Si `code` n'avait pas été une chaîne, `String(code)` différerait de `code` et
+   du texte brut serait parti dans `innerHTML`. **Le garde-fou de
+   `tests/xss-message-utilisateur` l'a signalé** — le test avait raison, et il a
+   été renforcé (4 contrôles sur l'appelant) plutôt que contourné.
+
+#### Le plafond est mesuré, pas choisi
+
+Le rendu est rejoué **à chaque jeton reçu** (`zone.replaceChildren()` +
+`markdownVersFragment`) : un bloc est donc colorisé ~60 fois par tour.
+
+| taille | 1 passage | × 60 jetons |
+|---|---|---|
+| 650 car. | 0,46 ms | 28 ms |
+| 6 500 car. | 3,03 ms | 182 ms |
+| **19 500 car.** | **8,36 ms** | **502 ms** — plafond |
+| 65 000 car. | 25,08 ms | 1 505 ms |
+| 195 000 car. | 72,56 ms | 4 354 ms |
+
+`COLORATION_MAX_CHAT = 20 000`. C'est le même principe que `COLORATION_MAX`
+(200 Ko), mais **10 fois plus bas** : celui-là sert l'aperçu de fichier, rendu
+une fois ; ici le coût se multiplie par 60. Au-delà, texte brut — l'affichage
+reste intégral, seule la couleur part.
+
+#### Contrôle
+
+`tests/coloration-code.test.cjs` — **111/111**. XSS vérifié sur le **DOM
+parsé** (10 vecteurs × 6 langages, 0 nœud dangereux, 0 attribut `on*`), fidélité
+octet pour octet, couverture exhaustive de la table CSS (31 classes réelles
+produites par les 37 langages du coloriseur), contrastes des 10 jetons mesurés,
+invariant d'exécution.
+
+Vérifié au navigateur : les deux thèmes, 7 langages, `textContent` identique à
+la source dans les 7 cas, `athena-exec` et `athena-plan` non colorés, bouton
+Exécuter intact.
+
+Vert : check 0 · coloration 111/111 · xss 21/21 · agent 27/27 · shim 52/52 ·
+boucle 43/43 · bench 4/4 · gras 13/13 · agent-borne 3/3 · crash-ui sans bug.
+
+`xss-message-utilisateur` reste à **2 échecs — préexistants**, vérifiés
+identiques avant et après (stiqués sur le commit `3709615`).
+
 ### 4.10 Émojis natifs de l'OS (`ez`)
 
 Les émojis ne sont plus des images. Ils sont rendus par le système.
