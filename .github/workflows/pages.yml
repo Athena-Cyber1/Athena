@@ -26,6 +26,14 @@ jobs:
       # (auto-start :3020 dans le runner, port libre).
       - name: Static checks
         run: node tools/check.js
+      # v20261011 (fa) — le garde de cache compare des empreintes, et le
+      # depot est ecrit en CRLF cote Windows. Sous Linux, le checkout sort en
+      # LF : meme contenu, octets differents. Ce test verifie que le garde
+      # distingue les deux cas — il doit ACCEPTER la conversion de fin de
+      # ligne et REFUSER une vraie modification. Sans lui, la correction du
+      # garde resterait non prouvee.
+      - name: Cache (fins de ligne et vraie modification)
+        run: node tests/cache-eol.test.cjs
       - name: Install dev dependencies
         run: npm ci --no-audit --no-fund
       - name: Integration tests (local-agent)

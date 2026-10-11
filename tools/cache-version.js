@@ -57,7 +57,22 @@ const cheminSource = (rel) => {
   if (SOURCE[rel2]) return path.join(dir, SOURCE[rel2]);
   return path.join(dir, 'docs', rel2.replace(/^docs\//, ''));
 };
-const shaSource = (rel) => crypto.createHash('sha256').update(fs.readFileSync(cheminSource(rel))).digest('hex').slice(0, 16);
+
+/* L'empreinte est NORMALISEE sur les fins de ligne.
+ *
+ * Le depot est ecrit en CRLF cote Windows (`.gitattributes` ne fixe que
+ * `docs/chat-demo.js`, pour que le diff de ce fichier-la reste lisible). Au
+ * checkout sous Linux, les AUTRES fichiers sortent en LF : meme contenu,
+ * octets differents, empreinte differente. Le premier passage en CI a donc
+ * echoue sur `theme-loader.js` et `api-shim.js` — deux fichiers que personne
+ * n'avait modifies, et dont le contenu est identique.
+ *
+ * Or ce que le navigateur met en cache, c'est l'URL, pas les octets. Deux
+ * versions qui ne different que par CRLF/LF sont le meme fichier pour lui.
+ * Comparer les octets rendait donc le garde faux positif sur toute machine
+ * non-Windows ; on compare le CONTENU. */
+const normaliser = (buf) => buf.toString('utf8').replace(/\r\n/g, '\n');
+const shaSource = (rel) => crypto.createHash('sha256').update(normaliser(fs.readFileSync(cheminSource(rel)))).digest('hex').slice(0, 16);
 
 const epoch = () => {
   const d = new Date();

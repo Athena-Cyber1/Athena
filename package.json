@@ -14,6 +14,7 @@
     "test:boucle": "node tests/boucle-outils.test.cjs",
     "test:xss": "node tests/xss-markdown.test.cjs",
     "test:coloration": "node tests/coloration-code.test.cjs",
+    "test:cache": "node tests/cache-eol.test.cjs",
     "sync:assets": "node tools/prepare-assets.js",
     "check": "node tools/prepare-assets.js && node tools/check.js"
   },
