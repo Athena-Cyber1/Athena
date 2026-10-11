@@ -8498,65 +8498,99 @@ function fermerHudContexte() {
   panneau.hidden = true;
   if (bouton) bouton.setAttribute('aria-expanded', 'false');
 }
+/* v20261007 (fh) : la REGLE du shim (caracteres / 3.5 + 4 par message) est
+   reprise ici pour repartir le total par role. Reprendre la MEME formule, et
+   non une approximation : c'est elle qui compte, donc les parts somment au
+   total affiche. Une autre formule afficherait 12 400 en tete et trois lignes
+   qui ne feraient pas le compte. */
+function jetonsParRole() {
+  const c = conversationOuverte();
+  const msgs = (c && c.messages) || [];
+  const jet = (m) => Math.ceil(String((m && m.content) || '').length / 3.5) + 4;
+  let vous = 0, modele = 0;
+  for (const m of msgs) {
+    if (!m) continue;
+    if (m.role === 'user') vous += jet(m);
+    else modele += jet(m);
+  }
+  /* Les pieces jointes ne sont pas dans le champ content : elles poident, et
+     c'est souvent LE poste qui pese. Comptees a part pour rester visibles,
+     sinon une conversation de 30 pieces jointes afficherait un jeton sans
+     cause. */
+  let fichiers = 0;
+  for (const m of msgs) {
+    if (!m || !Array.isArray(m.attachments)) continue;
+    for (const a of m.attachments) {
+      const t = String((a && (a.texte || a.contenu || a.text)) || '');
+      fichiers += t ? Math.ceil(t.length / 3.5) + 4 : 24;   // 24 = jeton de metadonnee
+    }
+  }
+  return { vous: vous, modele: modele, fichiers: fichiers, total: vous + modele + fichiers };
+}
 function rendreHudContexte() {
   const panneau = document.getElementById('hud-contexte');
   if (!panneau) return;
   panneau.replaceChildren();
   majBadgeContexte();
-  const titre = document.createElement('div');
-  titre.className = 'hud-section-titre';
-  titre.textContent = 'Contexte de la discussion';
-  panneau.appendChild(titre);
-const c = conversationOuverte();
-  const nb = (c.messages || []).length;
-  const u = jetonsDiscussion();
-  const lim = limiteDiscussion();
-  /* v20261007 (fc) : le contexte s'affiche en BARRE — les tokens utilisés sur
-     la limite. Cinq lignes « clé : valeur » ne se lisaient pas : il fallait les
-     lire une par une pour reconstituer un rapport qui tient en un trait. */
-  const ratio = lim ? Math.max(0, Math.min(1, u / lim)) : 0;
-  const barre = document.createElement('div');
-  barre.className = 'hud-contexte-barre';
-  const libelle = document.createElement('span');
-  libelle.textContent = 'Contexte utilisé';
-  const chiffres = document.createElement('span');
-  chiffres.className = 'hud-contexte-chiffres';
-  chiffres.textContent = lim
-    ? u.toLocaleString('fr-FR') + ' / ' + lim.toLocaleString('fr-FR')
-      + ' tokens · ' + Math.round(ratio * 100) + ' %'
-    : u.toLocaleString('fr-FR') + ' tokens · limite selon le modèle';
-  barre.append(libelle, chiffres);
-  panneau.appendChild(barre);
 
+  const r = jetonsParRole();
+  const lim = limiteDiscussion();
+  const ratio = lim ? Math.max(0, Math.min(1, r.total / lim)) : 0;
+  const pct = Math.round(ratio * 100);
+  const nf = (n) => Number(n).toLocaleString('fr-FR');
+
+  /* 1. LE TOTAL — le chiffre qu on cherche en ouvrant le panneau. */
+  const tete = document.createElement('div');
+  tete.className = 'hud-contexte-tete';
+  const total = document.createElement('span');
+  total.className = 'hud-contexte-total';
+  total.textContent = nf(r.total);
+  const limite = document.createElement('span');
+  limite.className = 'hud-contexte-limite';
+  limite.textContent = lim
+    ? ' / ' + nf(lim) + ' tokens' + (pct >= 90 ? '  ·  saturation' : pct >= 75 ? '  ·  serré' : '')
+    : ' tokens  ·  limite selon le modèle';
+  tete.append(total, limite);
+  panneau.appendChild(tete);
+
+  /* 2. LA BARRE — la couleur change AVANT que cela ne devienne un probleme.
+     Le jeton demande (--alerte) n existe pas dans le theme ; --danger-texte
+     est deja present et deja inverse dans les deux themes, donc c'est lui. */
   const piste = document.createElement('div');
   piste.className = 'hud-contexte-piste';
   piste.setAttribute('role', 'img');
-  piste.setAttribute('aria-label', 'Contexte utilisé : ' + (lim ? Math.round(ratio * 100) + ' % de la limite' : 'limite inconnue'));
-  if (lim) {
-    const remplissage = document.createElement('div');
-    remplissage.className = 'hud-contexte-remplissage';
-    /* La largeur est posee en style : une valeur CSS seule (`width: 42%`)
-       serait le meme pour tous. */
-    remplissage.style.width = (ratio * 100).toFixed(2) + '%';
-    piste.appendChild(remplissage);
-  }
+  piste.setAttribute('aria-label', lim
+    ? pct + ' % de la limite de contexte utilisee'
+    : 'Limite de contexte inconnue : ' + nf(r.total) + ' tokens');
+  const barre = document.createElement('div');
+  barre.className = 'hud-contexte-barre';
+  barre.dataset.niveau = pct >= 90 ? 'haut' : pct >= 75 ? 'moyen' : 'bas';
+  if (lim) barre.style.width = (ratio * 100).toFixed(2) + '%';
+  piste.appendChild(barre);
   panneau.appendChild(piste);
 
-  const lignes = [
-    ['Modèle', modeleChoisi ? modeleChoisi.name : 'auto (sans relais)'],
-    ['Messages', nb + ' message' + (nb > 1 ? 's' : '')]
-  ];
-  lignes.forEach(([k, v]) => {
-    const row = document.createElement('div');
-    row.className = 'hud-note';
-    row.textContent = k + ' : ' + v;
-    panneau.appendChild(row);
+  /* 3. LA REPARTITION — trois lignes, plus cinq. Les chiffres sont alignes
+     par tabular-nums : sans ca, la jauge tremble a chaque frappe du modele. */
+  const dl = document.createElement('dl');
+  dl.className = 'hud-contexte-lignes';
+  [['Vous', r.vous], ['Modèle', r.modele], ['Fichiers', r.fichiers]].forEach(function (paire) {
+    const l = document.createElement('div');
+    const dt = document.createElement('dt');
+    dt.textContent = paire[0];
+    const dd = document.createElement('dd');
+    dd.textContent = nf(paire[1]);
+    l.append(dt, dd);
+    dl.appendChild(l);
   });
-  const note = document.createElement('div');
-  note.className = 'hud-note hud-contexte-note';
-  note.textContent = 'Estimation : caractères / 3.5. Au-delà de 95 % de la limite, les anciens messages sont résumés automatiquement.';
+  panneau.appendChild(dl);
+
+  /* 4. UNE SEULE phrase d aide. Deux suffisaient avant, c'est du bruit. */
+  const note = document.createElement('p');
+  note.className = 'hud-contexte-note';
+  note.textContent = 'Au-delà de la limite, les plus anciens messages sont résumés.';
   panneau.appendChild(note);
 }
+
 (function initHudContexte() {
   const bouton = document.getElementById('btn-contexte');
   const panneau = document.getElementById('hud-contexte');
