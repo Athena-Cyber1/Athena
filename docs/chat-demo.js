@@ -4839,12 +4839,9 @@ function estLigneSeparateurTableau(ligne) {
 function decouperCellules(ligne) {
   return String(ligne || '').trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
 }
-/* v20261007 (fd) : les deux serialisations du tableau, utilisees par les
-   boutons « Copier ». Le texte tabule colle directement dans Excel et Google
-   Sheets ; le Markdown garde la forme d'origine pour un editeur. */
-function tableauEnTexte(table) {
-  return [...table.rows].map(r => [...r.cells].map(c => c.textContent.trim()).join('\t')).join('\n');
-}
+/* v20261007 (fd) : serialisation Markdown du tableau pour le bouton « Copier ».
+   Un seul format, pas deux : deviner un format a la volee serait pire que pas
+   de bouton du tout. */
 function tableauEnMarkdown(table) {
   const lignes = [...table.rows].map(r => '| ' + [...r.cells].map(c => c.textContent.trim()).join(' | ') + ' |');
   if (lignes.length > 1) lignes.splice(1, 0, '|' + ' --- |'.repeat(table.rows[0].cells.length));
@@ -4903,19 +4900,13 @@ function construireTableau(lignes, debut) {
      `execCommand`. */
   const outils = document.createElement('div');
   outils.className = 'md-table-outils';
-  const boutonTabs = document.createElement('button');
-  boutonTabs.type = 'button';
-  boutonTabs.className = 'md-table-copier';
-  boutonTabs.title = 'Copier le tableau — texte tabulé (Excel, Sheets)';
-  boutonTabs.appendChild(icoSvg('copy'), document.createTextNode(' Copier'));
-  boutonTabs.addEventListener('click', () => copierTexte(tableauEnTexte(table), boutonTabs));
   const boutonMd = document.createElement('button');
   boutonMd.type = 'button';
   boutonMd.className = 'md-table-copier';
   boutonMd.title = 'Copier le tableau — Markdown';
   boutonMd.appendChild(icoSvg('copy'), document.createTextNode(' Markdown'));
   boutonMd.addEventListener('click', () => copierTexte(tableauEnMarkdown(table), boutonMd));
-  outils.append(boutonTabs, boutonMd);
+  outils.appendChild(boutonMd);
   enveloppe.appendChild(outils);
   return { el: enveloppe, fin: i };
 }
@@ -6279,7 +6270,14 @@ function bulle(role, contenu, outil, meta, options) {
        toujours) : ce qui disparait, c'est l'affichage. */
   }
   row.appendChild(b);
-  if (!options || options.actions !== false) row.appendChild(actionMessage(contenu, role));
+  if (!options || options.actions !== false) {
+    /* v20261007 (fe) : PAS de barre sur une reponse VIDE. Mesure : le modele
+       peut rendre vide (filtre, garde-fou, refus), et la barre s'affichait
+       quand meme — 2 boutons pour 0 caractere, donc « Copier » ne copiait rien
+       et « Regenerer » s'appuyait sur un texte absent. Meme regle que pour
+       l arret : une barre ne s'affiche que s il y a quelque chose a copier. */
+    if (String(contenu == null ? '' : contenu).trim()) row.appendChild(actionMessage(contenu, role));
+  }
   msgsEl.appendChild(row);
   emojiser(b);
   return b;
