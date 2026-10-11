@@ -15,6 +15,7 @@
     "test:xss": "node tests/xss-markdown.test.cjs",
     "test:coloration": "node tests/coloration-code.test.cjs",
     "test:cache": "node tests/cache-eol.test.cjs",
+    "test:shader": "node tests/shader-threejs.test.cjs",
     "sync:assets": "node tools/prepare-assets.js",
     "check": "node tools/prepare-assets.js && node tools/check.js"
   },

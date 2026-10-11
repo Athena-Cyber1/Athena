@@ -34,6 +34,14 @@ jobs:
       # garde resterait non prouvee.
       - name: Cache (fins de ligne et vraie modification)
         run: node tests/cache-eol.test.cjs
+      # v20261011 — le shader Three.js de `animation-threejs.html` ne
+      # compilait pas : `attribute vec3 color` redeclare (Three.js l'injecte
+      # deja) et `uPixelRatio` utilise sans etre declare. Resultat : rien
+      # ne s'affiche, et l'erreur ne se voit que dans la console du
+      # navigateur. Ce controle statique tourne partout ; la compilation
+      # REELLE (WebGL) est une sonde navigateur, reservee au poste.
+      - name: Shader Three.js (declarations, uniforms, backticks)
+        run: npm run test:shader
       - name: Install dev dependencies
         run: npm ci --no-audit --no-fund
       - name: Integration tests (local-agent)

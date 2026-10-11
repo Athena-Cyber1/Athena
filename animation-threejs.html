@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animation Three.js - Particules Tourbillonnantes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #0a0a0f; font-family: 'Segoe UI', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: relative; }
+        #info {
+            position: fixed; top: 20px; left: 20px; z-index: 10;
+            color: #e8e8f0; font-size: 14px; line-height: 1.6;
+            background: rgba(10, 10, 15, 0.85); padding: 16px 20px;
+            border-radius: 12px; border: 1px solid rgba(100, 150, 255, 0.3);
+            backdrop-filter: blur(8px); pointer-events: none;
+        }
+        #info h1 { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: #8ab4ff; }
+        #info p { font-size: 12px; opacity: 0.7; }
+        .stats { position: fixed; bottom: 20px; right: 20px; z-index: 10; color: #6496ff; font-size: 12px; font-family: monospace; background: rgba(10,10,15,0.85); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(100,150,255,0.3); }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="info">
+        <h1>Particules Tourbillonnantes</h1>
+        <p>Animation Three.js avec 5000 particules en mouvement perpétuel. Interaction souris pour perturber le champ.</p>
+    </div>
+    <div id="stats" class="stats">FPS: -- | Particules: 5000</div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuration ---
+        const PARTICLE_COUNT = 5000;
+        const SPREAD_RADIUS = 25;
+        const NOISE_SCALE = 0.008;
+        const NOISE_SPEED = 0.15;
+        const MOUSE_INFLUENCE_RADIUS = 12;
+        const MOUSE_STRENGTH = 0.08;
+
+        // --- Scène ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a0f);
+
+        // --- Caméra ---
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+        camera.position.set(0, 0, 45);
+
+        // --- Renderer ---
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        container.appendChild(renderer.domElement);
+
+        // --- Contrôles ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enablePan = false;
+        controls.minDistance = 20;
+        controls.maxDistance = 80;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.3;
+
+        // --- Lumière ---
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+        scene.add(ambientLight);
+
+        const pointLight1 = new THREE.PointLight(0x6496ff, 1.5, 100);
+        pointLight1.position.set(30, 20, 30);
+        scene.add(pointLight1);
+
+        const pointLight2 = new THREE.PointLight(0xff6496, 1.2, 100);
+        pointLight2.position.set(-30, -20, -30);
+        scene.add(pointLight2);
+
+        const pointLight3 = new THREE.PointLight(0x64ff96, 1, 100);
+        pointLight3.position.set(0, 40, 0);
+        scene.add(pointLight3);
+
+        // --- Géométrie des particules ---
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+        const sizes = new Float32Array(PARTICLE_COUNT);
+        const basePositions = new Float32Array(PARTICLE_COUNT * 3);
+
+        const color1 = new THREE.Color(0x6496ff);
+        const color2 = new THREE.Color(0xff64d4);
+        const color3 = new THREE.Color(0x64ffda);
+        const color4 = new THREE.Color(0xffda64);
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const i3 = i * 3;
+
+            const radius = SPREAD_RADIUS * (0.3 + 0.7 * Math.random());
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+
+            const x = radius * Math.sin(phi) * Math.cos(theta);
+            const y = radius * Math.sin(phi) * Math.sin(theta);
+            const z = radius * Math.cos(phi);
+
+            positions[i3] = x;
+            positions[i3 + 1] = y;
+            positions[i3 + 2] = z;
+
+            basePositions[i3] = x;
+            basePositions[i3 + 1] = y;
+            basePositions[i3 + 2] = z;
+
+            const colorMix = (Math.sin(x * 0.3) + Math.cos(y * 0.3) + Math.sin(z * 0.3)) / 3;
+            let color;
+            if (colorMix > 0.5) color = color1.clone().lerp(color2, (colorMix - 0.5) * 2);
+            else if (colorMix > 0) color = color3.clone().lerp(color1, colorMix * 2);
+            else if (colorMix > -0.5) color = color4.clone().lerp(color3, (colorMix + 0.5) * 2);
+            else color = color2.clone().lerp(color4, (colorMix + 1) * 2);
+
+            colors[i3] = color.r;
+            colors[i3 + 1] = color.g;
+            colors[i3 + 2] = color.b;
+
+            sizes[i] = 0.15 + Math.random() * 0.35;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+        // --- Shader Material ---
+// (le commentaire « corrigé » precedait un shader qui ne compilait pas :
+//  `color` rededclare et `uPixelRatio` utilise sans declaration.)
+        const customMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                uTime: { value: 0 },
+                uPixelRatio: { value: renderer.getPixelRatio() },
+                uMouse: { value: new THREE.Vector2(0, 0) },
+                uMouseActive: { value: 0 },
+                uCameraPos: { value: new THREE.Vector3(0, 0, 45) },
+            },
+            vertexShader: `
+                attribute float size;
+                // PAS de « attribute vec3 color » ici. Three.js l'injecte
+                // LUI-MEME dans le prefixe du vertex shader des que
+                // vertexColors:true est pose ; le redeclarer donne
+                // « color : redefinition » (erreur 71) et le programme ne
+                // compile pas : plus rien ne s'affiche. L'attribute color
+                // de la geometrie reste disponible sous ce nom.
+                // (Pas de.backticks ici : ils fermeraient ce template.)
+                varying vec3 vColor;
+                varying float vSize;
+                varying vec3 vWorldPosition;
+                varying float vDepth;
+                uniform float uTime;
+                // uPixelRatio est fourni dans les uniforms et mis a jour a
+                // chaque resize (voir plus bas) — mais un uniform utilise
+                // SANS avoir ete DECLARE ne se compile pas :
+                // « uPixelRatio : undeclared identifier » (erreur 89).
+                // La declaration manquait.
+                uniform float uPixelRatio;
+                // uMouse, uMouseActive et uCameraPos etaient declares sans
+                // etre JAMAIS utilises dans main() : le compilateur GLSL les
+                // eliminait (getUniformLocation renvoie null). Trois.js
+                // continue de les fournir dans les uniforms — sans effet.
+                // On les retire du shader : un uniforme mort est du bruit qui
+                // laisse croire a une interaction souris qui n'existe pas.
+                // (Pas de.backticks dans un shader : ils fermeraient le
+                //  template literal — c'est arrive, et le shader entier
+                //  devenait invalide.)
+                void main() {
+                    vColor = color;
+                    vSize = size;
+                    vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    vDepth = -mvPosition.z;
+                    // Pulse basé sur la position mondiale et le temps
+                    float pulse = sin(uTime * 2.0 + vWorldPosition.x * 0.1 + vWorldPosition.y * 0.1) * 0.5 + 0.5;
+                    float pointSize = size * (1.0 + pulse * 0.3) * (300.0 / vDepth);
+                    gl_PointSize = pointSize * uPixelRatio;
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                varying float vSize;
+                varying vec3 vWorldPosition;
+                varying float vDepth;
+                void main() {
+                    float dist = length(gl_PointCoord - vec2(0.5));
+                    float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
+                    // Glow effect basé sur la profondeur
+                    float glow = 1.0 - smoothstep(0.0, 0.5, dist * 0.5);
+                    vec3 finalColor = vColor * (1.0 + glow * 0.5);
+                    // Atténuation subtile par profondeur
+                    float depthFade = smoothstep(10.0, 60.0, vDepth);
+                    gl_FragColor = vec4(finalColor, alpha * 0.9 * (1.0 - depthFade * 0.3));
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            vertexColors: true,
+        });
+
+        const particles = new THREE.Points(geometry, customMaterial);
+        scene.add(particles);
+
+        // --- Souris : conversion NDC vers monde ---
+        const mouseNDC = new THREE.Vector2(0, 0);
+        let mouseActive = false;
+        const raycaster = new THREE.Raycaster();
+        const mouseWorldTarget = new THREE.Vector3();
+
+        window.addEventListener('mousemove', (e) => {
+            mouseNDC.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouseNDC.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            mouseActive = true;
+        });
+
+        window.addEventListener('mouseleave', () => {
+            mouseActive = false;
+        });
+
+        // --- Simplex/Perlin Noise 3D ---
+        const perm = new Array(256).fill(0).map((_, i) => i);
+        for (let i = perm.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [perm[i], perm[j]] = [perm[j], perm[i]];
+        }
+        const p = new Array(512);
+        for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+        function lerp(t, a, b) { return a + t * (b - a); }
+        function grad(hash, x, y, z) {
+            const h = hash & 15;
+            const u = h < 8 ? x : y;
+            const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+            return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+        }
+
+        function noise3D(x, y, z) {
+            const X = Math.floor(x) & 255;
+            const Y = Math.floor(y) & 255;
+            const Z = Math.floor(z) & 255;
+            x -= Math.floor(x);
+            y -= Math.floor(y);
+            z -= Math.floor(z);
+            const u = fade(x), v = fade(y), w = fade(z);
+            const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+            const B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+            return lerp(w,
+                lerp(v,
+                    lerp(u, grad(p[AA], x, y, z), grad(p[BA], x - 1, y, z)),
+                    lerp(u, grad(p[AB], x, y - 1, z), grad(p[BB], x - 1, y - 1, z))
+                ),
+                lerp(v,
+                    lerp(u, grad(p[AA + 1], x, y, z - 1), grad(p[BA + 1], x - 1, y, z - 1)),
+                    lerp(u, grad(p[AB + 1], x, y - 1, z - 1), grad(p[BB + 1], x - 1, y - 1, z - 1))
+                )
+            );
+        }
+
+        // --- Animation ---
+        const clock = new THREE.Clock();
+        const posAttr = geometry.getAttribute('position');
+        const statsEl = document.getElementById('stats');
+        let frameCount = 0;
+        let lastTime = performance.now();
+        const tempVec3 = new THREE.Vector3();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+
+            // Mise à jour uniforms shader
+            customMaterial.uniforms.uTime.value = elapsed;
+            customMaterial.uniforms.uMouse.value.copy(mouseNDC);
+            customMaterial.uniforms.uMouseActive.value = mouseActive ? 1 : 0;
+            customMaterial.uniforms.uCameraPos.value.copy(camera.position);
+
+            // Raycasting souris vers plan Z=0 pour interaction 3D cohérente
+            let mouseWorld = null;
+            if (mouseActive) {
+                raycaster.setFromCamera(mouseNDC, camera);
+                const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+                const intersection = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(planeZ, intersection)) {
+                    mouseWorld = intersection;
+                }
+            }
+
+            // Animation CPU des positions
+            const positions = posAttr.array;
+            const basePos = basePositions;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                const bx = basePos[i3];
+                const by = basePos[i3 + 1];
+                const bz = basePos[i3 + 2];
+
+                // Bruit de Perlin pour mouvement organique
+                const t = elapsed * NOISE_SPEED;
+                const nX = noise3D(bx * NOISE_SCALE + t, by * NOISE_SCALE, bz * NOISE_SCALE) * 0.8;
+                const nY = noise3D(bx * NOISE_SCALE, by * NOISE_SCALE + t, bz * NOISE_SCALE) * 0.8;
+                const nZ = noise3D(bx * NOISE_SCALE, by * NOISE_SCALE, bz * NOISE_SCALE + t) * 0.8;
+
+                // Rotation globale lente autour de Y
+                const rotSpeed = 0.05;
+                const cosR = Math.cos(elapsed * rotSpeed);
+                const sinR = Math.sin(elapsed * rotSpeed);
+                const rx = bx * cosR - bz * sinR;
+                const rz = bx * sinR + bz * cosR;
+
+                // Influence souris en monde 3D
+                let mx = 0, my = 0, mz = 0;
+                if (mouseWorld) {
+                    const dx = rx - mouseWorld.x;
+                    const dy = by - mouseWorld.y;
+                    const dz = rz - mouseWorld.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist < MOUSE_INFLUENCE_RADIUS && dist > 0.1) {
+                        const force = (MOUSE_INFLUENCE_RADIUS - dist) / MOUSE_INFLUENCE_RADIUS * MOUSE_STRENGTH;
+                        mx = dx / dist * force;
+                        my = dy / dist * force;
+                        mz = dz / dist * force;
+                    }
+                }
+
+                positions[i3] = rx + nX + mx;
+                positions[i3 + 1] = by + nY + my;
+                positions[i3 + 2] = rz + nZ + mz;
+            }
+            posAttr.needsUpdate = true;
+
+            // Animation des lumières
+            pointLight1.position.x = Math.cos(elapsed * 0.3) * 35;
+            pointLight1.position.z = Math.sin(elapsed * 0.3) * 35;
+            pointLight1.position.y = Math.sin(elapsed * 0.2) * 15 + 20;
+
+            pointLight2.position.x = Math.cos(elapsed * 0.25 + 2) * 35;
+            pointLight2.position.z = Math.sin(elapsed * 0.25 + 2) * 35;
+            pointLight2.position.y = Math.cos(elapsed * 0.15) * 15 - 20;
+
+            pointLight3.position.x = Math.sin(elapsed * 0.2) * 20;
+            pointLight3.position.z = Math.cos(elapsed * 0.2) * 20;
+
+            controls.update();
+            renderer.render(scene, camera);
+
+            // Stats FPS
+            frameCount++;
+            const now = performance.now();
+            if (now - lastTime >= 1000) {
+                statsEl.textContent = `FPS: ${frameCount} | Particules: ${PARTICLE_COUNT}`;
+                frameCount = 0;
+                lastTime = now;
+            }
+        }
+
+        // --- Resize ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            customMaterial.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+        });
+
+        animate();
+    </script>
+</body>
+</html>
