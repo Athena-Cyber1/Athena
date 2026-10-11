@@ -1,8 +1,8 @@
 {
-  "version": "20261011f",
+  "version": "20261011h",
   "fichiers": {
     "./design/logo.svg": "4a633a28001b1d66",
-    "./design/athena-demo.css": "78ab6729cf70f8f2",
+    "./design/athena-demo.css": "f8de82f7089ded2a",
     "./design/theme-loader.js": "96a46f9bb75ab953",
     "./keys.js": "25bf135f97d8d419",
     "./api-shim.js": "81d042699a0fb63e",

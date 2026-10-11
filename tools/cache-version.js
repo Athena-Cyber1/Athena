@@ -85,9 +85,20 @@ function bump() {
   const h = fs.readFileSync(htmlPath, 'utf8');
   const liste = fichiers(h);
   const e = epoch();
-  /* On garde l'initiale de la derniere epoch si elle existe, sinon 'a'. */
-  const ancien = (h.match(/\?v=(\d{8})([a-z])/) || [])[2] || 'a';
-  const v = e + ancien;
+  /* L'initiale de serie suit le JOUR : 'a' pour la premiere version du jour,
+     'b' pour la suivante. Reprendre la meme initiale quand le contenu a
+     change dans la meme journee produisait une epoch IDENTIQUE — c'est-à-dire
+     exactement l'oubli que ce controle existe pour empecher. C'est arrivé :
+     une modification du CSS le 11/11 a regénéré `20261011f`, le même epoch
+     qu'avant, et le navigateur a donc gardé l'ancien fichier.
+     On regarde donc si l'epoch en place est celle d'AUJOURD'HUI. */
+  const enPlace = (h.match(/\?v=(\d{8})([a-z])/) || []);
+  const memeJour = enPlace[1] === e;
+  const lettre = memeJour
+    ? String.fromCharCode((enPlace[2] || 'a').charCodeAt(0) + 1)
+    : 'a';
+  const v = e + lettre;
+  if (memeJour) console.log('  bump : jour deja couvert (' + enPlace[0] + ') -> nouvelle epoch ' + v);
 
   let neuf = h;
   for (const f of liste) {

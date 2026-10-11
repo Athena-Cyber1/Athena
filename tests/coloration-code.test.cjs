@@ -222,7 +222,11 @@ const lire = (nom) => {
    couleur qui échoue sur l'autre. */
 const FONDS = { sombre: ['#0d0d0d', '#0e0e0e'], clair: ['#f6f6f6', '#f5f5f5'] };
 const JETONS = ['code-commentaire-sombre', 'code-chaine-sombre', 'code-mot-sombre', 'code-nombre-sombre',
-  'code-commentaire-clair', 'code-chaine-clair', 'code-mot-clair', 'code-nombre-clair'];
+  'code-commentaire-clair', 'code-chaine-clair', 'code-mot-clair', 'code-nombre-clair',
+  'code-base-sombre', 'code-base-clair',
+  // v20261011 (fc) : les roles distincts du mot-cle et de la fonction.
+  'code-motcle-sombre', 'code-motcle-clair',
+  'code-fonction-sombre', 'code-fonction-clair'];
 for (const jeton of JETONS) {
   const brut = lire(jeton);
   if (!brut) { echec('jeton absent du CSS : --' + jeton); continue; }
@@ -268,6 +272,20 @@ const pa = fs.readFileSync(path.join(root, 'tools', 'prepare-assets.js'), 'utf8'
 test('prepare-assets copie tout docs/vendor, récursivement (donc aussi un sous-dossier)',
   /docs",\s*"vendor"|'docs',\s*'vendor'|"docs\/vendor"/.test(pa) && /isDirectory\(\)/.test(pa),
   /isDirectory\(\)/.test(pa) ? 'récursion par dirent.isDirectory()' : 'PAS de récursion — languages/ serait perdu');
+
+/* v20261011 (fc) : un role qui existe doit avoir une couleur PROPRE. C'est
+   le defaut que la coloration d'origine portait : keyword, title, function et
+   property etaient tous en #e8e8e8 — quatre roles, une teinte. */
+console.log('\n--- 5b. les roles sont distincts ---');
+const val = (nom) => { const m = new RegExp('--' + nom + '\\s*:\\s*(#[0-9a-fA-F]{3,6})').exec(css); return m ? m[1] : null; };
+for (const couple of [['code-motcle-sombre', 'code-fonction-sombre'], ['code-motcle-clair', 'code-fonction-clair']]) {
+  const a = val(couple[0]), b = val(couple[1]);
+  test('--' + couple[0] + ' et --' + couple[1] + ' sont deux couleurs distinctes',
+    Boolean(a && b && a.toLowerCase() !== b.toLowerCase()), a + ' vs ' + b);
+}
+test('le mot-cle n est plus la meme couleur que le texte de base',
+  Boolean(val('code-motcle-sombre') && val('code-motcle-sombre').toLowerCase() !== (val('code-mot-sombre') || '#000').toLowerCase()),
+  'motcle ' + val('code-motcle-sombre') + ' / mot ' + val('code-mot-sombre'));
 
 console.log('\n' + (ko ? 'RESULTAT: ' + ko + ' ECHEC(S), ' + ok + ' OK' : 'RESULTAT: ' + ok + '/' + ok + ' OK'));
 process.exit(ko ? 1 : 0);

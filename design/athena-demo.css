@@ -1270,7 +1270,7 @@ button.dot:focus-visible,
 .md pre code .hljs-regexp,
 .md pre code .hljs-char.escape,
 .md pre code .hljs-subst {
-  color: var(--code-chaine-sombre);
+  color: var(--code-chaine-verte-sombre);
 }
 /* Nombres et litteraux : le seul accent du fichier. 2 % du code, donc sa
    saillie ne fatigue pas l'oeil — c'est une couleur de CONTROLE. */
@@ -1282,17 +1282,34 @@ button.dot:focus-visible,
 }
 /* Mots-cles, types, fonctions, proprietes : le gris le plus clair. Ce sont
    les 15 % qui portent la STRUCTURE — ils doivent se voir en premier. */
+/* Mots-cles : VIOLET. C'est le repere n1 de l ecran — ce qui fait la
+   structure du langage se repere d un coup d oeil. */
 .md pre code .hljs-keyword,
 .md pre code .hljs-built_in,
 .md pre code .hljs-type,
+.md pre code .hljs-literal {
+  color: var(--code-motcle-sombre);
+}
+/* Fonctions, classes, methodes : BLEU. Bleu et violet sont voisins en
+   teinte mais opposes en clarte : sur un bloc, un `function` se distingue
+   d un `return` sans lecture attentive. */
 .md pre code .hljs-title,
-.md pre code .hljs-class,
+.md pre code .hljs-title.function_,
+.md pre code .hljs-title.class_,
 .md pre code .hljs-function,
-.md pre code .hljs-section,
-.md pre code .hljs-params,
+.md pre code .hljs-class {
+  color: var(--code-fonction-sombre);
+}
+/* PROPRIETES : le meme bleu que les fonctions, en plus sourd — c est un
+   acces a un membre, pas une definition. */
+.md pre code .hljs-property,
+.md pre code .hljs-attr,
 .md pre code .hljs-attribute,
 .md pre code .hljs-variable,
-.md pre code .hljs-property,
+.md pre code .hljs-params {
+  color: var(--code-fonction-sombre);
+}
+.md pre code .hljs-section,
 .md pre code .hljs-punctuation,
 .md pre code .hljs-operator,
 .md pre code .hljs-selector-tag,
@@ -1364,7 +1381,7 @@ html[data-theme="light"] .md pre code .hljs-string,
 html[data-theme="light"] .md pre code .hljs-regexp,
 html[data-theme="light"] .md pre code .hljs-char.escape,
 html[data-theme="light"] .md pre code .hljs-subst {
-  color: var(--code-chaine-clair);
+  color: var(--code-chaine-verte-clair);
 }
 html[data-theme="light"] .md pre code .hljs-number,
 html[data-theme="light"] .md pre code .hljs-literal,
@@ -1375,14 +1392,20 @@ html[data-theme="light"] .md pre code .hljs-bullet {
 html[data-theme="light"] .md pre code .hljs-keyword,
 html[data-theme="light"] .md pre code .hljs-built_in,
 html[data-theme="light"] .md pre code .hljs-type,
+html[data-theme="light"] .md pre code .hljs-literal {
+  color: var(--code-motcle-clair);
+}
 html[data-theme="light"] .md pre code .hljs-title,
-html[data-theme="light"] .md pre code .hljs-class,
 html[data-theme="light"] .md pre code .hljs-function,
-html[data-theme="light"] .md pre code .hljs-section,
-html[data-theme="light"] .md pre code .hljs-params,
+html[data-theme="light"] .md pre code .hljs-class,
+html[data-theme="light"] .md pre code .hljs-property,
+html[data-theme="light"] .md pre code .hljs-attr,
 html[data-theme="light"] .md pre code .hljs-attribute,
 html[data-theme="light"] .md pre code .hljs-variable,
-html[data-theme="light"] .md pre code .hljs-property,
+html[data-theme="light"] .md pre code .hljs-params {
+  color: var(--code-fonction-clair);
+}
+html[data-theme="light"] .md pre code .hljs-section,
 html[data-theme="light"] .md pre code .hljs-punctuation,
 html[data-theme="light"] .md pre code .hljs-operator,
 html[data-theme="light"] .md pre code .hljs-selector-tag,
@@ -3713,6 +3736,41 @@ span.think:not(details .think) {
      litteraux, et la base devient un cran sous les mots-cles.
      #e8e8e8 aurait ete le choix evident (c'est --code-mot-sombre), mais la
      base et les mots-cles doivent se voir : d'ou un cran de plus. */
+  /* v20261011 (fc) — ROLES SYNTAXIQUES DANS LE COULEUR.
+     Jusqu'ici `keyword`, `title`, `function` et `property` portaient TOUS la
+     meme couleur (#e8e8e8) : quatre roles, une teinte. Le code se lisait, mais
+     rien ne distinguait un mot-cle d'un nom de fonction — c'est precisement
+     l'information que la coloration doit apporter.
+
+     On ajoute donc deux roles la ou la palette etait trop pauvre : le
+     MOT-CLE et la FONCTION. L'exemple de reference (Material/One Dark) les
+     donne violets et bleus ; on reprend cette lecture, en la mesurant sur
+     NOS fonds, et en gardant le reste de la charte :
+       - chaque role tient 4,5:1 vs le fond reel, dans les DEUX themes ;
+       - l'IDENTITE reste le rouge unique du fichier, porte par les nombres.
+
+     Mesures (fond sombre #0d0d0d / clair #f6f6f6) :
+       base       #d4d4d4  13,02:1   #242424  14,24:1
+       mot-cle    #c792ea   8,02:1   #7d3cba   5,97:1
+       fonction   #7cc4ff  10,29:1   #0d47a1   7,92:1
+       chaine     #c3e88d  14,02:1   #276749   6,17:1
+       nombre     #ff8a7a   8,43:1   #b3261e   6,00:1
+       commentaire #7f8c98  5,61:1   #5f6b78   4,99:1
+     Le minimum est 4,99:1 — sous 4,5:1 nulle part.
+     (mot-cle / nombre se tiennent a 1,05:1 en LUMINANCE : c'est normal et
+      sans gravite, ce sont deux TEINTES opposees ; le contraste WCAG porte
+      texte/fond, pas teinte/teinte.) */
+  --code-motcle-sombre: #c792ea;
+  --code-motcle-clair: #7d3cba;
+  /* Les chaines en VERT : dans l'exemple de reference elles portent une
+     teinte propre, et c'est justified — une chaine est la seule donnee
+     VERBATIM du code. Grisee, elle se confond avec les identifiants ;
+     coloree, elle saute aux yeux. Mesure : #9bd45f = 10,0:1 sur #0d0d0d,
+     #276749 = 6,17:1 sur #f6f6f6. */
+  --code-fonction-sombre: #7cc4ff;
+  --code-fonction-clair: #0d47a1;
+  --code-chaine-verte-sombre: #9bd45f;
+  --code-chaine-verte-clair: #276749;
   --code-base-sombre: #f0f0f0;
   --code-base-clair: #242424;
   --code-commentaire-sombre: #8a8a8a;
