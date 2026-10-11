@@ -8131,6 +8131,58 @@ function itemModeleHud(m, selectionCourante) {
   return item;
 }
 
+/* v20261007 (fg) : SECTIONS PLIABLES du panneau modeles.
+   Trois sections (« Actif », « Cloud », « Local ») qui ne se pliaient pas :
+   sur un poste avec 12 modeles cloud, il fallait faire defiler 300 px pour
+   atteindre « Local ». Un titre est donc un `<button aria-expanded>`, et son
+   etat est retenue dans localStorage — un panneau qu on replie a chaque
+   ouverture est un panneau qu on replie pour de bon.
+   Clavier : un `<button>` herite de l'activation Espace/Entree, il n'y a donc
+   rien a câbler — c'est tout l'interet de ne pas faire un `<div role="button">`,
+   qui aurait exige de reconstruire Tab et Espace a la main. */
+const CLE_HUD_REPLIE = 'athena_hud_replies';
+function sectionsReplies() {
+  try {
+    const v = JSON.parse(localStorage.getItem(CLE_HUD_REPLIE) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (_) { return []; }
+}
+function memoriserSectionReplie(cle, replie) {
+  try {
+    const v = sectionsReplies().filter(x => x !== cle);
+    if (replie) v.push(cle);
+    localStorage.setItem(CLE_HUD_REPLIE, JSON.stringify(v));
+  } catch (_) { /* quota plein ou stockage interdit : sans consequence */ }
+}
+function sectionPliable(panneau, cle, nom) {
+  const replie = sectionsReplies().indexOf(cle) >= 0;
+  const titre = document.createElement('button');
+  titre.type = 'button';
+  titre.className = 'hud-section-titre';
+  titre.setAttribute('aria-expanded', replie ? 'false' : 'true');
+  const n = document.createElement('span');
+  n.className = 'hud-section-nom';
+  n.textContent = nom;
+  const fleche = document.createElement('span');
+  fleche.className = 'hud-section-fleche';
+  fleche.setAttribute('aria-hidden', 'true');
+  fleche.textContent = '▾';
+  titre.append(n, fleche);
+  const corps = document.createElement('div');
+  corps.className = 'hud-section-corps';
+  corps.id = 'grp-' + cle;
+  corps.hidden = replie;
+  titre.setAttribute('aria-controls', corps.id);
+  titre.addEventListener('click', () => {
+    const ouvert = titre.getAttribute('aria-expanded') === 'true';
+    titre.setAttribute('aria-expanded', ouvert ? 'false' : 'true');
+    corps.hidden = ouvert;
+    memoriserSectionReplie(cle, ouvert);
+  });
+  panneau.append(titre, corps);
+  return corps;
+}
+
 function rendreHud(modeles, dispo) {
   const panneau = document.getElementById('hud-modeles');
   if (!panneau) return;
@@ -8145,11 +8197,8 @@ function rendreHud(modeles, dispo) {
   majBadgeEffort();
   const selectionCourante = modeleChoisi ? modeleChoisi.id : 'auto';
 
-  const titreActif = document.createElement('div');
-  titreActif.className = 'hud-section-titre';
-  titreActif.textContent = 'Actif';
-  panneau.appendChild(titreActif);
-  panneau.appendChild(itemModeleHud({ id: 'auto', name: 'auto (sans relais)', provider: 'meilleur dispo, un seul essai', up: true, local: false, active: false }, selectionCourante));
+  const corpsActif = sectionPliable(panneau, 'actif', 'Actif');
+  corpsActif.appendChild(itemModeleHud({ id: 'auto', name: 'auto (sans relais)', provider: 'meilleur dispo, un seul essai', up: true, local: false, active: false }, selectionCourante));
 
   /* chat:false (garde, traduction) = jamais un modèle de conversation —
      retirés du HUD (sélection morte = réponse « flemmard » instantanée).
@@ -8158,18 +8207,12 @@ function rendreHud(modeles, dispo) {
   const cloud = modeles.filter((m) => !m.local && visible(m));
   const locaux = modeles.filter((m) => m.local && visible(m));
   if (cloud.length) {
-    const titreCloud = document.createElement('div');
-    titreCloud.className = 'hud-section-titre';
-    titreCloud.textContent = 'Cloud';
-    panneau.appendChild(titreCloud);
-    for (const m of cloud) panneau.appendChild(itemModeleHud(m, selectionCourante));
+    const corpsCloud = sectionPliable(panneau, 'cloud', 'Cloud');
+    for (const m of cloud) corpsCloud.appendChild(itemModeleHud(m, selectionCourante));
   }
   if (locaux.length) {
-    const titreLocal = document.createElement('div');
-    titreLocal.className = 'hud-section-titre';
-    titreLocal.textContent = 'Local';
-    panneau.appendChild(titreLocal);
-    for (const m of locaux) panneau.appendChild(itemModeleHud(m, selectionCourante));
+    const corpsLocal = sectionPliable(panneau, 'local', 'Local');
+    for (const m of locaux) corpsLocal.appendChild(itemModeleHud(m, selectionCourante));
   }
   if (!cloud.length && !locaux.length) {
     const vide = document.createElement('p');

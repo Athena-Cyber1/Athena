@@ -2528,8 +2528,16 @@ span.think:not(details .think) {
   top: auto;
   bottom: calc(100% + 8px);
   right: 0;
-  width: min(var(--colonne-max), calc(100vw - 2 * var(--marge-page)));
-  max-height: min(420px, calc(100vh - 140px));
+  /* v20261007 (fg) : largeur bornee. Mesure au tour precedent, le panneau
+   faisait 794 px a 1440 — la largeur TOTALE de la colonne, soit une plaque
+   qui prenait tout l ecran pour trois noms. Un menu, pas un panneau.
+   `box-sizing: border-box` est explicite : sans lui, `width: 340px` mesure
+   354 px (contenu + 12 de padding + 2 de bordure). */
+  box-sizing: border-box;
+  width: clamp(260px, 26vw, 340px);
+  max-width: calc(100vw - 2 * var(--marge-page));
+  /* v20261007 (fg) : 360 px, pas 420 — mesure : 402 px de haut pour un menu. */
+  max-height: min(360px, calc(100vh - 160px));
   overflow-y: auto;
   background: var(--fond);
   border: 1px solid var(--bord);
@@ -2587,12 +2595,48 @@ span.think:not(details .think) {
 .hud-contexte-note {
   padding: 6px 10px 4px;
 }
+/* v20261007 (fg) : le titre de section est un BOUTON de pliage. `<button>` et
+   non `<div role="button">` : Espace, Entree, Tab et l'anneau de focus sont
+   alors fournis par le navigateur. Les reconstruire a la main, c'est
+   toujours le moment ou on oublie le focus clavier. */
 .hud-section-titre {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-family: inherit;
   font-size: 0.66rem;
   letter-spacing: 0.09em;
   text-transform: uppercase;
+  text-align: left;
   color: var(--texte-doux);
   padding: 8px 10px 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.hud-section-titre:hover {
+  color: var(--texte);
+}
+.hud-section-titre:focus-visible {
+  outline: 2px solid var(--primaire);
+  outline-offset: -2px;
+}
+.hud-section-fleche {
+  margin-left: auto;
+  font-size: 0.8rem;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.hud-section-titre[aria-expanded="false"] .hud-section-fleche {
+  transform: rotate(-90deg);
+}
+.hud-section-corps {
+  display: flex;
+  flex-direction: column;
+}
+.hud-section-corps[hidden] {
+  display: none;
 }
 .hud-item {
   display: flex;
@@ -3664,8 +3708,11 @@ span.think:not(details .think) {
    `.hud-modeles`, donc elle ecrasait sa largeur fluide : mesure, le panneau
    faisait 282 px a 1440 comme a 390. Les trois panneaux partagent desormais la
    meme base, alignee sur la colonne du composeur. */
+/* v20261007 (fg) : ce `max-height` en 640 px etait pose APRES `.hud-modeles`
+   et annulait son plafond de 360 px — mesure : 402 px de haut pour un menu.
+   La regle ne porte plus rien, tout passe par la base commune. */
 .hud-reglages {
-  max-height: min(640px, calc(100vh - 140px));
+  box-sizing: border-box;
 }
 .hud-reglage-section + .hud-reglage-section {
   margin-top: 6px;
